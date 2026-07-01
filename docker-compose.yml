@@ -1,0 +1,85 @@
+# Heimdall - AI 请求代理 + 实时监控面板
+# 双容器架构：代理服务 + 面板服务
+# 部署：docker compose up -d
+# 验证：docker compose config
+
+services:
+  # ── 代理服务 ──────────────────────────────────────────────
+  # 职责：AI 请求转发、Token 统计、日志记录
+  # 端口：8888
+  proxy:
+    image: heimdall-proxy:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-proxy
+    container_name: heimdall-proxy
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8888}:8888"
+    volumes:
+      - heimdall-data:/data
+      - heimdall-logs:/logs
+    environment:
+      - HEIMDALL_DATA_DIR=/data
+      - HEIMDALL_LOG_DIR=/logs
+      - HEIMDALL_PORT=8888
+      - HEIMDALL_DETAIL_LOG=${HEIMDALL_DETAIL_LOG:-false}
+      - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
+      - HEIMDALL_PROXY_PATH=${HEIMDALL_PROXY_PATH:-/v1/openai/native}
+      - HEIMDALL_TIMEOUT=${HEIMDALL_TIMEOUT:-120}
+    networks:
+      - heimdall-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── 面板服务 ──────────────────────────────────────────────
+  # 职责：统计 API、代理管理、Credit API、前端静态文件
+  # 端口：8889
+  dashboard:
+    image: heimdall-dashboard:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-dashboard
+    container_name: heimdall-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-8889}:8889"
+    volumes:
+      - heimdall-data:/data
+      - heimdall-logs:/logs
+    environment:
+      - HEIMDALL_DATA_DIR=/data
+      - HEIMDALL_LOG_DIR=/logs
+      - HEIMDALL_PORT=8889
+      - HEIMDALL_DETAIL_LOG=${HEIMDALL_DETAIL_LOG:-false}
+      - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
+    networks:
+      - heimdall-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8889)); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+# ── 共享卷 ──────────────────────────────────────────────────
+# heimdall-data: SQLite 数据库、运行时配置
+# heimdall-logs: 业务日志、系统日志
+volumes:
+  heimdall-data:
+    name: heimdall-data
+  heimdall-logs:
+    name: heimdall-logs
+
+# ── 网络 ────────────────────────────────────────────────────
+networks:
+  heimdall-net:
+    name: heimdall-net
+    driver: bridge
