@@ -1,0 +1,502 @@
+/* ── 标题行（PC端：单行 flex）── */
+.titleRow {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0,0,0,0.06));
+  gap: 8px;
+  min-height: 40px;
+  flex-wrap: nowrap;
+}
+
+/* PC端左侧：服务名 + 状态 + 自启 */
+.titleLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.serviceName {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #57534e);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* 运行状态（左半，无独立圆角，靠外层 overflow:hidden 裁剪） */
+.statusChip {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: background 0.3s, color 0.3s;
+}
+
+.statusRunning {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.statusStopped {
+  background: rgba(244, 63, 94, 0.1);
+  color: #f43f5e;
+}
+
+/* 呼吸动效圆点 */
+.statusDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusRunning .statusDot {
+  background: #10b981;
+  animation: breathe-green 2s ease-in-out infinite;
+}
+
+.statusStopped .statusDot {
+  background: #f43f5e;
+}
+
+@keyframes breathe-green {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50%  { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.statusText {
+  display: block;
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  /* CJK 字体视觉重心偏下，仅对左侧文字上移 1px */
+  transform: translateY(-1px);
+}
+
+/* 移动端编辑按钮：PC端隐藏 */
+.editBtnMobile {
+  display: none !important;
+}
+
+/* PC端编辑按钮：正常显示 */
+.editBtnPc {
+  display: inline-flex !important;
+}
+
+/* PC端右侧：操作按钮区 */
+.titleRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.actionBtnGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 运行状态+开机自启融合模块：PC/移动端共用，圆角6px与移动端一致 */
+.statusModule {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-subtle, rgba(0,0,0,0.1));
+  border-radius: 6px;
+  overflow: hidden;
+  height: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.statusModuleDivider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-subtle, rgba(0,0,0,0.12));
+  flex-shrink: 0;
+}
+
+/* 开机自启 toggle 按钮 */
+.autostartBtn {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  padding: 0 8px;
+  margin: 0;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+  background: transparent;
+  /* 清除 <button> 浏览器默认样式 */
+  -webkit-appearance: none;
+  appearance: none;
+  vertical-align: top;
+}
+
+.autostartBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 未开启：灰色文字，背景透明 */
+.autostartOff {
+  color: var(--text-muted, #9ca3af);
+  background: transparent;
+}
+
+.autostartOff:not(:disabled):hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--text-secondary, #374151);
+}
+
+/* 已开启：主题蓝色，区分于绿色的运行状态 */
+.autostartOn {
+  color: var(--accent-blue, #0ea5e9);
+  background: var(--accent-blue-light, rgba(14, 165, 233, 0.08));
+}
+
+.autostartOn:not(:disabled):hover {
+  background: rgba(14, 165, 233, 0.14);
+}
+
+.autostartBtnInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* 小开关轨道：高度 = 11px（与文字行高一致），autostartBtnInner 高度由此决定，与左侧 statusText 等高 */
+.autostartToggleTrack {
+  display: inline-flex;
+  align-items: center;
+  width: 22px;
+  height: 11px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.18);
+  padding: 2px;
+  box-sizing: border-box;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.autostartToggleOn {
+  background: var(--accent-blue, #0ea5e9);
+}
+
+/* 小开关滑块 */
+.autostartToggleThumb {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.autostartToggleOn .autostartToggleThumb {
+  transform: translateX(11px);
+}
+
+/* 删除旧的圆点样式 */
+.autostartBtnDot { display: none; }
+
+/* ── 分隔线 ── */
+.titleDivider {
+  height: 14px !important;
+  margin: 0 2px !important;
+  border-color: var(--border-subtle, rgba(0,0,0,0.1)) !important;
+}
+
+.pidText {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  line-height: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── 信息行 ── */
+.infoRow {
+  display: flex;
+  align-items: stretch;
+  padding: 9px 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.infoCell {
+  flex: 1 1 0;
+  min-width: 80px;
+  padding: 0 14px;
+}
+
+.infoCellLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.infoCellValue {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, "SF Mono", Consolas, monospace);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.portCell {
+  flex: 0 0 auto;
+  min-width: 120px;
+  max-width: 150px;
+}
+
+.infoCellFull {
+  flex: 2 1 160px;
+  min-width: 140px;
+}
+
+.vsep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-subtle, rgba(0,0,0,0.07));
+  flex-shrink: 0;
+  margin: 3px 0;
+}
+
+.portRow {
+  display: contents;
+}
+
+/* ══════════════════════════════════════════════════
+   移动端（≤ 640px）
+   
+   布局目标（Grid 两列两行）：
+   
+     列1（auto）  |  列2（auto）
+     ⚙代理服务    |  [运行中 | 自启] ← statusModule
+     编辑         |  重启  停止      ← actionBtnGroup
+   
+   列2宽度由内容决定，两行的列2天然等宽
+   → statusModule 宽度 = 重启+间距+停止 的宽度
+   ══════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* titleRow 改为 grid */
+  .titleRow {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    padding: 8px 12px;
+    gap: 4px;
+    align-items: center;
+    justify-content: start;
+  }
+
+  /* 左列：服务名（行1）+ 编辑（行2） */
+  .titleLeft {
+    display: contents; /* 让子元素直接参与 grid */
+  }
+
+  /* 服务名：grid 第1行第1列 */
+  .serviceName {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  /* PC端竖线分隔：移动端隐藏 */
+  .dividerPc {
+    display: none !important;
+  }
+
+  /* 移动端编辑按钮：第2行第1列 */
+  .editBtnMobile {
+    display: inline-flex !important;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: center;
+  }
+
+  /* PC端编辑按钮：移动端隐藏 */
+  .editBtnPc {
+    display: none !important;
+  }
+
+  /* titleRight：display:contents，让子元素直接参与 grid */
+  .titleRight {
+    display: contents;
+    margin-left: 0;
+  }
+
+  /* PC端竖线分隔：已通过 dividerPc 隐藏 */
+
+  /* actionBtnGroup（重启+停止）：第2行第2列 */
+  .actionBtnGroup {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    justify-content: flex-start;
+  }
+
+  /* 融合模块：grid 第1行第2列，宽度天然等于 actionBtnGroup 宽度 */
+  .statusModule {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    width: 100%;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+
+  /* 融合模块内：运行状态左半，自启右半，各占50% */
+  .statusModule .statusChip {
+    flex: 1;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 0;
+    line-height: 1;
+  }
+
+  .statusModule .autostartBtn {
+    flex: 1;
+    justify-content: center;
+    padding: 0 6px;
+    line-height: 1;
+  }
+
+  /* 信息行 */
+  .infoRow {
+    flex-direction: column;
+    padding: 0;
+    overflow-x: visible;
+    display: flex; /* 覆盖 grid */
+  }
+
+  .infoCell {
+    flex: none;
+    min-width: unset;
+    padding: 6px 12px;
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-subtle, rgba(0,0,0,0.04));
+  }
+
+  .infoCell:last-child {
+    border-bottom: none;
+  }
+
+  .infoCellLabel {
+    margin-bottom: 0;
+    min-width: 56px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .infoCellValue {
+    word-break: break-all;
+    flex: 1;
+  }
+
+  .infoCellFull {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    padding: 6px 12px !important;
+  }
+
+  .infoCellFull .infoCellLabel {
+    min-width: unset !important;
+    margin-bottom: 1px !important;
+    font-size: 10px;
+  }
+
+  .infoCellFull .infoCellValue {
+    font-size: 11px;
+    word-break: break-all;
+    width: 100%;
+  }
+
+  .vsep {
+    display: none;
+  }
+
+  .portRow {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    border-bottom: none !important;
+    padding: 6px 0;
+  }
+
+  .portRow,
+  .portRow:last-child {
+    border-bottom: none !important;
+  }
+
+  .portRow .portCell {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0 10px;
+    border-right: 1px solid var(--border-subtle, rgba(0,0,0,0.06));
+    border-bottom: none !important;
+    gap: 2px;
+  }
+
+  .portRow .portCell:first-child { padding-left: 12px; }
+  .portRow .portCell:last-child  { border-right: none; }
+
+  .portRow .infoCellLabel {
+    min-width: unset;
+    margin-bottom: 2px;
+    font-size: 10px;
+  }
+
+  .portRow .infoCellValue {
+    word-break: normal;
+    font-size: 12px;
+  }
+}

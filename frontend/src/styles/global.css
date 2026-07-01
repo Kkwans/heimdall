@@ -1,0 +1,1016 @@
+/* ============================================================
+   Heimdall Dashboard — 全局样式
+   设计风格：现代简约 / Instagram Editorial
+   ============================================================ */
+
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── CSS 变量 · 浅色主题（默认） ── */
+:root {
+  /* 背景层级 */
+  --bg-base: #fafaf9;
+  --bg-secondary: #f5f5f4;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+
+  /* 边框 */
+  --border-subtle: #e7e5e4;
+  --border-default: #d6d3d1;
+  --border-strong: #a8a29e;
+
+  /* 文字 */
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-muted: #a8a29e;
+  --text-disabled: #d6d3d1;
+
+  /* 品牌色 */
+  --accent-blue: #0ea5e9;
+  --accent-blue-light: #e0f2fe;
+  --accent-blue-hover: #0284c7;
+
+  /* 功能色 */
+  --color-success: #10b981;
+  --color-success-bg: #d1fae5;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #fef3c7;
+  --color-danger: #f43f5e;
+  --color-danger-bg: #ffe4e6;
+  --color-info: #6366f1;
+  --color-info-bg: #e0e7ff;
+
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* 字体 */
+  --font-sans: 'Noto Sans SC', 'PingFang SC', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+
+  /* 尺寸 */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --sidebar-width: 220px;
+  --header-height: 56px;
+  --bottom-nav-height: 58px;
+
+  /* 动效 */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-slow: 250ms;
+}
+
+/* ── CSS 变量 · 深色主题 ── */
+[data-theme='dark'] {
+  --bg-base: #0c0a09;
+  --bg-secondary: #1c1917;
+  --bg-surface: #292524;
+  --bg-elevated: #3c3835;
+
+  --border-subtle: #292524;
+  --border-default: #44403c;
+  --border-strong: #78716c;
+
+  --text-primary: #fafaf9;
+  --text-secondary: #d6d3d1;
+  --text-muted: #78716c;
+  --text-disabled: #44403c;
+
+  --accent-blue-light: rgba(14, 165, 233, 0.12);
+
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-danger-bg: rgba(244, 63, 94, 0.12);
+  --color-info-bg: rgba(99, 102, 241, 0.12);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 移动端：防止表格横向滚动导致整个视口也横滚（fixed topbar 会随视口偏移） */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: hidden;
+    /* 确保视口宽度不因内容超宽而扩展 */
+    width: 100%;
+    max-width: 100vw;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  transition: background var(--duration-slow) var(--ease-default),
+              color var(--duration-slow) var(--ease-default);
+}
+
+/* ── 等宽数字文本 ── */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+/* ── 滚动条美化：默认透明，悬浮时才显现 ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 默认隐藏（透明），鼠标悬浮到可滚动区域时才显示 */
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+/* 容器 hover 时，滚动条拇指才显现 */
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme='dark'] *:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* 移动端：完全隐藏滚动条（通过 scrollbar-width + webkit 双保险） */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none;
+  }
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+}
+
+/* ── DatePicker RangePicker 美化：文字居中 ── */
+.ant-picker-input input {
+  text-align: center !important;
+}
+/* 分隔符垂直居中且视觉更轻 */
+.ant-picker-range-separator {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 2px !important;
+}
+/* RangePicker 整体内边距收紧 */
+.ant-picker.ant-picker-range {
+  padding: 3px 8px !important;
+}
+/* ── 刷新胶囊 Select（.hd-refresh-select）：修复 CJK 字体视觉重心偏下 ── */
+/* Ant Design v5 选中文字容器为 .ant-select-content（display:block, line-height:22px）
+   CJK 字体在此场景下视觉重心偏下约 1px，用 translateY 纯视觉补偿，不影响布局 */
+.hd-refresh-select .ant-select-content {
+  transform: translateY(-1px);
+}
+
+/* ── 全局 Spin loading 占位：显示圆圈转圈（通过自定义 indicator 实现，CSS 仅做兜底） ──
+ * 真正的圆圈由 <Spin indicator={<SpinRing />}> 传入，见 SpinRing 组件
+ */
+@keyframes hd-spin-ring {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.hd-spin-ring {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(14, 165, 233, 0.18);
+  border-top-color: #0ea5e9;
+  background: transparent;
+  display: inline-block;
+  animation: hd-spin-ring 0.65s linear infinite;
+}
+
+/* small 尺寸的 picker（DatePicker / RangePicker）高度与 Select size="small" 对齐 */
+.ant-picker.ant-picker-small {
+  height: 24px !important;
+  min-height: 24px !important;
+  line-height: 22px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+.ant-picker.ant-picker-small .ant-picker-input > input {
+  font-size: 12px !important;
+  line-height: 22px !important;
+}
+.ant-picker.ant-picker-small .ant-picker-suffix {
+  font-size: 12px !important;
+}
+/* 移动端 RangePicker 宽度 100% */
+@media (max-width: 768px) {
+  .ant-picker.ant-picker-range {
+    text-align: center;
+  }
+
+  /* 移动端 DatePicker 弹窗：防止超出屏幕右边界
+   * 限制最大宽度并强制在视口内显示 */
+  .ant-picker-dropdown {
+    max-width: calc(100vw - 16px) !important;
+  }
+  .ant-picker-panel-container {
+    max-width: calc(100vw - 16px) !important;
+    overflow-x: hidden !important;
+  }
+  /* 面板本身自适应容器宽度 */
+  .ant-picker-panel,
+  .ant-picker-date-panel,
+  .ant-picker-month-panel,
+  .ant-picker-year-panel {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .ant-picker-body {
+    padding: 4px 8px !important;
+  }
+  .ant-picker-content {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  /* 星期列头自适应 */
+  .ant-picker-content th {
+    min-width: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* ── Ant Design Modal：全局样式优化 ── */
+/* content 容器：去掉默认大内边距（内边距由 styles.header/body prop 精确控制） */
+.ant-modal-content {
+  padding: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+/* header：去掉 marginBottom */
+.ant-modal-header {
+  margin-bottom: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+/* 关闭按钮：垂直居中对齐（header 高度 48px，按钮 28px，top = (48 - 28) / 2 = 10px）*/
+.ant-modal-close {
+  top: 10px !important;
+  inset-inline-end: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* 所有弹窗垂直居中：通过 ConfigProvider modal={{ centered: true }} 实现
+   此处不再手动干预 .ant-modal 的 top，避免与 antd 动画/遮罩点击事件冲突 */
+
+/* Ant Design Modal：移动端样式优化 */
+@media (max-width: 768px) {
+  /* 关闭按钮：移动端 header 高度 44px，按钮 28px，top = (44 - 28) / 2 = 8px */
+  .ant-modal-close {
+    top: 8px !important;
+    inset-inline-end: 8px !important;
+  }
+  /* 移动端弹窗：左右留有间距，不贴边 */
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    width: calc(100vw - 24px) !important;
+  }
+  /* body 滚动条隐藏 */
+  .ant-modal-body {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  .ant-modal-body::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+  }
+}
+
+/* 请求详情弹窗：清零 header 的所有默认 padding，由 title 内部自己控制 */
+.hd-request-detail-modal .ant-modal-header {
+  padding: 0 !important;
+}
+/* 请求详情弹窗：body padding 与 title 内文字左边距对齐 */
+.hd-request-detail-modal .ant-modal-body {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+/* Tabs 标签栏内边距收窄 */
+.hd-request-detail-modal .ant-tabs-nav {
+  margin: 0 0 10px !important;
+}
+
+/* ── 全局布局 ── */
+.layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-base);
+}
+
+.layout-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 100;
+  transition: background var(--duration-slow) var(--ease-default);
+}
+
+.layout-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  padding: 24px;
+  overflow-x: hidden;
+}
+
+/* 移动端顶部栏：桌面端隐藏 */
+.mobile-topbar {
+  display: none;
+}
+
+/* ── 响应式：平板及以下 ── */
+@media (max-width: 768px) {
+  .layout-sidebar {
+    display: none;
+  }
+
+  .layout-content {
+    margin-left: 0;
+    padding: 0;
+    padding-top: 0;
+    /* 不设 overflow-x，让子元素自己管理横向滚动，避免整页横滚 */
+    overflow-x: visible;
+  }
+
+  /* 移动端顶部导航栏：使用 fixed 定位，彻底不受父容器 overflow 限制 */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    margin-bottom: 0;
+    /* 防止内容穿透：纯色背景 */
+    background-color: var(--bg-surface);
+  }
+
+  /* 因为 topbar 是 fixed，需要给 layout-content 添加顶部 padding 补偿 */
+  .layout-content {
+    padding-top: 57px;
+    /* 严格限制宽度不超过视口，防止整页横滚 */
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .mobile-menu-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .mobile-menu-btn:active {
+    background: var(--bg-secondary);
+  }
+
+  .mobile-topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  .mobile-topbar-title {
+    font-family: var(--font-mono);
+  }
+
+  /* 页面内容区：上下保留间距，左右统一 12px；宽度严格不超出父容器 */
+  .page-content {
+    padding: 10px 12px;
+    /* 防止内容超出视口宽度 */
+    box-sizing: border-box;
+    width: 100%;
+    overflow: visible;
+  }
+  /* section 移动端不再额外加左右 padding，与 page-content 保持一致 */
+  .section {
+    padding: 0 0 10px;
+  }
+  /* 卡片内内容区 padding 收窄 */
+  .hd-card .ant-card-body {
+    padding: 8px 10px !important;
+  }
+
+  /* 日志页面终端区域减少内边距，提高空间利用率 */
+  .log-terminal {
+    padding: 8px !important;
+    font-size: 11px !important;
+  }
+
+  /* 移动端隐藏页面内标题行（頂部topbar已显示页面名，避免重复） */
+  .page-header {
+    display: none !important;
+  }
+  /* 移动端隐藏 Header 内嵌的页面标题（同上） */
+  .page-header-inline {
+    display: none !important;
+  }
+}
+
+/* ── 页面标题 ── */
+.page-header {
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── 内容卡片 ── */
+.hd-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-slow) var(--ease-default),
+              border-color var(--duration-slow) var(--ease-default);
+  overflow: hidden;
+}
+
+/* 卡片内表格容器：只允许内部横向滚动，不能溢出卡片 */
+.hd-card .ant-table-wrapper {
+  overflow: visible;
+  /* 移动端：严格限制在卡片宽度内 */
+  max-width: 100%;
+}
+/* 表格内容区可横向滚动（仅表格内部，不影响页面） */
+.hd-card .ant-table-body,
+.hd-card .ant-table-content {
+  overflow-x: auto !important;
+}
+
+/* 移动端：卡片本身不超出视口 */
+@media (max-width: 768px) {
+  .hd-card {
+    /* 严格限制宽度在视口内 */
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
+  }
+  .hd-card .ant-table-wrapper {
+    overflow: hidden;
+  }
+  .hd-card .ant-table-body,
+  .hd-card .ant-table-content {
+    overflow-x: auto !important;
+    /* 移动端表格内部滚动，最大宽度为卡片宽度 */
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* 表格左右/顶部边框线 */
+/* 禁用 antd 自动生成的 ::before/::after 左右滚动阴影 */
+.hd-card .ant-table-container::before,
+.hd-card .ant-table-container::after {
+  display: none !important;
+}
+
+/* ── 表格 container 边框线（顶/左/右）── */
+.hd-card .ant-table-container {
+  border-top: 1px solid var(--border-subtle) !important;
+  border-left: 1px solid var(--border-subtle) !important;
+  border-right: 1px solid var(--border-subtle) !important;
+}
+
+/* ── 表格底部圆角修复 ── */
+/* 表格 wrapper 和 container 底部圆角，与 hd-card 圆角一致 */
+.hd-card .ant-table-wrapper,
+.hd-card .ant-table {
+  border-bottom-left-radius: var(--radius-md) !important;
+  border-bottom-right-radius: var(--radius-md) !important;
+  overflow: hidden;
+}
+.hd-card .ant-table-container {
+  border-bottom-left-radius: var(--radius-md) !important;
+  border-bottom-right-radius: var(--radius-md) !important;
+  overflow: hidden;
+}
+/* 表格最后一行单元格底部圆角 */
+.hd-card .ant-table-tbody > tr:last-child > td:first-child {
+  border-bottom-left-radius: var(--radius-md) !important;
+}
+.hd-card .ant-table-tbody > tr:last-child > td:last-child {
+  border-bottom-right-radius: var(--radius-md) !important;
+}
+
+/* ── 图表网格 ── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── 段落间距 ── */
+.section {
+  margin-bottom: 20px;
+}
+
+/* ── 图表卡片 ── */
+.chart-card {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.chart-card .ant-card-head {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+.chart-card .ant-card-head-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em;
+  padding: 12px 0;
+}
+
+.chart-card .ant-card-body {
+  padding: 12px 16px 16px;
+}
+
+/* ── Ant Design 全局覆盖（浅色主题基础）── */
+.ant-card {
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+}
+
+.ant-card-head {
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+.ant-card-head-title {
+  color: var(--text-primary) !important;
+}
+
+/* ── Ant Design 全局覆盖（深色主题） ── */
+[data-theme='dark'] .ant-card {
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+}
+
+[data-theme='dark'] .ant-table {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .ant-table-thead > tr > th {
+  background: var(--bg-secondary);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+[data-theme='dark'] .ant-table-tbody > tr > td {
+  border-color: var(--border-subtle);
+}
+
+[data-theme='dark'] .ant-table-tbody > tr:hover > td {
+  background: var(--bg-secondary);
+}
+
+/* ── Ant Design 表格排序 & 表头悬停背景色修复 ── */
+/* 浅色模式：排序激活的表格数据列（td） */
+.ant-table-column-sort {
+  background: rgba(14, 165, 233, 0.04) !important;
+}
+/* 浅色模式：表头单元格（th）所有状态，避免黑色 */
+.ant-table-thead > tr > th,
+.ant-table-thead > tr > td {
+  background: #f5f5f4 !important;
+}
+/* 浅色模式：表头悬停 */
+.ant-table-thead > tr > th:hover,
+.ant-table-thead > tr > td:hover {
+  background: rgba(14, 165, 233, 0.06) !important;
+}
+/* 浅色模式：表头排序激活（active sort column header） */
+.ant-table-thead > tr > th.ant-table-column-sort,
+.ant-table-thead > tr > td.ant-table-column-sort {
+  background: rgba(14, 165, 233, 0.08) !important;
+}
+/* 浅色模式：表头排序激活 + 悬停 */
+.ant-table-thead > tr > th.ant-table-column-sort:hover,
+.ant-table-thead > tr > td.ant-table-column-sort:hover {
+  background: rgba(14, 165, 233, 0.12) !important;
+}
+
+/* 深色模式：表头单元格 */
+[data-theme='dark'] .ant-table-thead > tr > th,
+[data-theme='dark'] .ant-table-thead > tr > td {
+  background: var(--bg-secondary) !important;
+}
+/* 深色模式：表头悬停 */
+[data-theme='dark'] .ant-table-thead > tr > th:hover,
+[data-theme='dark'] .ant-table-thead > tr > td:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+/* 深色模式：表头排序激活 */
+[data-theme='dark'] .ant-table-thead > tr > th.ant-table-column-sort,
+[data-theme='dark'] .ant-table-thead > tr > td.ant-table-column-sort {
+  background: rgba(14, 165, 233, 0.10) !important;
+}
+/* 深色模式：排序激活的数据列 */
+[data-theme='dark'] .ant-table-column-sort {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ── 日志终端区域 ── */
+.log-terminal {
+  background: #f8f8f8;
+  color: #1a1a1a;
+  border: 1px solid #e0e0e0;
+}
+
+[data-theme='dark'] .log-terminal {
+  background: #0e1117;
+  color: #d4d4d4;
+  border: 1px solid #1e2533;
+}
+
+/* ── 日志行响应式：桌面三列 / 移动两行 ── */
+.log-row-mobile {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .log-row-desktop {
+    display: none !important;
+  }
+  .log-row-mobile {
+    display: block;
+  }
+}
+
+/* ── 表头文字居中修复（排序图标在文字右侧，文字自身视觉居中）── */
+/* 原理：th 整体 text-align: center，但 sorters 容器不强制 justify-content: center，
+   而是改为 inline-flex，让排序图标跟在文字右侧，文字本身由 th 的 text-align 居中 */
+.ant-table-column-title {
+  flex: none !important;
+}
+
+/* 带排序的列：保持 th 整体文字居中 */
+.ant-table-thead > tr > th.ant-table-cell {
+  text-align: center !important;
+}
+
+/* sorters 容器：inline-flex，文字+图标自然排列（不强制居中，由 th text-align 负责整体居中） */
+.ant-table-column-sorters {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px;
+  width: auto !important;
+  white-space: nowrap;
+}
+
+/* 排序图标区域：不让它撑开宽度 */
+.ant-table-column-sorter {
+  margin-inline-start: 0 !important;
+}
+
+/* ── 移动端表格：最大化宽度利用率 ── */
+@media (max-width: 768px) {
+  /* 移动端减少表格行内边距，充分利用屏幕宽度 */
+  .ant-table-small .ant-table-cell,
+  .ant-table .ant-table-cell {
+    padding: 6px 4px !important;
+  }
+
+  /* 移动端分页：不换行，尺寸紧凑 */
+  .ant-pagination {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+  }
+
+  .ant-pagination-item,
+  .ant-pagination-prev,
+  .ant-pagination-next,
+  .ant-pagination-jump-prev,
+  .ant-pagination-jump-next {
+    flex-shrink: 0 !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    line-height: 28px !important;
+    margin: 0 !important;
+  }
+
+  .ant-pagination-options {
+    flex-shrink: 0 !important;
+  }
+
+  /* 移动端总数文字换行处理 */
+  .ant-pagination-total-text {
+    flex-shrink: 0 !important;
+    font-size: 12px !important;
+  }
+
+  /* 移动端间距压缩，提高空间利用率 */
+  .charts-grid {
+    gap: 10px;
+  }
+
+  .section {
+    margin-bottom: 12px;
+  }
+}
+
+/* ── 分页组件间距修复（终极版）：确保最后一页不与快速翻页重叠 ── */
+.ant-pagination-item,
+.ant-pagination-jump-next,
+.ant-pagination-jump-prev {
+  min-width: 30px !important;
+  margin: 0 3px !important;
+}
+
+.ant-pagination-prev,
+.ant-pagination-next {
+  min-width: 28px !important;
+  margin: 0 2px !important;
+}
+
+/* 关键修复：jump-next 右侧紧邻的 page item（即最后一页）强制增加左间距 */
+.ant-pagination-jump-next + .ant-pagination-item {
+  margin-left: 10px !important;
+}
+
+/* 最后一个页码项强制左间距（双重保障） */
+.ant-pagination-item:last-of-type {
+  margin-left: 6px !important;
+}
+
+/* ── 全局中文状态文字垂直居中修复（Ant Design Badge） ── */
+/* 修复中文内容与图标小点垂直对齐问题（中文字体行高偏高） */
+.ant-badge-status-text {
+  display: inline-flex !important;
+  align-items: center !important;
+  vertical-align: middle !important;
+  line-height: 1 !important;
+}
+
+/* 通用状态内联文字居中类 */
+.status-inline-text {
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
+/* ── Markdown 内容渲染（流式响应输出内容） ── */
+.md-content {
+  font-size: 13px;
+  line-height: 1.75;
+  color: rgba(0, 0, 0, 0.8);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.md-content h1, .md-content h2, .md-content h3,
+.md-content h4, .md-content h5, .md-content h6 {
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 14px 0 6px;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.md-content h1 { font-size: 16px; }
+.md-content h2 { font-size: 15px; }
+.md-content h3 { font-size: 14px; }
+.md-content h4, .md-content h5, .md-content h6 { font-size: 13px; }
+
+.md-content p {
+  margin: 6px 0;
+}
+
+.md-content ul, .md-content ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.md-content li {
+  margin: 2px 0;
+}
+
+.md-content code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.md-content pre {
+  margin: 8px 0;
+  border-radius: 6px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 10px 12px;
+}
+
+.md-content pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.8);
+  line-height: 1.65;
+}
+
+.md-content blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid rgba(14, 165, 233, 0.5);
+  background: rgba(14, 165, 233, 0.04);
+  border-radius: 0 4px 4px 0;
+  color: rgba(0, 0, 0, 0.6);
+  font-style: italic;
+}
+
+.md-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.md-content th, .md-content td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 4px 10px;
+  text-align: left;
+}
+
+.md-content th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.md-content hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 12px 0;
+}
+
+.md-content a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.md-content a:hover {
+  text-decoration: underline;
+}
+
+.md-content strong { font-weight: 600; }
+.md-content em { font-style: italic; }
+
+/* 深色模式 */
+.md-content-dark {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.md-content-dark h1, .md-content-dark h2, .md-content-dark h3,
+.md-content-dark h4, .md-content-dark h5, .md-content-dark h6 {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.md-content-dark code {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.md-content-dark pre {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.md-content-dark pre code {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.md-content-dark blockquote {
+  background: rgba(14, 165, 233, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.md-content-dark th, .md-content-dark td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.md-content-dark th {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.md-content-dark hr {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Shimmer 骨架卡片（产品额度加载占位） ── */
+@keyframes hd-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.hd-shimmer-card {
+  height: 120px;
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-card, #fff) 25%,
+    var(--bg-secondary, #f5f5f4) 50%,
+    var(--bg-card, #fff) 75%
+  );
+  background-size: 800px 100%;
+  animation: hd-shimmer 1.4s ease-in-out infinite;
+  border: 1px solid var(--border-subtle, #e7e5e4);
+}

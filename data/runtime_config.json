@@ -1,0 +1,8 @@
+{
+  "upstream_url": "https://aigc.sankuai.com/v1/openai/native",
+  "proxy_port": 8888,
+  "dashboard_port": 8889,
+  "proxy_path": "/v1/openai/native",
+  "request_timeout": 300,
+  "log_retention_days": 30
+}

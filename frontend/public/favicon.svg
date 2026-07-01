@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- 蓝色方形背景（与侧边栏 logoIcon 一致） -->
+  <rect width="32" height="32" rx="7" fill="#0ea5e9"/>
+  <!-- 白色眼睛图标（与 EyeLogo SVG 一致，居中缩放到 20x20） -->
+  <g transform="translate(6, 6) scale(0.833)">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+          stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <circle cx="12" cy="12" r="3"
+            stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+</svg>

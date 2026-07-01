@@ -1,0 +1,200 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 0 10px 0;
+  flex-wrap: wrap;
+}
+
+/* 有页面标题时：左右两端对齐 */
+.headerWithTitle {
+  justify-content: space-between;
+}
+
+/* PC端页面标题（图标 + 文字） */
+.pageTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pageTitleIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pageTitleText {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 20px;
+  color: var(--accent-blue);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+/* controls 容器：flex 布局，允许换行 */
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 预设按钮组：第一行，不允许单独换行 */
+.presetGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.presetBtn {
+  flex-shrink: 0;
+}
+
+/* 日期范围选择器 */
+.rangePicker {
+  flex-shrink: 0;
+}
+
+/* ── 刷新模块：胶囊式整体容器 ──
+ * 外层 div 负责边框、圆角、整体激活状态；
+ * 内部左侧 Select（无边框）+ 右侧倒计时按钮（无边框），共享同一视觉边框。
+ */
+.refreshModule {
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border: 1px solid var(--border-default, rgba(0,0,0,0.15));
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  order: 99;
+  margin-left: auto;
+  transition: border-color 0.18s;
+  background: transparent;
+}
+
+.refreshModule:hover {
+  border-color: var(--accent-blue, #0ea5e9);
+}
+
+/* 有倒计时激活时，整体边框变蓝 */
+.refreshModuleActive {
+  border-color: rgba(14,165,233,0.45) !important;
+}
+
+/* 倒计时+刷新按钮：右侧区块，完全无独立边框，分隔线靠 Select 右侧实现 */
+.countdownRefreshBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  height: 100%;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.countdownRefreshBtn:hover {
+  color: var(--accent-blue, #0ea5e9);
+  background: rgba(14,165,233,0.05);
+}
+
+.countdownRefreshBtnActive {
+  color: var(--accent-blue, #0ea5e9);
+}
+
+.countdownText {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  font-size: 11px;
+  color: inherit;
+  font-family: var(--font-mono);
+  line-height: 1;
+  text-align: center;
+}
+
+.countdownTextActive {
+  color: var(--accent-blue, #0ea5e9);
+  font-weight: 500;
+}
+
+.refreshIcon {
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ── 移动端适配 (≤768px) ── */
+@media (max-width: 768px) {
+  .header {
+    padding: 0 0 10px 0;
+  }
+
+  .controls {
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  /* 移动端 presetGroup：4个按钮等分宽度，与 RangePicker 等宽 */
+  .presetGroup {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    width: 100%;
+  }
+
+  .presetBtn {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* 移动端 RangePicker 独占一行，宽度与 presetGroup 完全一致 */
+  .rangePicker {
+    width: 100% !important;
+    flex-basis: 100%;
+    margin: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .rangePicker {
+    width: 100% !important;
+  }
+}

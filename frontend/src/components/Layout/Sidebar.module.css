@@ -1,0 +1,120 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Logo ── */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.logoIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--accent-blue);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.logoText {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+/* ── 导航 ── */
+.nav {
+  flex: 1;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: color var(--duration-base) var(--ease-default),
+              background var(--duration-base) var(--ease-default);
+  cursor: pointer;
+}
+
+.navItem:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.navItemActive {
+  color: var(--accent-blue) !important;
+  background: var(--accent-blue-light) !important;
+}
+
+.navIcon {
+  display: flex;
+  align-items: center;
+  opacity: 0.8;
+}
+
+.navItemActive .navIcon {
+  opacity: 1;
+}
+
+.navLabel {
+  flex: 1;
+}
+
+/* ── 底部 ── */
+.footer {
+  padding: 12px 10px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.themeBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: color var(--duration-base) var(--ease-default),
+              background var(--duration-base) var(--ease-default);
+}
+
+.themeBtn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.themeBtnIcon {
+  display: flex;
+  align-items: center;
+}
+
+.themeBtnLabel {
+  font-size: 13px;
+}
