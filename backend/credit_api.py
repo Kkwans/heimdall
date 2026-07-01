@@ -580,10 +580,16 @@ def credit_auto_sync():
     """
     从本机浏览器（Chrome / Safari）自动读取 friday.sankuai.com 的 Cookie，
     保存到服务端 SQLite，无需用户手动复制粘贴。
-    仅限服务器本机运行时有效（Tailscale 等远程调用会通过已存 Cookie 使用）。
+    仅限 macOS 本机运行时有效（需要读取浏览器 Cookie 存储）。
+    Linux/Docker 环境不支持，请通过 POST /api/credit/cookie 手动粘贴 Cookie。
     """
     if request.method == 'OPTIONS':
         return _options_resp()
+
+    # Linux/Docker 环境：browser_cookie3 无法读取浏览器 Cookie
+    import platform as _platform
+    if _platform.system() != 'Darwin':
+        return jsonify({'code': 400, 'message': '自动同步仅支持 macOS（Docker 环境请通过 POST /api/credit/cookie 手动粘贴 Cookie）'}), 400
 
     try:
         import browser_cookie3  # type: ignore

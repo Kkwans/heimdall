@@ -11,15 +11,27 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(BACKEND_DIR)
 
 # ==========================================
+# 平台检测
+# ==========================================
+import platform as _platform
+IS_MACOS = _platform.system() == "Darwin"
+IS_LINUX = _platform.system() == "Linux"
+
+# ==========================================
 # 数据存储目录
 # ==========================================
-# 使用 ~/Library/Application Support/Heimdall/ 存放数据库和运行时配置。
-# 该路径是 macOS 专为应用持久化数据设计的标准位置，launchd 启动的进程
-# 对此路径始终拥有完整读写权限，不受 TCC（Desktop/Documents 沙箱）影响。
-# 注意：~/Desktop/... 下的文件会被 TCC 周期性降级权限（authorization denied）。
-APP_SUPPORT_DIR = os.path.join(
-    os.path.expanduser("~"), "Library", "Application Support", "Heimdall"
-)
+# 优先使用环境变量 HEIMDALL_DATA_DIR（Docker 部署时通过 docker-compose 注入）。
+# macOS 回退到 ~/Library/Application Support/Heimdall/（launchd 标准位置）。
+# Linux/Docker 默认 /data（Dockerfile 中 mkdir -p /data 并挂载 volume）。
+if os.getenv("HEIMDALL_DATA_DIR"):
+    APP_SUPPORT_DIR = os.getenv("HEIMDALL_DATA_DIR")
+elif IS_MACOS:
+    APP_SUPPORT_DIR = os.path.join(
+        os.path.expanduser("~"), "Library", "Application Support", "Heimdall"
+    )
+else:
+    # Linux/Docker 默认路径
+    APP_SUPPORT_DIR = "/data"
 # 确保目录存在（config 模块被导入时立即创建）
 os.makedirs(APP_SUPPORT_DIR, exist_ok=True)
 
@@ -31,9 +43,15 @@ DB_PATH = os.path.join(APP_SUPPORT_DIR, "heimdall.db")
 # ==========================================
 # 日志配置
 # ==========================================
-# 日志目录同样迁移到 ~/Library/Application Support/Heimdall/logs/，
-# 避免 launchd 进程因 TCC 限制无法读写 ~/Desktop/... 下的日志文件。
-LOG_DIR = os.path.join(APP_SUPPORT_DIR, "logs")
+# 优先使用环境变量 HEIMDALL_LOG_DIR。
+# macOS 回退到 APP_SUPPORT_DIR/logs/。
+# Linux/Docker 默认 /logs（Dockerfile 中 mkdir -p /logs 并挂载 volume）。
+if os.getenv("HEIMDALL_LOG_DIR"):
+    LOG_DIR = os.getenv("HEIMDALL_LOG_DIR")
+elif IS_MACOS:
+    LOG_DIR = os.path.join(APP_SUPPORT_DIR, "logs")
+else:
+    LOG_DIR = "/logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # 是否启用详细请求/响应日志（记录完整 prompt 和 response 内容）

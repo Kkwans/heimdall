@@ -23,12 +23,16 @@ if not os.path.exists(config.LOG_DIR):
 # ── 一次性数据迁移：旧 data/ → ~/Library/Application Support/Heimdall/ ──
 # DB_PATH 和 RUNTIME_CONFIG_PATH 已迁移到 APP_SUPPORT_DIR（不受 TCC 限制）。
 # 此函数在首次运行新版本时把旧路径的数据复制过去，保证历史数据不丢失。
+# 仅在 macOS 上执行（Linux/Docker 环境不存在旧的 ~/Library 路径）。
 def _migrate_data_to_app_support():
     """
     一次性数据迁移：把旧 data/ 目录的数据库和配置文件复制到 APP_SUPPORT_DIR。
     只在目标文件不存在时执行，不会重复覆盖。
     日志文件通过 logs/ 软链接处理（已在安装/升级时建立），此处不需要复制。
+    仅在 macOS 上执行。
     """
+    if not config.IS_MACOS:
+        return
     import shutil
     old_data_dir = os.path.join(config.BASE_DIR, "data")
 
@@ -870,22 +874,24 @@ if __name__ == '__main__':
             ensure_ascii = False
 
         # ── 把 dist/ 复制到 /tmp/heimdall-dist/，规避 macOS TCC 权限限制 ──
-        # launchd 启动的进程对 ~/Desktop/... 下文件的读取权限会被 TCC 周期性降级，
-        # 导致 [Errno 1] Operation not permitted。/tmp 不受 TCC 管控，从那里提供
-        # 静态文件服务可彻底规避该问题。每次启动时全量同步，保证文件是最新的。
-        _tmp_dist = "/tmp/heimdall-dist"
-        _src_dist = config.DASHBOARD_DIST_DIR
-        if os.path.isdir(_src_dist):
-            import shutil as _shutil
-            try:
-                if os.path.exists(_tmp_dist):
-                    _shutil.rmtree(_tmp_dist)
-                _shutil.copytree(_src_dist, _tmp_dist)
-                proxy_logger.info(f"[Dashboard] dist 已同步到 {_tmp_dist}")
-                # 把服务路径指向 /tmp/heimdall-dist
-                config.DASHBOARD_DIST_DIR = _tmp_dist
-            except Exception as _e:
-                proxy_logger.warning(f"[Dashboard] dist 同步到 /tmp 失败，使用原路径: {_e}")
+        # 仅在 macOS 上执行：launchd 启动的进程对 ~/Desktop/... 下文件的读取权限
+        # 会被 TCC 周期性降级，导致 [Errno 1] Operation not permitted。
+        # /tmp 不受 TCC 管控，从那里提供静态文件服务可彻底规避该问题。
+        # Linux/Docker 环境不存在 TCC 限制，直接使用原路径。
+        if config.IS_MACOS:
+            _tmp_dist = "/tmp/heimdall-dist"
+            _src_dist = config.DASHBOARD_DIST_DIR
+            if os.path.isdir(_src_dist):
+                import shutil as _shutil
+                try:
+                    if os.path.exists(_tmp_dist):
+                        _shutil.rmtree(_tmp_dist)
+                    _shutil.copytree(_src_dist, _tmp_dist)
+                    proxy_logger.info(f"[Dashboard] dist 已同步到 {_tmp_dist}")
+                    # 把服务路径指向 /tmp/heimdall-dist
+                    config.DASHBOARD_DIST_DIR = _tmp_dist
+                except Exception as _e:
+                    proxy_logger.warning(f"[Dashboard] dist 同步到 /tmp 失败，使用原路径: {_e}")
 
         dashboard_app = _Flask(__name__)
         dashboard_app.json_provider_class = _UTF8JSONProvider
@@ -906,25 +912,37 @@ if __name__ == '__main__':
         proxy_logger.info(f"  目标 API:   {config.TARGET_BASE_URL}")
         proxy_logger.info("=" * 60)
 
-        # 若 Dashboard 端口还没有进程，手动启动一次（兜底：launchd plist 不存在时）
+        # 若 Dashboard 端口还没有进程，手动启动一次
+        # macOS：优先通过 launchd kickstart 启动（有 plist 时）
+        # Linux/Docker：直接 fork 子进程
         if not _is_port_in_use(config.DASHBOARD_PORT):
-            dash_plist = os.path.expanduser("~/Library/LaunchAgents/com.heimdall.dashboard.plist")
-            if os.path.isfile(dash_plist):
-                # 有 plist：通过 launchctl kickstart，让 launchd 来管理
-                subprocess.Popen(
-                    ["launchctl", "kickstart", f"gui/{os.getuid()}/com.heimdall.dashboard"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-                proxy_logger.info("Dashboard 进程已通过 launchd kickstart 启动")
+            if config.IS_MACOS:
+                dash_plist = os.path.expanduser("~/Library/LaunchAgents/com.heimdall.dashboard.plist")
+                if os.path.isfile(dash_plist):
+                    # 有 plist：通过 launchctl kickstart，让 launchd 来管理
+                    subprocess.Popen(
+                        ["launchctl", "kickstart", f"gui/{os.getuid()}/com.heimdall.dashboard"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    proxy_logger.info("Dashboard 进程已通过 launchd kickstart 启动")
+                else:
+                    # 无 plist：直接 fork（兜底，launchd 不会守护此进程）
+                    subprocess.Popen(
+                        [sys.executable, __file__, '--dashboard'],
+                        cwd=config.BASE_DIR,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    proxy_logger.info("Dashboard 进程已启动（建议在设置页开启开机自启以获得 launchd 守护）")
             else:
-                # 无 plist：直接 fork（兜底，launchd 不会守护此进程）
+                # Linux/Docker：直接 fork 子进程
                 subprocess.Popen(
                     [sys.executable, __file__, '--dashboard'],
                     cwd=config.BASE_DIR,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                proxy_logger.info("Dashboard 进程已启动（建议在设置页开启开机自启以获得 launchd 守护）")
+                proxy_logger.info("Dashboard 进程已启动")
         else:
             proxy_logger.info(f"Dashboard 进程已在运行（端口 {config.DASHBOARD_PORT}）")
 

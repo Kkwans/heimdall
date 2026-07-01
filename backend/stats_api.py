@@ -595,18 +595,31 @@ def stats_request_detail(request_id):
 # ==========================================
 
 def _get_port_pid(port: int):
-    """检测指定端口是否被监听，返回 PID 或 None"""
-    try:
-        result = subprocess.run(
-            ["lsof", "-ti", f"tcp:{port}"],
-            capture_output=True, text=True, timeout=3
-        )
-        pid_str = result.stdout.strip()
-        if pid_str:
-            return int(pid_str.split('\n')[0])
-    except Exception:
-        pass
-    return None
+    """检测指定端口是否被监听，返回 PID 或 None。
+    macOS 使用 lsof（可获取 PID），Linux 使用 socket 探测（无法获取 PID 但可判断端口状态）。"""
+    if config.IS_MACOS:
+        try:
+            result = subprocess.run(
+                ["lsof", "-ti", f"tcp:{port}"],
+                capture_output=True, text=True, timeout=3
+            )
+            pid_str = result.stdout.strip()
+            if pid_str:
+                return int(pid_str.split('\n')[0])
+        except Exception:
+            pass
+        return None
+    else:
+        # Linux/Docker：使用 socket 探测（返回 1 表示端口被占用，None 表示空闲）
+        import socket as _socket
+        try:
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                if s.connect_ex(('127.0.0.1', port)) == 0:
+                    return 1  # 端口被占用（无法获取真实 PID）
+        except Exception:
+            pass
+        return None
 
 
 def _get_proxy_pid():
@@ -681,12 +694,14 @@ def proxy_stop():
     body = request.get_json(silent=True) or {}
     old_port = body.get("old_port")
 
-    # ── 关键：先 launchctl unload，防止 KeepAlive 在进程被杀后自动重拉 ──
+    # ── macOS：先 launchctl unload，防止 KeepAlive 在进程被杀后自动重拉 ──
     # unload 只注销 launchd 托管条目，不影响 plist 文件本身（开机自启状态不变）。
     # 若 plist 不存在或未托管，launchctl unload 会静默失败，不影响后续 kill。
-    proxy_plist = _get_plist_path()
-    if os.path.isfile(proxy_plist):
-        subprocess.run(["launchctl", "unload", proxy_plist], capture_output=True, timeout=5)
+    # Linux/Docker：无 launchd，跳过此步骤。
+    if config.IS_MACOS:
+        proxy_plist = _get_plist_path()
+        if os.path.isfile(proxy_plist):
+            subprocess.run(["launchctl", "unload", proxy_plist], capture_output=True, timeout=5)
 
     if old_port and int(old_port) != config.PROXY_PORT:
         # 端口变更场景：停止旧端口进程
@@ -746,8 +761,9 @@ def proxy_start():
         _time.sleep(0.1)
         if _get_port_pid(config.PROXY_PORT) is not None:
             pid = _get_proxy_pid()
-            # plist 存在时让 launchd 接管（静默失败不影响已运行进程）
-            if os.path.isfile(proxy_plist):
+            # macOS：plist 存在时让 launchd 接管（静默失败不影响已运行进程）
+            # Linux/Docker：无 launchd，跳过。
+            if config.IS_MACOS and os.path.isfile(proxy_plist):
                 subprocess.run(["launchctl", "load", proxy_plist], capture_output=True, timeout=5)
             return _cors_response({"success": True, "message": f"代理启动成功（PID {pid}，端口 {config.PROXY_PORT}）"})
 
@@ -759,12 +775,16 @@ def proxy_start():
 # ==========================================
 
 def _get_plist_path():
-    """获取代理服务 launchd plist 文件路径"""
+    """获取代理服务 launchd plist 文件路径（仅 macOS）"""
+    if not config.IS_MACOS:
+        return ""
     return os.path.expanduser("~/Library/LaunchAgents/com.heimdall.proxy.plist")
 
 
 def _get_dashboard_plist_path():
-    """获取 Dashboard 服务 launchd plist 文件路径"""
+    """获取 Dashboard 服务 launchd plist 文件路径（仅 macOS）"""
+    if not config.IS_MACOS:
+        return ""
     return os.path.expanduser("~/Library/LaunchAgents/com.heimdall.dashboard.plist")
 
 
@@ -870,11 +890,15 @@ def proxy_config_get():
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
-    # 两个 plist 都存在才算完整开启自启
-    autostart_enabled = (
-        os.path.isfile(_get_plist_path()) and
-        os.path.isfile(_get_dashboard_plist_path())
-    )
+    # macOS：两个 plist 都存在才算完整开启自启
+    # Linux/Docker：自启由 Docker restart policy 管理，此处固定返回 False
+    if config.IS_MACOS:
+        autostart_enabled = (
+            os.path.isfile(_get_plist_path()) and
+            os.path.isfile(_get_dashboard_plist_path())
+        )
+    else:
+        autostart_enabled = False
     return _cors_response({
         "proxy_port": cfg.get("proxy_port", config.PROXY_PORT),
         "dashboard_port": cfg.get("dashboard_port", getattr(config, 'DASHBOARD_PORT', 8889)),
@@ -922,6 +946,7 @@ def proxy_autostart_install():
     launchd 会在下次登录时读取 plist 自动生效；
     不执行 load/unload/bootout/bootstrap，避免任何 launchctl
     操作意外终止当前正在运行的进程（Dashboard 自身）。
+    Linux/Docker 环境不支持此功能（使用 Docker restart policy 替代）。
     """
     if request.method == "OPTIONS":
         resp = jsonify({})
@@ -929,6 +954,8 @@ def proxy_autostart_install():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
+    if not config.IS_MACOS:
+        return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
     try:
         proxy_script = os.path.join(config.BACKEND_DIR, "proxy.py")
         work_dir = config.BASE_DIR
@@ -955,6 +982,7 @@ def proxy_autostart_uninstall():
     关闭开机自启：只删除 plist 文件，不调用任何 launchctl 命令。
     plist 文件不存在后，下次登录 launchd 不再自启；
     不执行 unload/bootout，避免任何 launchctl 操作终止当前进程。
+    Linux/Docker 环境不支持此功能。
     """
     if request.method == "OPTIONS":
         resp = jsonify({})
@@ -962,6 +990,8 @@ def proxy_autostart_uninstall():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
+    if not config.IS_MACOS:
+        return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
     try:
         for plist_path in (_get_plist_path(), _get_dashboard_plist_path()):
             if os.path.isfile(plist_path):
