@@ -1,0 +1,3 @@
+# Heimdall 代理服务 Python 依赖
+flask>=3.0
+requests>=2.31

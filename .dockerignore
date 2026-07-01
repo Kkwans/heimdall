@@ -1,0 +1,9 @@
+# 构建上下文排除文件（注意：不能排除 frontend/，面板 Dockerfile 需要）
+.git
+scripts/
+data/
+*.md
+.env*
+__pycache__
+*.pyc
+.DS_Store

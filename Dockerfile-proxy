@@ -1,0 +1,40 @@
+# Heimdall 代理服务 Dockerfile
+# 职责：AI 请求转发、Token 统计、日志记录
+# 端口：8888
+# 构建：docker build -f Dockerfile-proxy -t heimdall-proxy:latest .
+
+FROM python:3.9-slim
+
+LABEL maintainer="Kkwans"
+LABEL description="Heimdall AI Proxy Service"
+
+# 安装系统依赖（无额外需求，保持最小镜像）
+
+# 设置工作目录
+WORKDIR /app
+
+# 先复制依赖文件，利用 Docker 层缓存
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制后端代码
+COPY backend/ .
+
+# 创建数据和日志目录（可被 volume 挂载覆盖）
+RUN mkdir -p /data /logs
+
+# 环境变量：覆盖 config.py 中的 macOS 默认路径
+ENV HEIMDALL_DATA_DIR=/data
+ENV HEIMDALL_LOG_DIR=/logs
+ENV HEIMDALL_PORT=8888
+ENV PYTHONUNBUFFERED=1
+
+# 暴露代理端口
+EXPOSE 8888
+
+# 健康检查：检测代理端口是否可连接
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()" || exit 1
+
+# 启动代理服务
+CMD ["python", "proxy.py", "--proxy"]
