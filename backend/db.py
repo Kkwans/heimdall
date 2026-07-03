@@ -105,6 +105,7 @@ def init_db():
         for col_def in [
             "ALTER TABLE requests ADD COLUMN request_body  TEXT DEFAULT NULL",
             "ALTER TABLE requests ADD COLUMN response_body TEXT DEFAULT NULL",
+            "ALTER TABLE requests ADD COLUMN provider TEXT DEFAULT NULL",
         ]:
             try:
                 cursor.execute(col_def)
@@ -137,7 +138,8 @@ def _do_insert(record: dict):
                 latency_ms, ttfb_ms,
                 status_code, success, error_type,
                 trace_id, client_ip,
-                request_body, response_body
+                request_body, response_body,
+                provider
             ) VALUES (
                 :created_at, :date, :model, :original_model, :stream, :messages_count,
                 :prompt_tokens, :completion_tokens, :total_tokens,
@@ -145,7 +147,8 @@ def _do_insert(record: dict):
                 :latency_ms, :ttfb_ms,
                 :status_code, :success, :error_type,
                 :trace_id, :client_ip,
-                :request_body, :response_body
+                :request_body, :response_body,
+                :provider
             )
         """, record)
         conn.commit()

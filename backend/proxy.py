@@ -260,6 +260,8 @@ import requests as http_requests
 import db
 db.init_db()
 
+import providers
+
 # 启动时加载持久化运行时配置（upstream_url / timeout / log_retention_days 等）
 _rt_cfg_path = config.RUNTIME_CONFIG_PATH
 if os.path.isfile(_rt_cfg_path):
@@ -299,6 +301,7 @@ def build_record(
     client_ip: str = "",
     request_body: str = None,
     response_body: str = None,
+    provider: str = None,
 ) -> dict:
     """构建请求记录 dict，用于写入数据库和日志"""
     original_model = request_data.get("model", "unknown")
@@ -352,6 +355,7 @@ def build_record(
         "client_ip": client_ip,
         "request_body": request_body,
         "response_body": response_body,
+        "provider": provider,
     }
 
 
@@ -398,6 +402,7 @@ def log_request(record: dict):
       [💥 500] 🤖 glm-4.5 〜 | ⏱ 1.2min 🐢 | 🪙 入200 出0 总200 | ❌ timeout
     """
     model = record.get("model", "unknown")
+    provider = record.get("provider", "")
     is_stream = bool(record.get("stream", 0))
     latency = record.get("latency_ms", 0)
     ttfb = record.get("ttfb_ms", 0)
@@ -452,8 +457,11 @@ def log_request(record: dict):
     # ── 错误类型 ──
     error_str = f" | ❌ {error_type}" if error_type else ""
 
+    # ── 厂商标识（有 provider 时显示）──
+    provider_str = f"[{provider}] " if provider else ""
+
     msg = (
-        f"[{status_icon} {status}] 🤖 {model} {stream_icon} | "
+        f"[{status_icon} {status}] {provider_str}🤖 {model} {stream_icon} | "
         f"⏱ {latency_str}{ttfb_str} | "
         f"{token_str}"
         f"{cache_str}"
@@ -464,18 +472,28 @@ def log_request(record: dict):
     proxy_logger.info(msg)
 
 
-def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str) -> Response:
+def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'providers.RouteResult' = None) -> Response:
     """处理非流式请求"""
     usage = {}
     status_code = 500
     trace_id = ""
     error_type = None
+    provider_key = route.provider_key if route else None
+
+    # 确定上游 URL 和 headers
+    base_url = route.base_url if route else config.TARGET_BASE_URL
+    upstream_url = f"{base_url}/chat/completions"
+
+    # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key
+    upstream_headers = dict(headers)
+    if route and route.api_key and not upstream_headers.get('Authorization'):
+        upstream_headers['Authorization'] = f"Bearer {route.api_key}"
 
     try:
         resp = http_requests.post(
-            f"{config.TARGET_BASE_URL}/chat/completions",
+            upstream_url,
             json=data,
-            headers=headers,
+            headers=upstream_headers,
             timeout=config.REQUEST_TIMEOUT
         )
         status_code = resp.status_code
@@ -503,7 +521,8 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, status_code, usage, latency_ms, is_stream=False,
                               trace_id=trace_id, client_ip=client_ip,
-                              request_body=req_body_str, response_body=resp_body_str)
+                              request_body=req_body_str, response_body=resp_body_str,
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
 
@@ -514,7 +533,8 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         error_type = "timeout"
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 504, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip)
+                              error_type=error_type, client_ip=client_ip,
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 请求超时: model={data.get('model', 'unknown')}")
@@ -524,7 +544,8 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         error_type = "connection_error"
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 502, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip)
+                              error_type=error_type, client_ip=client_ip,
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 连接失败: model={data.get('model', 'unknown')}")
@@ -534,24 +555,36 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         error_type = "unknown"
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 500, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip)
+                              error_type=error_type, client_ip=client_ip,
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 未知错误: {e}", exc_info=True)
         return Response('{"error": "Internal Server Error"}', status=500, content_type='application/json')
 
 
-def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) -> Response:
+def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'providers.RouteResult' = None) -> Response:
     """处理流式请求（SSE）"""
+
+    # 确定上游 URL 和 headers
+    base_url = route.base_url if route else config.TARGET_BASE_URL
+    upstream_url = f"{base_url}/chat/completions"
+
+    # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key
+    upstream_headers = dict(headers)
+    if route and route.api_key and not upstream_headers.get('Authorization'):
+        upstream_headers['Authorization'] = f"Bearer {route.api_key}"
+
+    provider_key = route.provider_key if route else None
 
     # 先建立连接，检查上游状态码
     # 上游非 200 时直接返回带正确 HTTP 状态码的 JSON 错误响应，
     # 让客户端（如 Codex）能感知到具体错误原因，而不是静默失败
     try:
         upstream_resp = http_requests.post(
-            f"{config.TARGET_BASE_URL}/chat/completions",
+            upstream_url,
             json=data,
-            headers=headers,
+            headers=upstream_headers,
             stream=True,
             timeout=config.REQUEST_TIMEOUT
         )
@@ -559,7 +592,8 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) 
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 504, {}, latency_ms, is_stream=True,
                               error_type="timeout", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False))
+                              request_body=json.dumps(data, ensure_ascii=False),
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求超时: model={data.get('model', 'unknown')}")
@@ -569,7 +603,8 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) 
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 502, {}, latency_ms, is_stream=True,
                               error_type="connection_error", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False))
+                              request_body=json.dumps(data, ensure_ascii=False),
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求连接失败: model={data.get('model', 'unknown')}")
@@ -579,7 +614,8 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) 
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 500, {}, latency_ms, is_stream=True,
                               error_type="unknown", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False))
+                              request_body=json.dumps(data, ensure_ascii=False),
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求未知错误: {e}", exc_info=True)
@@ -606,7 +642,8 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) 
         record = build_record(data, status_code, {}, latency_ms, is_stream=True,
                               trace_id=trace_id, client_ip=client_ip,
                               request_body=json.dumps(data, ensure_ascii=False),
-                              response_body=err_text)
+                              response_body=err_text,
+                              provider=provider_key)
         db.insert_request(record)
         log_request(record)
         content_type = upstream_resp.headers.get('Content-Type', 'application/json')
@@ -671,7 +708,8 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str) 
                 data, status_code, usage, latency_ms,
                 is_stream=True, ttfb_ms=ttfb_ms,
                 trace_id=trace_id, error_type=error_type, client_ip=client_ip,
-                request_body=req_body_str, response_body=resp_body_str
+                request_body=req_body_str, response_body=resp_body_str,
+                provider=provider_key
             )
             db.insert_request(record)
             log_request(record)
@@ -688,7 +726,7 @@ def _estimate_tokens(data: dict) -> int:
     return len(json.dumps(data, ensure_ascii=False).encode('utf-8')) // 3
 
 
-def _trim_messages_if_needed(data: dict) -> dict:
+def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
     """
     Token 超限保护：在转发前检测估算 token 是否超出模型上限的 90%。
     若超限，按以下策略依次缩减，直到满足限制：
@@ -696,12 +734,14 @@ def _trim_messages_if_needed(data: dict) -> dict:
       2. 若截断所有 tool result 仍超限，则移除最早的 tool result 条目
     保留 system / user / assistant 消息不动，尽量保留对话语义。
     """
+    # 优先使用传入的 context_window（来自路由配置），否则从 config 查询
     model_name = data.get('model', '').lower()
-    ctx_window = config.get_context_window(model_name)
-    if not ctx_window:
+    if context_window is None:
+        context_window = config.get_context_window(model_name)
+    if not context_window:
         return data  # 未知模型，不处理
 
-    token_limit = int(ctx_window * 0.90)  # 90% 安全水位
+    token_limit = int(context_window * 0.90)  # 90% 安全水位
     estimated = _estimate_tokens(data)
     if estimated <= token_limit:
         return data  # 未超限，直接返回
@@ -711,7 +751,7 @@ def _trim_messages_if_needed(data: dict) -> dict:
     msgs = data.get('messages', [])
 
     system_logger.warning(
-        f"[TRIM] 请求 token 估算 {estimated:,} 超出 {model_name} 上限 {ctx_window:,} 的90%"
+        f"[TRIM] 请求 token 估算 {estimated:,} 超出 {model_name} 上限 {context_window:,} 的90%"
         f"({token_limit:,})，开始截断 tool result"
     )
 
@@ -763,32 +803,49 @@ def proxy():
         # 这样可以兼容部分客户端漏传 Content-Type 的情况
         data = request.get_json(silent=True, force=True) or {}
 
-        # 核心逻辑：截取 model 字段的前缀（保持原有逻辑不变）
-        if data and 'model' in data:
-            original_model = data['model']
-            if '/' in original_model:
-                data['model'] = original_model.split('/')[-1]
+        if not data or 'model' not in data:
+            return Response('{"error":{"message":"Missing model field","type":"invalid_request_error"}}',
+                            status=400, content_type='application/json')
+
+        original_model = data['model']
+
+        # ── 路由查找：根据 model 字段确定上游 API ──
+        auth_header = request.headers.get('Authorization', '')
+        route = providers.resolve_route(original_model, auth_header)
+
+        if isinstance(route, providers.RouteError):
+            system_logger.warning(f"[PROXY] 路由失败: model={original_model} error={route.message}")
+            return Response(
+                json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),
+                status=route.status_code, content_type='application/json'
+            )
+
+        # 记录路由信息到日志
+        system_logger.info(
+            f"[PROXY] 路由: {original_model} → {route.provider_key}/{route.model_name}"
+            f" ({route.base_url})"
+        )
+
+        # 将 model 替换为上游实际模型名（去掉 provider 前缀）
+        data['model'] = route.model_name
 
         # ── Token 超限保护 ──────────────────────────────────────────
-        # 在转发前估算 token 数，若超出模型上限的 90%，从最早的 tool result
-        # 开始截断，直到满足限制。避免上游直接返回 400。
-        # token 估算：len(json字节) / 3（保守估算，含 base64 图片等高密度内容）
-        data = _trim_messages_if_needed(data)
+        data = _trim_messages_if_needed(data, context_window=route.context_window)
         # ────────────────────────────────────────────────────────────
 
         # 提取鉴权头部
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': request.headers.get('Authorization', '')
+            'Authorization': auth_header,
         }
 
         # 判断是否流式请求
         is_stream = data.get('stream', False)
 
         if is_stream:
-            return handle_stream(data, headers, start_time, client_ip)
+            return handle_stream(data, headers, start_time, client_ip, route=route)
         else:
-            return handle_non_stream(data, headers, start_time, client_ip)
+            return handle_non_stream(data, headers, start_time, client_ip, route=route)
 
     except Exception as e:
         # 兜底异常捕获：确保任何未预期的错误都返回 JSON 格式，而非 Flask 默认的 HTML 500 页面
