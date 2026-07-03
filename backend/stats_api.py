@@ -538,6 +538,23 @@ def stats_by_model():
         return _cors_response({"error": str(e)}, 500)
 
 
+@stats_bp.route("/api/stats/by-provider", methods=["GET", "OPTIONS"])
+def stats_by_provider():
+    """按厂商聚合的统计数据（基于请求中的 provider 字段）"""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+
+    try:
+        data = db.query_provider_stats(start_date, end_date)
+        return _cors_response({"data": data})
+    except Exception as e:
+        return _cors_response({"error": str(e)}, 500)
+
+
 @stats_bp.route("/api/stats/error-analysis", methods=["GET", "OPTIONS"])
 def stats_error_analysis():
     """错误类型聚合统计"""

@@ -672,6 +672,88 @@ def query_hourly(target_date: str) -> list:
         return []
 
 
+def query_provider_stats(start_date: str, end_date: str) -> list:
+    """按厂商聚合的统计数据（基于 requests 表的 provider 字段）
+    
+    返回格式与 query_model_stats 类似，按 provider 分组：
+    - provider 为空或 NULL 时归类为 "default"（未配置路由时的默认厂商）
+    - 包含请求数、Token 消耗、延迟、成功率等指标
+    """
+    try:
+        conn = _get_conn()
+        rows = conn.execute("""
+            SELECT
+                COALESCE(NULLIF(provider, ''), 'default')  AS provider,
+                COUNT(*)                                                         AS total_requests,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END)                    AS success_requests,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END)                    AS error_requests,
+                SUM(CASE WHEN stream = 1 THEN 1 ELSE 0 END)                     AS stream_requests,
+
+                -- 耗时
+                AVG(latency_ms)                                                  AS avg_total_latency_ms,
+                AVG(CASE WHEN stream = 1 THEN ttfb_ms ELSE NULL END)             AS avg_ttfb_ms,
+                AVG(CASE WHEN stream = 1 THEN latency_ms - ttfb_ms ELSE NULL END) AS avg_output_ms,
+
+                -- Token
+                SUM(total_tokens)                                                AS total_tokens,
+                SUM(prompt_tokens)                                               AS total_prompt_tokens,
+                SUM(completion_tokens)                                           AS total_completion_tokens,
+                SUM(cache_hit_tokens)                                            AS total_cache_hit_tokens,
+                AVG(total_tokens)                                                AS avg_total_tokens,
+
+                -- 缓存命中率
+                CASE
+                    WHEN SUM(prompt_tokens) > 0
+                    THEN ROUND(CAST(SUM(cache_hit_tokens) AS REAL) / SUM(prompt_tokens), 4)
+                    ELSE 0
+                END                                                              AS cache_hit_rate,
+
+                -- 成功率
+                ROUND(CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) AS success_rate,
+
+                -- 模型列表（该厂商下的所有模型）
+                GROUP_CONCAT(DISTINCT model)                                     AS models
+
+            FROM requests
+            WHERE date BETWEEN ? AND ?
+            GROUP BY provider
+            ORDER BY total_tokens DESC
+        """, (start_date, end_date)).fetchall()
+
+        result = []
+        for r in rows:
+            row = dict(r)
+            # 计算 P50/P90/P99 延迟
+            latencies = [x[0] for x in conn.execute(
+                "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? "
+                "AND COALESCE(NULLIF(provider, ''), 'default') = ? AND latency_ms > 0 "
+                "ORDER BY latency_ms",
+                (start_date, end_date, row["provider"])
+            ).fetchall()]
+
+            def _pct(data, p):
+                if not data:
+                    return 0
+                idx = min(int(len(data) * p / 100), len(data) - 1)
+                return data[idx]
+
+            row["p50_latency_ms"] = _pct(latencies, 50)
+            row["p90_latency_ms"] = _pct(latencies, 90)
+            row["p99_latency_ms"] = _pct(latencies, 99)
+            # models 字段转为列表
+            row["models"] = (row.get("models") or "").split(",") if row.get("models") else []
+            # 四舍五入
+            for k in ["avg_total_latency_ms", "avg_ttfb_ms", "avg_output_ms", "avg_total_tokens"]:
+                if row.get(k) is not None:
+                    row[k] = round(row[k], 1)
+            result.append(row)
+
+        return result
+    except Exception as e:
+        _logger.error(f"[DB] query_provider_stats 失败: {e}", exc_info=True)
+        return []
+
+
 def query_request_detail(request_id: int):
     """获取单条请求的完整信息，包含 request_body / response_body"""
     try:
