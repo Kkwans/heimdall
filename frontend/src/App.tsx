@@ -13,6 +13,7 @@ const Requests = React.lazy(() => import('./pages/Requests'))
 const Logs = React.lazy(() => import('./pages/Logs'))
 const Stats = React.lazy(() => import('./pages/Stats'))
 const AICredit = React.lazy(() => import('./pages/AICredit'))
+const Admin = React.lazy(() => import('./pages/Admin'))
 
 // Ant Design 主题配置（根据 ThemeContext 动态切换）
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -86,6 +87,7 @@ export default function App() {
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/logs" element={<Logs />} />
                   <Route path="/credit" element={<AICredit />} />
+                  <Route path="/admin" element={<Admin />} />
                 </Routes>
               </React.Suspense>
             </Layout>

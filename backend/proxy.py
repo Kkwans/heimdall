@@ -261,6 +261,13 @@ import db
 db.init_db()
 
 import providers
+import router
+import auth
+from admin_api import admin_bp
+
+# 初始化路由表和认证表
+router.init_routing_tables()
+auth.init_auth_tables()
 
 # 启动时加载持久化运行时配置（upstream_url / timeout / log_retention_days 等）
 _rt_cfg_path = config.RUNTIME_CONFIG_PATH
@@ -287,6 +294,7 @@ app = Flask(__name__)
 # Dashboard 静态文件由 8889 进程独立服务
 from stats_api import stats_bp
 app.register_blueprint(stats_bp)
+app.register_blueprint(admin_bp)
 
 
 def build_record(
@@ -809,8 +817,25 @@ def proxy():
 
         original_model = data['model']
 
-        # ── 路由查找：根据 model 字段确定上游 API ──
+        # ── API Key 认证检查 ──
         auth_header = request.headers.get('Authorization', '')
+        api_key = None
+        if auth_header.startswith('Bearer '):
+            api_key = auth_header[7:]
+        
+        # 检查是否是 Heimdall API Key
+        key_info = None
+        if api_key and api_key.startswith('heimdall-'):
+            key_info = auth.validate_api_key(api_key)
+            if not key_info:
+                return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
+                               status=401, content_type='application/json')
+            # 检查模型权限
+            if not auth.check_model_access(key_info, original_model):
+                return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
+                               status=403, content_type='application/json')
+
+        # ── 路由查找：根据 model 字段确定上游 API ──
         route = providers.resolve_route(original_model, auth_header)
 
         if isinstance(route, providers.RouteError):
