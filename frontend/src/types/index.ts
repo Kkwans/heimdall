@@ -124,3 +124,26 @@ export interface HourlyStat {
   total_tokens: number
   avg_latency_ms: number
 }
+
+// v3 新增：厂商维度统计
+export interface ProviderStats {
+  provider: string
+  total_requests: number
+  success_requests: number
+  error_requests: number
+  stream_requests: number
+  avg_total_latency_ms: number
+  avg_ttfb_ms: number | null
+  avg_output_ms: number | null
+  total_tokens: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_cache_hit_tokens: number
+  avg_total_tokens: number
+  cache_hit_rate: number
+  success_rate: number
+  models: string[]
+  p50_latency_ms: number
+  p90_latency_ms: number
+  p99_latency_ms: number
+}

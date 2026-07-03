@@ -9,6 +9,7 @@ import type {
   ErrorAnalysis,
   HourlyStat,
   RequestRecord,
+  ProviderStats,
 } from '../types'
 
 const api = axios.create({
@@ -157,5 +158,20 @@ export async function fetchHourly(date?: string): Promise<{ data: HourlyStat[]; 
  */
 export async function fetchRequestDetail(id: number): Promise<RequestRecord> {
   const { data } = await api.get(`/api/stats/request/${id}/detail`)
+  return data
+}
+
+// ==========================================
+// v3 新增：厂商维度统计 API
+// ==========================================
+
+/**
+ * 按厂商聚合的统计数据
+ */
+export async function fetchProviderStats(params: {
+  start_date?: string
+  end_date?: string
+}): Promise<{ data: ProviderStats[] }> {
+  const { data } = await api.get('/api/stats/by-provider', { params })
   return data
 }

@@ -22,10 +22,11 @@ import {
   fetchModelStats,
   fetchErrorAnalysis,
   fetchHourly,
+  fetchProviderStats,
 } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
-import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData } from '../types'
+import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
 import { fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
 import { PAGE_ICON_STYLE } from '../components/Charts/chartTheme'
 
@@ -714,6 +715,297 @@ function DailyCacheChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
 }
 
 // ──────────────────────────────────────────
+// 图表：厂商 Token 消耗（饼/环形图）
+// ──────────────────────────────────────────
+function ProviderTokenPieChart({ data, isMobile }: { data: ProviderStats[]; isMobile: boolean }) {
+  const height = isMobile ? CHART_HEIGHT_MOBILE + 40 : CHART_HEIGHT + 20
+  const chartRef = React.useRef<ReactECharts>(null)
+  const touchStartX = React.useRef<number>(0)
+  const touchStartY = React.useRef<number>(0)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(deltaX) <= Math.abs(deltaY) || Math.abs(deltaX) < 30) return
+    const instance = chartRef.current?.getEchartsInstance()
+    if (!instance) return
+    instance.dispatchAction({ type: 'legendScroll', scrollDataIndex: deltaX < 0 ? 1 : -1, legendId: undefined })
+  }
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const deltaX = Math.abs(e.touches[0].clientX - touchStartX.current)
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartY.current)
+    if (deltaX > deltaY && deltaX > 10) e.stopPropagation()
+  }
+
+  const option = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} tokens ({d}%)' },
+    legend: isMobile
+      ? {
+          type: 'scroll' as const,
+          orient: 'horizontal' as const,
+          bottom: 0,
+          left: 'center' as const,
+          textStyle: { fontSize: 10 },
+          formatter: (name: string) => name.length > 12 ? name.slice(0, 12) + '…' : name,
+          ...PAGE_ICON_STYLE,
+        }
+      : {
+          type: 'scroll' as const,
+          orient: 'vertical' as const,
+          right: 12,
+          top: 'middle' as const,
+          textStyle: { fontSize: 11 },
+          width: 'auto',
+          ...PAGE_ICON_STYLE,
+        },
+    series: [
+      {
+        type: 'pie',
+        radius: isMobile ? ['38%', '62%'] : ['40%', '65%'],
+        center: isMobile ? ['50%', '42%'] : ['32%', '50%'],
+        data: data.map((d, i) => ({
+          name: d.provider,
+          value: d.total_tokens,
+          itemStyle: { color: SERIES_COLORS[i % SERIES_COLORS.length] },
+        })),
+        label: { show: !isMobile, fontSize: 10, formatter: '{d}%' },
+        labelLine: { show: !isMobile },
+      },
+    ],
+  }
+  return (
+    <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onTouchMove={handleTouchMove}>
+      <ReactECharts ref={chartRef} option={option} style={{ height }} />
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────
+// 图表：厂商延迟对比（P50 / P90 / P99 柱状图）
+// ──────────────────────────────────────────
+function ProviderLatencyCompare({ data, isDark }: { data: ProviderStats[]; isDark: boolean }) {
+  const providers = data.map(d => d.provider)
+  const option = {
+    tooltip: { trigger: 'axis' },
+    legend: legendBottom(),
+    grid: gridWithLegendLarge,
+    xAxis: {
+      type: 'category',
+      data: providers,
+      axisLabel: { fontSize: 10, interval: 0, rotate: 45, overflow: 'truncate', width: 60 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 10, formatter: (v: number) => fmtMs(v) },
+      splitLine: splitLine(isDark),
+    },
+    series: [
+      { name: 'P50', type: 'bar', data: data.map(d => d.p50_latency_ms), itemStyle: { color: '#10b981' } },
+      { name: 'P90', type: 'bar', data: data.map(d => d.p90_latency_ms), itemStyle: { color: '#f59e0b' } },
+      { name: 'P99', type: 'bar', data: data.map(d => d.p99_latency_ms), itemStyle: { color: '#f43f5e' } },
+    ],
+  }
+  return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
+}
+
+// ──────────────────────────────────────────
+// 图表：厂商成功率 + 请求量对比（双轴）
+// ──────────────────────────────────────────
+function ProviderOverviewChart({ data, isDark }: { data: ProviderStats[]; isDark: boolean }) {
+  const providers = data.map(d => d.provider)
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any[]) => {
+        const lines = [params[0].axisValue]
+        for (const p of params) {
+          if (p.seriesName === '成功率') {
+            lines.push(`${p.marker} ${p.seriesName}: ${pctStr(p.value)}`)
+          } else {
+            lines.push(`${p.marker} ${p.seriesName}: ${p.value.toLocaleString()}`)
+          }
+        }
+        return lines.join('<br/>')
+      },
+    },
+    legend: legendBottom(),
+    grid: gridWithLegend,
+    xAxis: {
+      type: 'category',
+      data: providers,
+      axisLabel: { fontSize: 10, interval: 0, rotate: 45, overflow: 'truncate', width: 60 },
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '请求数',
+        nameTextStyle: { fontSize: 10 },
+        axisLabel: { fontSize: 10 },
+        splitLine: splitLine(isDark),
+      },
+      {
+        type: 'value',
+        name: '成功率',
+        nameTextStyle: { fontSize: 10 },
+        position: 'right',
+        min: 0,
+        max: 1,
+        axisLabel: { fontSize: 10, formatter: (v: number) => `${(v * 100).toFixed(0)}%` },
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      {
+        name: '成功请求',
+        type: 'bar',
+        yAxisIndex: 0,
+        data: data.map(d => d.success_requests),
+        itemStyle: { color: '#10b981' },
+      },
+      {
+        name: '失败请求',
+        type: 'bar',
+        yAxisIndex: 0,
+        data: data.map(d => d.error_requests),
+        itemStyle: { color: '#f43f5e' },
+      },
+      {
+        name: '成功率',
+        type: 'line',
+        yAxisIndex: 1,
+        data: data.map(d => d.success_rate),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        itemStyle: { color: '#a78bfa' },
+        lineStyle: { width: 2 },
+      },
+    ],
+  }
+  return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
+}
+
+// ──────────────────────────────────────────
+// 子组件：厂商统计表
+// ──────────────────────────────────────────
+function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading: boolean }) {
+  const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
+  const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
+
+  const columns: ColumnsType<ProviderStats> = [
+    {
+      title: '厂商',
+      dataIndex: 'provider',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (v: string) => (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <Tag color="purple" style={{ fontSize: 11, borderRadius: 2, margin: 0 }}>{v}</Tag>
+        </div>
+      ),
+    },
+    {
+      title: '总请求',
+      dataIndex: 'total_requests',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => a.total_requests - b.total_requests,
+      render: (v: number) => <span style={mono}>{v.toLocaleString()}</span>,
+    },
+    {
+      title: '成功率',
+      dataIndex: 'success_rate',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => a.success_rate - b.success_rate,
+      render: (v: number) => (
+        <span style={{ color: v >= 0.99 ? '#10b981' : v >= 0.95 ? '#f59e0b' : '#f43f5e', ...mono }}>
+          {pctStr(v)}
+        </span>
+      ),
+    },
+    {
+      title: '总 Token',
+      dataIndex: 'total_tokens',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => a.total_tokens - b.total_tokens,
+      render: (v: number) => <span style={mono}>{fmtTokens(v)}</span>,
+    },
+    {
+      title: '缓存命中率',
+      dataIndex: 'cache_hit_rate',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => a.cache_hit_rate - b.cache_hit_rate,
+      render: (v: number) => (
+        <span style={{ color: v >= 0.3 ? '#f59e0b' : 'var(--text-secondary)', ...mono }}>
+          {pctStr(v)}
+        </span>
+      ),
+    },
+    {
+      title: '均耗时',
+      dataIndex: 'avg_total_latency_ms',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => (a.avg_total_latency_ms ?? 0) - (b.avg_total_latency_ms ?? 0),
+      render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span>,
+    },
+    {
+      title: 'P90',
+      dataIndex: 'p90_latency_ms',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      sorter: (a, b) => a.p90_latency_ms - b.p90_latency_ms,
+      render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span>,
+    },
+    {
+      title: '模型',
+      key: 'models',
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (_, r) => (
+        <Space size={4} wrap>
+          {r.models.slice(0, 3).map(m => (
+            <Tag key={m} color="geekblue" style={{ fontSize: 10, borderRadius: 2, margin: 0 }}>
+              {m.length > 15 ? m.slice(0, 15) + '…' : m}
+            </Tag>
+          ))}
+          {r.models.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{r.models.length - 3}</span>}
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <Table<ProviderStats>
+      columns={columns}
+      dataSource={data}
+      rowKey="provider"
+      loading={loading ? TABLE_SPIN_INDICATOR : false}
+      locale={{ emptyText: loading ? <span /> : '暂无厂商数据' }}
+      size="small"
+      showSorterTooltip={false}
+      pagination={false}
+      scroll={{ x: 'max-content' }}
+    />
+  )
+}
+
+// ──────────────────────────────────────────
 // 主页面
 // ──────────────────────────────────────────
 export default function Stats() {
@@ -731,6 +1023,7 @@ export default function Stats() {
 
   const [loading, setLoading] = useState(true)
   const [modelStats, setModelStats] = useState<ModelStats[]>([])
+  const [providerStats, setProviderStats] = useState<ProviderStats[]>([])
   const [errorAnalysis, setErrorAnalysis] = useState<ErrorAnalysis[]>([])
   const [hourly, setHourly] = useState<HourlyStat[]>([])
   const [dailyData, setDailyData] = useState<DailyData[]>([])
@@ -754,13 +1047,15 @@ export default function Stats() {
         ...(dateRange.start ? { start_date: dateRange.start } : {}),
         ...(dateRange.end ? { end_date: dateRange.end } : {}),
       }
-      const [ms, ea, hd, dd] = await Promise.all([
+      const [ms, ps, ea, hd, dd] = await Promise.all([
         fetchModelStats(params),
+        fetchProviderStats(params),
         fetchErrorAnalysis(params),
         fetchHourly(hourlyDate),
         fetchDaily(params),
       ])
       setModelStats(ms.data)
+      setProviderStats(ps.data)
       setErrorAnalysis(ea.data)
       setHourly(hd.data)
       setDailyData(dd.data)
@@ -825,6 +1120,48 @@ export default function Stats() {
           </Card>
         </Col>
       </Row>
+
+      {/* 厂商统计：按厂商详细统计表 */}
+      {providerStats.length > 0 && (
+        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+          <Col xs={24}>
+            <Card
+              title={sectionTitle('厂商数据', `${providerStats.length} 个厂商`)}
+              bordered={false}
+              className="hd-card"
+              style={cardStyle}
+              size="small"
+            >
+              <ProviderStatsTable data={providerStats} loading={loading} />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* 厂商图表：Token 消耗 + 延迟对比 + 请求概览 */}
+      {providerStats.length > 0 && (
+        <>
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={12}>
+              <Card title={sectionTitle('厂商 Token 占比', '按厂商分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
+                <ProviderTokenPieChart data={providerStats} isMobile={isMobile} />
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title={sectionTitle('厂商延迟对比', 'P50 / P90 / P99')} bordered={false} className="hd-card" style={cardStyle} size="small">
+                <ProviderLatencyCompare data={providerStats} isDark={isDark} />
+              </Card>
+            </Col>
+          </Row>
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24}>
+              <Card title={sectionTitle('厂商请求概览', '请求数 + 成功率')} bordered={false} className="hd-card" style={cardStyle} size="small">
+                <ProviderOverviewChart data={providerStats} isDark={isDark} />
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
 
       {/* 小时分布（独占一行） */}
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
