@@ -1,5 +1,5 @@
 # Heimdall 面板服务 Dockerfile
-# 职责：统计 API、代理管理、Credit API、前端静态文件
+# 职责：统计 API、代理管理、前端静态文件
 # 端口：8889
 # 构建：docker build -f Dockerfile-dashboard -t heimdall-dashboard:latest .
 #
@@ -11,17 +11,14 @@ FROM python:3.9-slim
 LABEL maintainer="Kkwans"
 LABEL description="Heimdall Dashboard Service"
 
-# 安装系统依赖 + Docker CLI
+# 安装系统依赖 + Docker CLI（静态二进制）
+# 使用 HTTP_PROXY/HTTPS_PROXY 加速下载
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        gnupg \
-        lsb-release && \
-    # 安装 Docker CLI
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli && \
+    apt-get install -y --no-install-recommends curl && \
+    # 下载 Docker 静态二进制（使用代理）
+    curl -fsSL --proxy "${HTTP_PROXY:-}" https://download.docker.com/linux/static/stable/$(uname -m)/docker-24.0.7.tgz | tar xz -C /tmp && \
+    mv /tmp/docker/docker /usr/local/bin/docker && \
+    rm -rf /tmp/docker && \
     # 清理
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
