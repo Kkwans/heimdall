@@ -800,7 +800,7 @@ def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
     return data
 
 
-@app.route('/v1/openai/native/chat/completions', methods=['POST'])
+@app.route('/v1/chat/completions', methods=['POST'])
 def proxy():
     start_time = time.time()
     client_ip = request.remote_addr or ""
