@@ -1,13 +1,12 @@
 """
-providers.py - 多厂商路由配置管理
+providers.py - [已废弃] 多厂商路由配置管理
 
-功能：
-1. 加载/保存 providers.json 配置文件
-2. 解析 model 字段，路由到对应的上游 API
-3. 支持热更新（API 修改后立即生效）
-4. 向后兼容：无配置文件时使用 config.py 的默认值
+⚠️ 此文件已废弃，路由功能已统一到 router.py。
+proxy.py 不再使用此文件，所有路由查找通过 router.resolve_route_for_proxy() 进行。
+保留此文件仅供参考。
 
-配置文件路径：{APP_SUPPORT_DIR}/providers.json
+废弃时间：2026-07-06
+替代方案：router.py
 """
 
 import os
