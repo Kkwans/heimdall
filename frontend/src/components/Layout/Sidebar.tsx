@@ -41,10 +41,9 @@ const LogsIcon = () => (
   </svg>
 )
 
-const CreditIcon = () => (
+const UpstreamIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-    <line x1="1" y1="10" x2="23" y2="10" />
+    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
   </svg>
 )
 
@@ -88,7 +87,7 @@ const navItems = [
   { to: '/requests', label: '请求明细', icon: <RequestsIcon /> },
   { to: '/stats', label: '数据统计', icon: <StatsIcon /> },
   { to: '/logs', label: '实时日志', icon: <LogsIcon /> },
-  { to: '/credit', label: 'AI Credit', icon: <CreditIcon /> },
+  { to: '/upstream', label: '上游配置', icon: <UpstreamIcon /> },
   { to: '/admin', label: '管理后台', icon: <AdminIcon /> },
 ]
 
