@@ -918,6 +918,7 @@ if __name__ == '__main__':
         from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
         from stats_api import stats_bp as _stats_bp, dashboard_bp as _dashboard_bp
         from credit_api import credit_bp as _credit_bp
+        from admin_api import admin_bp as _admin_bp
 
         class _UTF8JSONProvider(_DefaultJSONProvider):
             """让 jsonify 输出原始 UTF-8 中文，不做 unicode 转义（兼容 Flask 3.x）"""
@@ -929,6 +930,7 @@ if __name__ == '__main__':
         dashboard_app.register_blueprint(_stats_bp)
         dashboard_app.register_blueprint(_dashboard_bp)
         dashboard_app.register_blueprint(_credit_bp)
+        dashboard_app.register_blueprint(_admin_bp)
         proxy_logger.info(f"Dashboard 服务启动 → :{config.DASHBOARD_PORT}")
         dashboard_app.run(host='0.0.0.0', port=config.DASHBOARD_PORT, threaded=True, use_reloader=False)
 
