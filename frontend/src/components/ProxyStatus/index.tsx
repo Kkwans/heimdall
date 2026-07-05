@@ -137,11 +137,11 @@ export default function ProxyStatusCard() {
         setOperating(true)
         try {
           const { data } = await axios.post('/api/proxy/stop')
-          if (data.docker_managed) {
-            message.info(data.message || '代理服务由 Docker 管理')
+          if (data.success) {
+            message.success(data.message || '代理已停止')
+            setTimeout(fetchStatus, 1000)
           } else {
-            message.success('代理已停止，统计面板不受影响')
-            setTimeout(fetchStatus, 800)
+            message.error(data.message || '停止失败')
           }
         } catch {
           message.error('停止失败')
@@ -160,17 +160,15 @@ export default function ProxyStatusCard() {
     setOperating(true)
     try {
       const { data } = await axios.post('/api/proxy/start')
-      if (data.docker_managed) {
-        message.info(data.message || '代理服务由 Docker 管理')
-      } else if (data.success) {
-        message.success('代理已启动成功')
+      if (data.success) {
+        message.success(data.message || '代理已启动')
         await fetchStatus()
       } else {
-        message.error(data.message || '启动失败，请检查端口是否被占用或查看日志')
+        message.error(data.message || '启动失败')
       }
     } catch (err: unknown) {
       const errMsg = (err as {response?: {data?: {message?: string}}})?.response?.data?.message
-      message.error(errMsg || '启动失败，请检查端口是否被占用或查看日志')
+      message.error(errMsg || '启动失败')
     } finally {
       setOperating(false)
     }
@@ -181,28 +179,16 @@ export default function ProxyStatusCard() {
   const handleRestart = async (oldPort?: number) => {
     setRestarting(true)
     try {
-      // 停止：传入 old_port 时停止旧端口进程，否则停止当前配置端口进程
-      const { data: stopData } = await axios.post('/api/proxy/stop', oldPort ? { old_port: oldPort } : {})
-      if (stopData.docker_managed) {
-        message.info(stopData.message || '代理服务由 Docker 管理')
-        setRestarting(false)
-        return
-      }
-      // 等待 1 秒确保端口彻底释放
-      await new Promise(r => setTimeout(r, 1000))
-      // 启动：后端同步等待新端口绑定成功
-      const { data } = await axios.post('/api/proxy/start')
-      if (data.docker_managed) {
-        message.info(data.message || '代理服务由 Docker 管理')
-      } else if (data.success) {
-        message.success('代理重启成功')
+      const { data } = await axios.post('/api/proxy/restart')
+      if (data.success) {
+        message.success(data.message || '代理已重启')
         await fetchStatus()
       } else {
-        message.error(data.message || '重启失败，请检查配置后手动启动')
+        message.error(data.message || '重启失败')
       }
     } catch (err: unknown) {
       const errMsg = (err as {response?: {data?: {message?: string}}})?.response?.data?.message
-      message.error(errMsg || '重启失败，请检查配置后手动启动')
+      message.error(errMsg || '重启失败')
     } finally {
       setRestarting(false)
     }
@@ -216,9 +202,7 @@ export default function ProxyStatusCard() {
       : '/api/proxy/autostart/uninstall'
     try {
       const { data } = await axios.post(url)
-      if (data.docker_managed) {
-        message.info(data.message || 'Docker 环境下开机自启由 Docker 管理')
-      } else if (data.success) {
+      if (data.success) {
         message.success(data.message)
         await fetchConfig()
       } else {

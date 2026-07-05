@@ -618,15 +618,10 @@ def _get_port_pid(port: int):
         with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
             s.settimeout(1)
             if s.connect_ex(('127.0.0.1', port)) == 0:
-                return 1  # 端口被占用（无法获取真实 PID）
+                return 1
     except Exception:
         pass
     return None
-
-
-def _get_proxy_pid():
-    """检测代理端口（PROXY_PORT）是否被监听"""
-    return _get_port_pid(config.PROXY_PORT)
 
 
 @stats_bp.route("/api/proxy/status", methods=["GET", "OPTIONS"])
@@ -652,48 +647,13 @@ def proxy_status():
     return _cors_response({
         "running": running,
         "port": proxy_port,
-        "pid": None,  # Docker 环境无法获取远程 PID
+        "pid": None,
     })
-
-
-def _kill_port_process(port: int) -> dict:
-    """杀死监听指定端口的进程，同步等待进程退出。返回 {success, message}"""
-    import time as _time
-    pid = _get_port_pid(port)
-    if pid is None:
-        return {"success": True, "message": f"端口 {port} 上没有运行中的进程"}
-    try:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return {"success": True, "message": f"进程 {pid} 已退出"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-
-        # 等待最多 3 秒
-        for _ in range(30):
-            _time.sleep(0.1)
-            if _get_port_pid(port) is None:
-                return {"success": True, "message": f"已停止 (PID {pid}, 端口 {port})"}
-
-        # 强制杀死
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except Exception:
-            pass
-        for _ in range(20):
-            _time.sleep(0.1)
-            if _get_port_pid(port) is None:
-                return {"success": True, "message": f"已强制停止 (PID {pid}, 端口 {port})"}
-
-        return {"success": False, "message": f"停止失败，端口 {port} 的进程 {pid} 仍在运行"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
 
 
 @stats_bp.route("/api/proxy/stop", methods=["POST", "OPTIONS"])
 def proxy_stop():
-    """停止代理服务"""
+    """停止代理服务（通过 Docker API）"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -701,17 +661,24 @@ def proxy_stop():
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
     
-    # Docker 环境：服务由 Docker 管理
-    return _cors_response({
-        "success": True,
-        "docker_managed": True,
-        "message": "代理服务由 Docker 管理，请在 NAS 管理界面或使用 docker compose stop proxy 操作"
-    })
+    try:
+        result = subprocess.run(
+            ["docker", "stop", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            return _cors_response({"success": True, "message": "代理服务已停止"})
+        else:
+            return _cors_response({"success": False, "message": f"停止失败: {result.stderr}"}, 500)
+    except subprocess.TimeoutExpired:
+        return _cors_response({"success": False, "message": "停止超时"}, 500)
+    except Exception as e:
+        return _cors_response({"success": False, "message": f"停止失败: {str(e)}"}, 500)
 
 
 @stats_bp.route("/api/proxy/start", methods=["POST", "OPTIONS"])
 def proxy_start():
-    """启动代理服务"""
+    """启动代理服务（通过 Docker API）"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -719,12 +686,50 @@ def proxy_start():
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
     
-    # Docker 环境：服务由 Docker 管理
-    return _cors_response({
-        "success": True,
-        "docker_managed": True,
-        "message": "代理服务由 Docker 管理，请在 NAS 管理界面或使用 docker compose start proxy 操作"
-    })
+    try:
+        result = subprocess.run(
+            ["docker", "start", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            # 等待容器启动
+            import time as _time
+            _time.sleep(2)
+            return _cors_response({"success": True, "message": "代理服务已启动"})
+        else:
+            return _cors_response({"success": False, "message": f"启动失败: {result.stderr}"}, 500)
+    except subprocess.TimeoutExpired:
+        return _cors_response({"success": False, "message": "启动超时"}, 500)
+    except Exception as e:
+        return _cors_response({"success": False, "message": f"启动失败: {str(e)}"}, 500)
+
+
+@stats_bp.route("/api/proxy/restart", methods=["POST", "OPTIONS"])
+def proxy_restart():
+    """重启代理服务（通过 Docker API）"""
+    if request.method == "OPTIONS":
+        resp = jsonify({})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return resp
+    
+    try:
+        result = subprocess.run(
+            ["docker", "restart", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            # 等待容器重启
+            import time as _time
+            _time.sleep(3)
+            return _cors_response({"success": True, "message": "代理服务已重启"})
+        else:
+            return _cors_response({"success": False, "message": f"重启失败: {result.stderr}"}, 500)
+    except subprocess.TimeoutExpired:
+        return _cors_response({"success": False, "message": "重启超时"}, 500)
+    except Exception as e:
+        return _cors_response({"success": False, "message": f"重启失败: {str(e)}"}, 500)
 
 
 # ==========================================
@@ -793,14 +798,27 @@ def proxy_config_get():
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
-    # Docker 环境：代理端口固定为 8888，自启由 Docker restart policy 管理
+    
+    # 获取 Docker restart policy
+    autostart_enabled = False
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            policy = result.stdout.strip()
+            autostart_enabled = policy in ("unless-stopped", "always", "on-failure")
+    except Exception:
+        pass
+    
     return _cors_response({
-        "proxy_port": 8888,  # Docker 内部端口固定
+        "proxy_port": 8888,
         "dashboard_port": 8889,
         "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/chat/completions')),
         "upstream_url": cfg.get("upstream_url", ""),
         "request_timeout": cfg.get("request_timeout", config.REQUEST_TIMEOUT),
-        "autostart_enabled": False,  # Docker 环境不支持开机自启
+        "autostart_enabled": autostart_enabled,
     })
 
 
@@ -834,30 +852,49 @@ def proxy_config_put():
 
 @stats_bp.route("/api/proxy/autostart/install", methods=["POST", "OPTIONS"])
 def proxy_autostart_install():
-    """
-    开启开机自启。Linux/Docker 环境不支持此功能（使用 Docker restart policy 替代）。
-    """
+    """开启开机自启（设置 Docker restart policy 为 unless-stopped）"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    return _cors_response({"success": True, "docker_managed": True, "message": "Docker 环境下请使用 restart: unless-stopped 策略管理开机自启"})
+    
+    try:
+        # 使用 docker update 修改 restart policy
+        result = subprocess.run(
+            ["docker", "update", "--restart=unless-stopped", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return _cors_response({"success": True, "message": "开机自启已开启（restart: unless-stopped）"})
+        else:
+            return _cors_response({"success": False, "message": f"设置失败: {result.stderr}"}, 500)
+    except Exception as e:
+        return _cors_response({"success": False, "message": f"设置失败: {str(e)}"}, 500)
 
 
 @stats_bp.route("/api/proxy/autostart/uninstall", methods=["POST", "OPTIONS"])
 def proxy_autostart_uninstall():
-    """
-    关闭开机自启。Linux/Docker 环境不支持此功能。
-    """
+    """关闭开机自启（设置 Docker restart policy 为 no）"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    return _cors_response({"success": True, "docker_managed": True, "message": "Docker 环境下请使用 restart: unless-stopped 策略管理开机自启"})
+    
+    try:
+        result = subprocess.run(
+            ["docker", "update", "--restart=no", "heimdall-proxy"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return _cors_response({"success": True, "message": "开机自启已关闭"})
+        else:
+            return _cors_response({"success": False, "message": f"设置失败: {result.stderr}"}, 500)
+    except Exception as e:
+        return _cors_response({"success": False, "message": f"设置失败: {str(e)}"}, 500)
 
 
 # ==========================================

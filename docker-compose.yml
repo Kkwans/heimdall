@@ -39,7 +39,7 @@ services:
       start_period: 10s
 
   # ── 面板服务 ──────────────────────────────────────────────
-  # 职责：统计 API、代理管理、Credit API、前端静态文件
+  # 职责：统计 API、代理管理、前端静态文件
   # 端口：8889
   dashboard:
     image: heimdall-dashboard:latest
@@ -53,12 +53,14 @@ services:
     volumes:
       - heimdall-data:/data
       - heimdall-logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # 挂载 Docker socket，允许管理容器
     environment:
       - HEIMDALL_DATA_DIR=/data
       - HEIMDALL_LOG_DIR=/logs
       - HEIMDALL_PORT=8889
       - HEIMDALL_DETAIL_LOG=${HEIMDALL_DETAIL_LOG:-false}
       - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
+      - DOCKER_HOST=unix:///var/run/docker.sock  # Docker API 地址
     networks:
       - heimdall-net
     healthcheck:
