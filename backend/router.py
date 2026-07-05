@@ -1,14 +1,43 @@
 """
 路由配置模块
 负责管理多厂商模型路由配置，根据请求中的 model 字段查找对应的上游 API。
+
+供 proxy.py 调用的入口：resolve_route_for_proxy(model, auth_header)
+返回 RouteResult（成功）或 RouteError（失败）。
 """
 
+import os
 import sqlite3
 import threading
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import config
+
+# ==========================================
+# 路由结果数据类
+# ==========================================
+
+class RouteResult:
+    """路由查找成功的结果"""
+    __slots__ = ("base_url", "api_key", "model_name", "provider_key", "context_window")
+
+    def __init__(self, base_url: str, api_key: str, model_name: str,
+                 provider_key: str, context_window: int = None):
+        self.base_url = base_url
+        self.api_key = api_key
+        self.model_name = model_name
+        self.provider_key = provider_key
+        self.context_window = context_window
+
+
+class RouteError:
+    """路由查找失败的结果"""
+    __slots__ = ("status_code", "message")
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
 
 _logger = logging.getLogger("stderr")
 
@@ -150,6 +179,106 @@ def get_context_window(model: str) -> Optional[int]:
         return config.get_context_window(model.split('/')[-1] if '/' in model else model)
 
 
+def resolve_route_for_proxy(model: str, auth_header: str = "") -> Union[RouteResult, RouteError]:
+    """
+    供 proxy.py 调用的路由查找。
+    解析 model 字段，查询 SQLite，返回路由结果。
+
+    参数：
+        model: 客户端请求的 model 字段（如 "mimo/mimo-v2.5-pro" 或 "deepseek-v4-pro"）
+        auth_header: 请求的 Authorization header 值
+
+    返回：
+        RouteResult: 路由成功
+        RouteError: 路由失败（400/403/401/500）
+    """
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor()
+
+        provider_name = None
+        model_name = model
+
+        # 1. 解析 provider 和 model_name
+        if '/' in model:
+            parts = model.split('/', 1)
+            provider_name = parts[0]
+            model_name = parts[1]
+
+        # 2. 查找厂商
+        if provider_name:
+            # 有厂商前缀：精确查找
+            cursor.execute(
+                "SELECT * FROM providers WHERE name = ? AND enabled = 1",
+                (provider_name,)
+            )
+        else:
+            # 无厂商前缀：使用 priority 最高的厂商
+            cursor.execute(
+                "SELECT * FROM providers WHERE enabled = 1 ORDER BY priority DESC LIMIT 1"
+            )
+
+        provider_row = cursor.fetchone()
+        if not provider_row:
+            if provider_name:
+                return RouteError(400, f"未知厂商: {provider_name}")
+            else:
+                return RouteError(400, "无可用厂商配置，请先在管理后台添加厂商")
+
+        provider_id = provider_row["id"]
+        provider_key = provider_row["name"]
+        base_url = provider_row["base_url"]
+
+        # 3. 查找模型
+        cursor.execute(
+            "SELECT * FROM models WHERE provider_id = ? AND model_name = ? AND enabled = 1",
+            (provider_id, model_name)
+        )
+        model_row = cursor.fetchone()
+
+        if not model_row:
+            # 尝试别名匹配（upstream_model 字段）
+            cursor.execute(
+                "SELECT * FROM models WHERE provider_id = ? AND upstream_model = ? AND enabled = 1",
+                (provider_id, model_name)
+            )
+            model_row = cursor.fetchone()
+
+        if not model_row:
+            return RouteError(400, f"不支持的模型: {model_name}（厂商: {provider_row.get('display_name', provider_key)}）")
+
+        context_window = model_row["context_window"]
+        # fallback 到 config.py 的硬编码映射
+        if not context_window:
+            context_window = config.get_context_window(model_name)
+
+        # 4. 确定 API Key（优先级：请求 header > 配置文件 > 环境变量）
+        api_key = ""
+        if auth_header:
+            api_key = auth_header.replace("Bearer ", "").strip()
+        if not api_key:
+            api_key = provider_row["api_key"] or ""
+        if not api_key:
+            # 尝试从环境变量读取
+            env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"
+            api_key = os.environ.get(env_var, "")
+
+        # 5. 确定上游模型名
+        upstream_model = model_row["upstream_model"] or model_name
+
+        return RouteResult(
+            base_url=base_url,
+            api_key=api_key,
+            model_name=upstream_model,
+            provider_key=provider_key,
+            context_window=context_window,
+        )
+
+    except Exception as e:
+        _logger.error(f"[ROUTER] 路由查找失败: {e}", exc_info=True)
+        return RouteError(500, f"路由查找异常: {str(e)}")
+
+
 # CRUD 操作：厂商
 
 def get_all_providers() -> list:
@@ -275,3 +404,90 @@ def delete_model(model_id: int) -> bool:
     cursor.execute("DELETE FROM models WHERE id = ?", (model_id,))
     conn.commit()
     return cursor.rowcount > 0
+
+
+# ==========================================
+# 启动初始化：默认厂商数据
+# ==========================================
+
+def init_default_providers():
+    """
+    服务启动时调用，确保 SQLite 中有厂商数据。
+    1. 如果 providers 表已有数据，跳过
+    2. 如果 providers.json 存在，导入到 SQLite
+    3. 不创建默认厂商（用户需要自己配置）
+    """
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM providers")
+        count = cursor.fetchone()["cnt"]
+
+        if count > 0:
+            _logger.info(f"[ROUTER] 已有 {count} 个厂商配置，跳过初始化")
+            return
+
+        # 检查 providers.json 是否存在
+        providers_json_path = os.path.join(config.APP_SUPPORT_DIR, "providers.json")
+        if os.path.isfile(providers_json_path):
+            _import_from_json(providers_json_path)
+            return
+
+        # 无配置，提示用户添加厂商
+        _logger.warning("[ROUTER] 无厂商配置，请在管理后台添加厂商")
+
+    except Exception as e:
+        _logger.error(f"[ROUTER] init_default_providers 失败: {e}", exc_info=True)
+
+
+def _import_from_json(json_path: str):
+    """将 providers.json 数据导入 SQLite providers/models 表"""
+    import json as _json
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            cfg = _json.load(f)
+
+        providers = cfg.get("providers", {})
+        default_key = cfg.get("default_provider", "")
+
+        conn = _get_conn()
+        cursor = conn.cursor()
+
+        for provider_key, provider_data in providers.items():
+            # 确定 priority：default_provider 设为最高
+            priority = 100 if provider_key == default_key else 0
+
+            cursor.execute(
+                "INSERT INTO providers (name, display_name, base_url, api_key, enabled, priority) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    provider_key,
+                    provider_data.get("name", provider_key),
+                    provider_data.get("base_url", ""),
+                    provider_data.get("api_key", ""),
+                    provider_data.get("enabled", True),
+                    priority,
+                )
+            )
+            provider_id = cursor.lastrowid
+
+            # 导入模型
+            models = provider_data.get("models", {})
+            for model_name, model_cfg in models.items():
+                cursor.execute(
+                    "INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        provider_id,
+                        model_name,
+                        model_cfg.get("upstream_model"),
+                        model_cfg.get("enabled", True),
+                        model_cfg.get("context_window"),
+                    )
+                )
+
+        conn.commit()
+        _logger.info(f"[ROUTER] 已从 providers.json 导入 {len(providers)} 个厂商")
+
+    except Exception as e:
+        _logger.error(f"[ROUTER] 导入 providers.json 失败: {e}", exc_info=True)
