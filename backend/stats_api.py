@@ -612,31 +612,16 @@ def stats_request_detail(request_id):
 # ==========================================
 
 def _get_port_pid(port: int):
-    """检测指定端口是否被监听，返回 PID 或 None。
-    macOS 使用 lsof（可获取 PID），Linux 使用 socket 探测（无法获取 PID 但可判断端口状态）。"""
-    if config.IS_MACOS:
-        try:
-            result = subprocess.run(
-                ["lsof", "-ti", f"tcp:{port}"],
-                capture_output=True, text=True, timeout=3
-            )
-            pid_str = result.stdout.strip()
-            if pid_str:
-                return int(pid_str.split('\n')[0])
-        except Exception:
-            pass
-        return None
-    else:
-        # Linux/Docker：使用 socket 探测（返回 1 表示端口被占用，None 表示空闲）
-        import socket as _socket
-        try:
-            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                if s.connect_ex(('127.0.0.1', port)) == 0:
-                    return 1  # 端口被占用（无法获取真实 PID）
-        except Exception:
-            pass
-        return None
+    """检测指定端口是否被监听，返回 PID 或 None。"""
+    import socket as _socket
+    try:
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            if s.connect_ex(('127.0.0.1', port)) == 0:
+                return 1  # 端口被占用（无法获取真实 PID）
+    except Exception:
+        pass
+    return None
 
 
 def _get_proxy_pid():
@@ -711,15 +696,6 @@ def proxy_stop():
     body = request.get_json(silent=True) or {}
     old_port = body.get("old_port")
 
-    # ── macOS：先 launchctl unload，防止 KeepAlive 在进程被杀后自动重拉 ──
-    # unload 只注销 launchd 托管条目，不影响 plist 文件本身（开机自启状态不变）。
-    # 若 plist 不存在或未托管，launchctl unload 会静默失败，不影响后续 kill。
-    # Linux/Docker：无 launchd，跳过此步骤。
-    if config.IS_MACOS:
-        proxy_plist = _get_plist_path()
-        if os.path.isfile(proxy_plist):
-            subprocess.run(["launchctl", "unload", proxy_plist], capture_output=True, timeout=5)
-
     if old_port and int(old_port) != config.PROXY_PORT:
         # 端口变更场景：停止旧端口进程
         result = _kill_port_process(int(old_port))
@@ -759,8 +735,7 @@ def proxy_start():
         else:
             return _cors_response({"success": False, "message": f"端口 {config.PROXY_PORT} 仍被占用，无法启动"}, 409)
 
-    # 步骤2：始终直接 Popen 启动（响应快，不依赖 launchd ThrottleInterval）；
-    # 若 plist 存在，启动成功后再 launchctl load 让 launchd 接管（崩溃自动重启）。
+    # 步骤2：直接 Popen 启动
     proxy_plist = _get_plist_path()
     try:
         proxy_script = os.path.join(config.BACKEND_DIR, "proxy.py")
@@ -778,10 +753,6 @@ def proxy_start():
         _time.sleep(0.1)
         if _get_port_pid(config.PROXY_PORT) is not None:
             pid = _get_proxy_pid()
-            # macOS：plist 存在时让 launchd 接管（静默失败不影响已运行进程）
-            # Linux/Docker：无 launchd，跳过。
-            if config.IS_MACOS and os.path.isfile(proxy_plist):
-                subprocess.run(["launchctl", "load", proxy_plist], capture_output=True, timeout=5)
             return _cors_response({"success": True, "message": f"代理启动成功（PID {pid}，端口 {config.PROXY_PORT}）"})
 
     return _cors_response({"success": False, "message": "代理启动超时，请查看日志"}, 500)
@@ -793,76 +764,22 @@ def proxy_start():
 
 def _get_plist_path():
     """获取代理服务 launchd plist 文件路径（仅 macOS）"""
-    if not config.IS_MACOS:
-        return ""
-    return os.path.expanduser("~/Library/LaunchAgents/com.heimdall.proxy.plist")
+    return ""
 
 
 def _get_dashboard_plist_path():
     """获取 Dashboard 服务 launchd plist 文件路径（仅 macOS）"""
-    if not config.IS_MACOS:
-        return ""
-    return os.path.expanduser("~/Library/LaunchAgents/com.heimdall.dashboard.plist")
+    return ""
 
 
 def _make_plist_content(proxy_script: str, work_dir: str) -> str:
-    """生成代理服务 launchd plist 内容（--proxy 模式）"""
-    python_bin = sys.executable
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.heimdall.proxy</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_bin}</string>
-        <string>{proxy_script}</string>
-        <string>--proxy</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{work_dir}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
-</dict>
-</plist>
-"""
+    """生成代理服务 launchd plist 内容（仅 macOS）"""
+    return ""
 
 
 def _make_dashboard_plist_content(proxy_script: str, work_dir: str) -> str:
-    """生成 Dashboard 服务 launchd plist 内容（--dashboard 模式）"""
-    python_bin = sys.executable
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.heimdall.dashboard</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_bin}</string>
-        <string>{proxy_script}</string>
-        <string>--dashboard</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{work_dir}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
-    <key>ThrottleInterval</key>
-    <integer>5</integer>
-</dict>
-</plist>
-"""
+    """生成 Dashboard 服务 launchd plist 内容（仅 macOS）"""
+    return ""
 
 
 def _get_config_path():
@@ -907,15 +824,8 @@ def proxy_config_get():
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
-    # macOS：两个 plist 都存在才算完整开启自启
-    # Linux/Docker：自启由 Docker restart policy 管理，此处固定返回 False
-    if config.IS_MACOS:
-        autostart_enabled = (
-            os.path.isfile(_get_plist_path()) and
-            os.path.isfile(_get_dashboard_plist_path())
-        )
-    else:
-        autostart_enabled = False
+    # Linux/Docker：自启由 Docker restart policy 管理
+    autostart_enabled = False
     return _cors_response({
         "proxy_port": cfg.get("proxy_port", config.PROXY_PORT),
         "dashboard_port": cfg.get("dashboard_port", getattr(config, 'DASHBOARD_PORT', 8889)),
@@ -959,11 +869,7 @@ def proxy_config_put():
 @stats_bp.route("/api/proxy/autostart/install", methods=["POST", "OPTIONS"])
 def proxy_autostart_install():
     """
-    开启开机自启：只写入 plist 文件，不调用任何 launchctl 命令。
-    launchd 会在下次登录时读取 plist 自动生效；
-    不执行 load/unload/bootout/bootstrap，避免任何 launchctl
-    操作意外终止当前正在运行的进程（Dashboard 自身）。
-    Linux/Docker 环境不支持此功能（使用 Docker restart policy 替代）。
+    开启开机自启。Linux/Docker 环境不支持此功能（使用 Docker restart policy 替代）。
     """
     if request.method == "OPTIONS":
         resp = jsonify({})
@@ -971,35 +877,13 @@ def proxy_autostart_install():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    if not config.IS_MACOS:
-        return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
-    try:
-        proxy_script = os.path.join(config.BACKEND_DIR, "proxy.py")
-        work_dir = config.BASE_DIR
-
-        # ── 代理服务 plist ──
-        plist_path = _get_plist_path()
-        os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-        with open(plist_path, 'w') as f:
-            f.write(_make_plist_content(proxy_script, work_dir))
-
-        # ── Dashboard 服务 plist ──
-        dash_plist_path = _get_dashboard_plist_path()
-        with open(dash_plist_path, 'w') as f:
-            f.write(_make_dashboard_plist_content(proxy_script, work_dir))
-
-        return _cors_response({"success": True, "message": "开机自启已开启（下次登录自动启动，当前服务不受影响）"})
-    except Exception as e:
-        return _cors_response({"success": False, "message": str(e)}, 500)
+    return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
 
 
 @stats_bp.route("/api/proxy/autostart/uninstall", methods=["POST", "OPTIONS"])
 def proxy_autostart_uninstall():
     """
-    关闭开机自启：只删除 plist 文件，不调用任何 launchctl 命令。
-    plist 文件不存在后，下次登录 launchd 不再自启；
-    不执行 unload/bootout，避免任何 launchctl 操作终止当前进程。
-    Linux/Docker 环境不支持此功能。
+    关闭开机自启。Linux/Docker 环境不支持此功能。
     """
     if request.method == "OPTIONS":
         resp = jsonify({})
@@ -1007,15 +891,7 @@ def proxy_autostart_uninstall():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    if not config.IS_MACOS:
-        return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
-    try:
-        for plist_path in (_get_plist_path(), _get_dashboard_plist_path()):
-            if os.path.isfile(plist_path):
-                os.remove(plist_path)
-        return _cors_response({"success": True, "message": "开机自启已关闭（当前服务不受影响）"})
-    except Exception as e:
-        return _cors_response({"success": False, "message": str(e)}, 500)
+    return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
 
 
 # ==========================================
@@ -1053,30 +929,8 @@ def root_static(filename):
         mime_type = "application/octet-stream"
 
     def _read_root(path):
-        try:
-            with open(path, "rb") as f:
-                return f.read()
-        except OSError:
-            pass
-        import subprocess as _sp
-        try:
-            r = _sp.run(["cat", path], capture_output=True, timeout=15)
-            if r.returncode == 0:
-                return r.stdout
-        except Exception:
-            pass
-        import tempfile as _tmp, shutil as _shutil
-        try:
-            tmp = _tmp.NamedTemporaryFile(delete=False)
-            tmp.close()
-            _shutil.copy2(path, tmp.name)
-            with open(tmp.name, "rb") as f:
-                data = f.read()
-            os.unlink(tmp.name)
-            return data
-        except Exception:
-            pass
-        raise OSError(f"[Errno 1] Operation not permitted: {path!r}")
+        with open(path, "rb") as f:
+            return f.read()
 
     try:
         data = _read_root(file_path)
@@ -1094,11 +948,6 @@ def root_static(filename):
 def dashboard(filename):
     """
     Serve 前端 Dashboard 静态文件。
-    
-    使用直接文件读取而非 send_from_directory，规避 macOS com.apple.provenance
-    扩展属性在长时间运行的 launchd 进程中导致权限降级（authorization denied）的问题。
-    该属性由 macOS TCC 机制管理，用户无法手动删除，但 Python open() 在大多数
-    进程上下文中可以正常读取。
     """
     import mimetypes as _mimetypes
     import logging as _logging
@@ -1121,44 +970,9 @@ def dashboard(filename):
         file_path = os.path.join(dist_dir, filename)
 
     def _read_file(path):
-        """
-        读取文件内容。
-        策略：
-          1. 先用 Python open() 直接读（最快）
-          2. 若因 com.apple.provenance xattr 导致 [Errno 1] Operation not permitted，
-             改用子进程 cat 读取（cat 继承的 TCC 沙箱上下文较宽松，通常可以绕过该限制）
-          3. cat 也失败时，把文件 cp 到系统临时目录后再读（新文件不带原 xattr）
-        com.apple.provenance 无法被 xattr -d/-rc 删除（macOS TCC 系统保护），
-        因此不再尝试 xattr 清除，直接走绕过路径。
-        """
-        try:
-            with open(path, "rb") as f:
-                return f.read()
-        except OSError:
-            pass
-        # 方案2：用子进程 cat 读取
-        import subprocess as _sp
-        try:
-            r = _sp.run(["cat", path], capture_output=True, timeout=15)
-            if r.returncode == 0:
-                _slogger.info(f"[DASHBOARD] cat fallback OK: {path!r}")
-                return r.stdout
-        except Exception:
-            pass
-        # 方案3：cp 到临时文件后读取（新文件不继承原 xattr）
-        import tempfile as _tmp, shutil as _shutil
-        try:
-            tmp = _tmp.NamedTemporaryFile(delete=False)
-            tmp.close()
-            _shutil.copy2(path, tmp.name)
-            with open(tmp.name, "rb") as f:
-                data = f.read()
-            os.unlink(tmp.name)
-            _slogger.info(f"[DASHBOARD] cp-tmp fallback OK: {path!r}")
-            return data
-        except Exception:
-            pass
-        raise OSError(f"[Errno 1] Operation not permitted: {path!r}")
+        """读取文件内容。"""
+        with open(path, "rb") as f:
+            return f.read()
 
     mime_type, _ = _mimetypes.guess_type(file_path)
     if mime_type is None:

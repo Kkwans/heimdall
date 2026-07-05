@@ -11,27 +11,11 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(BACKEND_DIR)
 
 # ==========================================
-# 平台检测
-# ==========================================
-import platform as _platform
-IS_MACOS = _platform.system() == "Darwin"
-IS_LINUX = _platform.system() == "Linux"
-
-# ==========================================
 # 数据存储目录
 # ==========================================
 # 优先使用环境变量 HEIMDALL_DATA_DIR（Docker 部署时通过 docker-compose 注入）。
-# macOS 回退到 ~/Library/Application Support/Heimdall/（launchd 标准位置）。
 # Linux/Docker 默认 /data（Dockerfile 中 mkdir -p /data 并挂载 volume）。
-if os.getenv("HEIMDALL_DATA_DIR"):
-    APP_SUPPORT_DIR = os.getenv("HEIMDALL_DATA_DIR")
-elif IS_MACOS:
-    APP_SUPPORT_DIR = os.path.join(
-        os.path.expanduser("~"), "Library", "Application Support", "Heimdall"
-    )
-else:
-    # Linux/Docker 默认路径
-    APP_SUPPORT_DIR = "/data"
+APP_SUPPORT_DIR = os.getenv("HEIMDALL_DATA_DIR", "/data")
 # 确保目录存在（config 模块被导入时立即创建）
 os.makedirs(APP_SUPPORT_DIR, exist_ok=True)
 
@@ -44,14 +28,8 @@ DB_PATH = os.path.join(APP_SUPPORT_DIR, "heimdall.db")
 # 日志配置
 # ==========================================
 # 优先使用环境变量 HEIMDALL_LOG_DIR。
-# macOS 回退到 APP_SUPPORT_DIR/logs/。
 # Linux/Docker 默认 /logs（Dockerfile 中 mkdir -p /logs 并挂载 volume）。
-if os.getenv("HEIMDALL_LOG_DIR"):
-    LOG_DIR = os.getenv("HEIMDALL_LOG_DIR")
-elif IS_MACOS:
-    LOG_DIR = os.path.join(APP_SUPPORT_DIR, "logs")
-else:
-    LOG_DIR = "/logs"
+LOG_DIR = os.getenv("HEIMDALL_LOG_DIR", "/logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # 是否启用详细请求/响应日志（记录完整 prompt 和 response 内容）
