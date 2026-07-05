@@ -260,13 +260,13 @@ import requests as http_requests
 import db
 db.init_db()
 
-import providers
 import router
 import auth
 from admin_api import admin_bp
 
 # 初始化路由表和认证表
 router.init_routing_tables()
+router.init_default_providers()  # 确保 SQLite 中有厂商数据
 auth.init_auth_tables()
 
 # 启动时加载持久化运行时配置（upstream_url / timeout / log_retention_days 等）
@@ -836,9 +836,9 @@ def proxy():
                                status=403, content_type='application/json')
 
         # ── 路由查找：根据 model 字段确定上游 API ──
-        route = providers.resolve_route(original_model, auth_header)
+        route = router.resolve_route_for_proxy(original_model, auth_header)
 
-        if isinstance(route, providers.RouteError):
+        if isinstance(route, router.RouteError):
             system_logger.warning(f"[PROXY] 路由失败: model={original_model} error={route.message}")
             return Response(
                 json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),
