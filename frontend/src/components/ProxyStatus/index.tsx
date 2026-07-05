@@ -136,9 +136,13 @@ export default function ProxyStatusCard() {
       onOk: async () => {
         setOperating(true)
         try {
-          await axios.post('/api/proxy/stop')
-          message.success('代理已停止，统计面板不受影响')
-          setTimeout(fetchStatus, 800)
+          const { data } = await axios.post('/api/proxy/stop')
+          if (data.docker_managed) {
+            message.info(data.message || '代理服务由 Docker 管理')
+          } else {
+            message.success('代理已停止，统计面板不受影响')
+            setTimeout(fetchStatus, 800)
+          }
         } catch {
           message.error('停止失败')
         } finally {
@@ -156,7 +160,9 @@ export default function ProxyStatusCard() {
     setOperating(true)
     try {
       const { data } = await axios.post('/api/proxy/start')
-      if (data.success) {
+      if (data.docker_managed) {
+        message.info(data.message || '代理服务由 Docker 管理')
+      } else if (data.success) {
         message.success('代理已启动成功')
         await fetchStatus()
       } else {
@@ -176,12 +182,19 @@ export default function ProxyStatusCard() {
     setRestarting(true)
     try {
       // 停止：传入 old_port 时停止旧端口进程，否则停止当前配置端口进程
-      await axios.post('/api/proxy/stop', oldPort ? { old_port: oldPort } : {})
+      const { data: stopData } = await axios.post('/api/proxy/stop', oldPort ? { old_port: oldPort } : {})
+      if (stopData.docker_managed) {
+        message.info(stopData.message || '代理服务由 Docker 管理')
+        setRestarting(false)
+        return
+      }
       // 等待 1 秒确保端口彻底释放
       await new Promise(r => setTimeout(r, 1000))
       // 启动：后端同步等待新端口绑定成功
       const { data } = await axios.post('/api/proxy/start')
-      if (data.success) {
+      if (data.docker_managed) {
+        message.info(data.message || '代理服务由 Docker 管理')
+      } else if (data.success) {
         message.success('代理重启成功')
         await fetchStatus()
       } else {
@@ -203,7 +216,9 @@ export default function ProxyStatusCard() {
       : '/api/proxy/autostart/uninstall'
     try {
       const { data } = await axios.post(url)
-      if (data.success) {
+      if (data.docker_managed) {
+        message.info(data.message || 'Docker 环境下开机自启由 Docker 管理')
+      } else if (data.success) {
         message.success(data.message)
         await fetchConfig()
       } else {

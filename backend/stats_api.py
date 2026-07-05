@@ -701,11 +701,12 @@ def proxy_stop():
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
     
-    # Docker 环境：服务由 Docker 管理，无法从容器内停止
+    # Docker 环境：服务由 Docker 管理
     return _cors_response({
-        "success": False,
-        "message": "Docker 环境下请使用 'docker compose stop proxy' 或在 NAS 管理界面停止服务"
-    }, 400)
+        "success": True,
+        "docker_managed": True,
+        "message": "代理服务由 Docker 管理，请在 NAS 管理界面或使用 docker compose stop proxy 操作"
+    })
 
 
 @stats_bp.route("/api/proxy/start", methods=["POST", "OPTIONS"])
@@ -718,11 +719,12 @@ def proxy_start():
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
     
-    # Docker 环境：服务由 Docker 管理，无法从容器内启动
+    # Docker 环境：服务由 Docker 管理
     return _cors_response({
-        "success": False,
-        "message": "Docker 环境下请使用 'docker compose start proxy' 或在 NAS 管理界面启动服务"
-    }, 400)
+        "success": True,
+        "docker_managed": True,
+        "message": "代理服务由 Docker 管理，请在 NAS 管理界面或使用 docker compose start proxy 操作"
+    })
 
 
 # ==========================================
@@ -841,7 +843,7 @@ def proxy_autostart_install():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
+    return _cors_response({"success": True, "docker_managed": True, "message": "Docker 环境下请使用 restart: unless-stopped 策略管理开机自启"})
 
 
 @stats_bp.route("/api/proxy/autostart/uninstall", methods=["POST", "OPTIONS"])
@@ -855,7 +857,7 @@ def proxy_autostart_uninstall():
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-    return _cors_response({"success": False, "message": "开机自启仅支持 macOS（Docker 环境请使用 restart: unless-stopped）"}, 400)
+    return _cors_response({"success": True, "docker_managed": True, "message": "Docker 环境下请使用 restart: unless-stopped 策略管理开机自启"})
 
 
 # ==========================================
