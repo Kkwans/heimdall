@@ -43,13 +43,11 @@ LOG_BACKUP_DAYS = int(os.getenv("HEIMDALL_LOG_BACKUP_DAYS", "30"))
 # ==========================================
 # 代理配置
 # ==========================================
-# FRIDAY API 基础地址
-TARGET_BASE_URL = "https://aigc.sankuai.com/v1/openai/native"
+# 上游 API 基础地址（从 runtime_config.json 加载，用户在 Dashboard 配置）
+TARGET_BASE_URL = ""
 
-# ==========================================
-# 代理配置
-# ==========================================
 # 代理服务端口（处理 AI 请求转发）
+# Docker 内部端口固定为 8888，外部端口通过 docker-compose 映射
 PROXY_PORT = int(os.getenv("HEIMDALL_PORT", "8888"))
 
 # Dashboard 服务端口（统计面板 + API，独立于代理）
@@ -61,6 +59,10 @@ PROXY_PATH = os.getenv("HEIMDALL_PROXY_PATH", "/v1/chat/completions")
 
 # 请求超时时间（秒）
 REQUEST_TIMEOUT = int(os.getenv("HEIMDALL_TIMEOUT", "120"))
+
+# 代理服务主机名（Docker 容器名）
+# 在 Docker 网络中，代理容器可通过此主机名访问
+PROXY_HOST = os.getenv("HEIMDALL_PROXY_HOST", "heimdall-proxy")
 
 # ==========================================
 # Dashboard 配置

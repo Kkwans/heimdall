@@ -631,14 +631,28 @@ def _get_proxy_pid():
 
 @stats_bp.route("/api/proxy/status", methods=["GET", "OPTIONS"])
 def proxy_status():
-    """检测代理服务运行状态（仅检测代理端口，不含 Dashboard 端口）"""
+    """检测代理服务运行状态（通过 Docker 网络连接代理容器）"""
     if request.method == "OPTIONS":
         return _cors_response({})
-    pid = _get_proxy_pid()
+    
+    # 在 Docker 环境中，通过容器名连接代理服务
+    import socket as _socket
+    proxy_host = getattr(config, 'PROXY_HOST', 'heimdall-proxy')
+    proxy_port = 8888  # 代理容器内部端口固定为 8888
+    
+    running = False
+    try:
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+            s.settimeout(2)
+            if s.connect_ex((proxy_host, proxy_port)) == 0:
+                running = True
+    except Exception:
+        pass
+    
     return _cors_response({
-        "running": pid is not None,
-        "port": config.PROXY_PORT,
-        "pid": pid,
+        "running": running,
+        "port": proxy_port,
+        "pid": None,  # Docker 环境无法获取远程 PID
     })
 
 
@@ -679,83 +693,36 @@ def _kill_port_process(port: int) -> dict:
 
 @stats_bp.route("/api/proxy/stop", methods=["POST", "OPTIONS"])
 def proxy_stop():
-    """停止代理服务（只杀监听 PROXY_PORT 的进程，Dashboard 不受影响）
-
-    支持可选 JSON body：{"old_port": <port>}
-    - 不传或与 PROXY_PORT 相同：停止当前配置端口的进程
-    - 传入 old_port 且与 PROXY_PORT 不同：停止旧端口进程（用于修改端口后切换）
-    """
+    """停止代理服务"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-
-    # 解析可选的 old_port 参数
-    body = request.get_json(silent=True) or {}
-    old_port = body.get("old_port")
-
-    if old_port and int(old_port) != config.PROXY_PORT:
-        # 端口变更场景：停止旧端口进程
-        result = _kill_port_process(int(old_port))
-    else:
-        # 普通停止：停止当前配置端口进程
-        result = _kill_port_process(config.PROXY_PORT)
-
-    status_code = 200 if result["success"] else 500
-    return _cors_response(result, status_code)
+    
+    # Docker 环境：服务由 Docker 管理，无法从容器内停止
+    return _cors_response({
+        "success": False,
+        "message": "Docker 环境下请使用 'docker compose stop proxy' 或在 NAS 管理界面停止服务"
+    }, 400)
 
 
 @stats_bp.route("/api/proxy/start", methods=["POST", "OPTIONS"])
 def proxy_start():
-    """启动代理服务（独立进程，不影响 Dashboard）
-
-    正确流程：
-    1. 若端口被占（进程仍在或刚被杀掉 TIME_WAIT），等待端口彻底释放（最多 5 秒）
-    2. 端口释放后再启动新进程
-    3. 等待新进程真正绑定端口（最多 10 秒），才返回成功
-    """
+    """启动代理服务"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
-
-    import time as _time
-
-    # 步骤1：等待端口完全释放（无论是正在运行还是刚停止的 TIME_WAIT 状态）
-    # 最多等 5 秒，每 0.1 秒检测一次
-    if _get_port_pid(config.PROXY_PORT) is not None:
-        for _ in range(50):
-            _time.sleep(0.1)
-            if _get_port_pid(config.PROXY_PORT) is None:
-                break
-        else:
-            return _cors_response({"success": False, "message": f"端口 {config.PROXY_PORT} 仍被占用，无法启动"}, 409)
-
-    # 步骤2：直接 Popen 启动
-    proxy_plist = _get_plist_path()
-    try:
-        proxy_script = os.path.join(config.BACKEND_DIR, "proxy.py")
-        subprocess.Popen(
-            [sys.executable, proxy_script, '--proxy'],
-            cwd=config.BACKEND_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        return _cors_response({"success": False, "message": str(e)}, 500)
-
-    # 步骤3：等待新进程真正绑定端口（最多 10 秒）
-    for _ in range(100):
-        _time.sleep(0.1)
-        if _get_port_pid(config.PROXY_PORT) is not None:
-            pid = _get_proxy_pid()
-            return _cors_response({"success": True, "message": f"代理启动成功（PID {pid}，端口 {config.PROXY_PORT}）"})
-
-    return _cors_response({"success": False, "message": "代理启动超时，请查看日志"}, 500)
+    
+    # Docker 环境：服务由 Docker 管理，无法从容器内启动
+    return _cors_response({
+        "success": False,
+        "message": "Docker 环境下请使用 'docker compose start proxy' 或在 NAS 管理界面启动服务"
+    }, 400)
 
 
 # ==========================================
@@ -824,15 +791,14 @@ def proxy_config_get():
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
-    # Linux/Docker：自启由 Docker restart policy 管理
-    autostart_enabled = False
+    # Docker 环境：代理端口固定为 8888，自启由 Docker restart policy 管理
     return _cors_response({
-        "proxy_port": cfg.get("proxy_port", config.PROXY_PORT),
-        "dashboard_port": cfg.get("dashboard_port", getattr(config, 'DASHBOARD_PORT', 8889)),
-        "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/openai/native')),
-        "upstream_url": cfg.get("upstream_url", getattr(config, 'TARGET_BASE_URL', '')),
+        "proxy_port": 8888,  # Docker 内部端口固定
+        "dashboard_port": 8889,
+        "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/chat/completions')),
+        "upstream_url": cfg.get("upstream_url", ""),
         "request_timeout": cfg.get("request_timeout", config.REQUEST_TIMEOUT),
-        "autostart_enabled": autostart_enabled,
+        "autostart_enabled": False,  # Docker 环境不支持开机自启
     })
 
 
@@ -847,7 +813,7 @@ def proxy_config_put():
         return resp
     try:
         body = request.get_json(silent=True) or {}
-        allowed = {"upstream_url", "proxy_path", "proxy_port", "request_timeout"}
+        allowed = {"upstream_url", "proxy_path", "request_timeout"}  # Docker 环境不允许改端口
         to_save = {k: v for k, v in body.items() if k in allowed}
         if not to_save:
             return _cors_response({"success": False, "message": "无有效字段"}, 400)
@@ -857,8 +823,6 @@ def proxy_config_put():
             config.TARGET_BASE_URL = to_save["upstream_url"]
         if "proxy_path" in to_save:
             config.PROXY_PATH = to_save["proxy_path"]
-        if "proxy_port" in to_save:
-            config.PROXY_PORT = int(to_save["proxy_port"])
         if "request_timeout" in to_save:
             config.REQUEST_TIMEOUT = int(to_save["request_timeout"])
         return _cors_response({"success": True, "message": "配置已更新，重启代理后完全生效"})
