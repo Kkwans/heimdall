@@ -480,7 +480,7 @@ def log_request(record: dict):
     proxy_logger.info(msg)
 
 
-def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'providers.RouteResult' = None) -> Response:
+def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
     """处理非流式请求"""
     usage = {}
     status_code = 500
@@ -489,7 +489,7 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
     provider_key = route.provider_key if route else None
 
     # 确定上游 URL 和 headers
-    base_url = route.base_url if route else config.TARGET_BASE_URL
+    base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
     # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key
@@ -571,11 +571,11 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         return Response('{"error": "Internal Server Error"}', status=500, content_type='application/json')
 
 
-def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'providers.RouteResult' = None) -> Response:
+def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
     """处理流式请求（SSE）"""
 
     # 确定上游 URL 和 headers
-    base_url = route.base_url if route else config.TARGET_BASE_URL
+    base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
     # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key

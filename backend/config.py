@@ -68,14 +68,18 @@ LOG_BACKUP_DAYS = int(os.getenv("HEIMDALL_LOG_BACKUP_DAYS", "30"))
 # FRIDAY API 基础地址
 TARGET_BASE_URL = "https://aigc.sankuai.com/v1/openai/native"
 
+# ==========================================
+# 代理配置
+# ==========================================
 # 代理服务端口（处理 AI 请求转发）
 PROXY_PORT = int(os.getenv("HEIMDALL_PORT", "8888"))
 
 # Dashboard 服务端口（统计面板 + API，独立于代理）
 DASHBOARD_PORT = int(os.getenv("HEIMDALL_DASHBOARD_PORT", "8889"))
 
-# 代理路径（客户端请求路径，如 /v1/openai/native）
-PROXY_PATH = os.getenv("HEIMDALL_PROXY_PATH", "/v1/openai/native")
+# 代理路径（客户端请求路径）
+# OpenAI 标准协议：/v1/chat/completions
+PROXY_PATH = os.getenv("HEIMDALL_PROXY_PATH", "/v1/chat/completions")
 
 # 请求超时时间（秒）
 REQUEST_TIMEOUT = int(os.getenv("HEIMDALL_TIMEOUT", "120"))
