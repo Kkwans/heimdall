@@ -179,18 +179,18 @@ def get_context_window(model: str) -> Optional[int]:
         return config.get_context_window(model.split('/')[-1] if '/' in model else model)
 
 
-def resolve_route_for_proxy(model: str, auth_header: str = "") -> Union[RouteResult, RouteError]:
+def resolve_route_for_proxy(model: str) -> Union[RouteResult, RouteError]:
     """
     供 proxy.py 调用的路由查找。
     解析 model 字段，查询 SQLite，返回路由结果。
+    使用厂商存储的 API Key，不接受客户端传入的 Key。
 
     参数：
         model: 客户端请求的 model 字段（如 "mimo/mimo-v2.5-pro" 或 "deepseek-v4-pro"）
-        auth_header: 请求的 Authorization header 值
 
     返回：
         RouteResult: 路由成功
-        RouteError: 路由失败（400/403/401/500）
+        RouteError: 路由失败（400/403/500）
     """
     try:
         conn = _get_conn()
@@ -252,12 +252,8 @@ def resolve_route_for_proxy(model: str, auth_header: str = "") -> Union[RouteRes
         if not context_window:
             context_window = config.get_context_window(model_name)
 
-        # 4. 确定 API Key（优先级：请求 header > 配置文件 > 环境变量）
-        api_key = ""
-        if auth_header:
-            api_key = auth_header.replace("Bearer ", "").strip()
-        if not api_key:
-            api_key = provider_row["api_key"] or ""
+        # 4. 使用厂商存储的 API Key
+        api_key = provider_row["api_key"] or ""
         if not api_key:
             # 尝试从环境变量读取
             env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"

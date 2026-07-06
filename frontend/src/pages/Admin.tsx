@@ -1,5 +1,5 @@
 /**
- * Admin.tsx — 管理后台页面
+ * Admin.tsx — 设置页面
  *
  * 功能：
  * 1. 厂商管理（CRUD）
@@ -658,7 +658,7 @@ export default function Admin() {
 
   return (
     <div className="page-content">
-      <Header pageName="管理后台" />
+      <Header pageName="设置" />
       <section className="section">
         <Card>
           <Tabs items={tabItems} defaultActiveKey="providers" />

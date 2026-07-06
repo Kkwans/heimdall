@@ -778,14 +778,12 @@ def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
 
 
 @app.route('/v1/chat/completions', methods=['POST'])
+@app.route('/chat/completions', methods=['POST'])
 def proxy():
     start_time = time.time()
     client_ip = request.remote_addr or ""
 
     try:
-        # 获取客户端发来的 JSON 请求数据
-        # force=True：即使 Content-Type 不是 application/json 也尝试解析
-        # 这样可以兼容部分客户端漏传 Content-Type 的情况
         data = request.get_json(silent=True, force=True) or {}
 
         if not data or 'model' not in data:
@@ -794,26 +792,30 @@ def proxy():
 
         original_model = data['model']
 
-        # ── API Key 认证检查 ──
+        # ── Heimdall API Key 认证 ──
         auth_header = request.headers.get('Authorization', '')
         api_key = None
         if auth_header.startswith('Bearer '):
             api_key = auth_header[7:]
         
-        # 检查是否是 Heimdall API Key
-        key_info = None
-        if api_key and api_key.startswith('heimdall-'):
-            key_info = auth.validate_api_key(api_key)
-            if not key_info:
-                return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
-                               status=401, content_type='application/json')
-            # 检查模型权限
-            if not auth.check_model_access(key_info, original_model):
-                return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
-                               status=403, content_type='application/json')
+        if not api_key:
+            return Response('{"error":{"message":"Missing API Key","type":"auth_error"}}',
+                           status=401, content_type='application/json')
+        
+        # 验证 Heimdall API Key
+        key_info = auth.validate_api_key(api_key)
+        if not key_info:
+            return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
+                           status=401, content_type='application/json')
+        
+        # 检查模型权限
+        if not auth.check_model_access(key_info, original_model):
+            return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
+                           status=403, content_type='application/json')
 
         # ── 路由查找：根据 model 字段确定上游 API ──
-        route = router.resolve_route_for_proxy(original_model, auth_header)
+        # 不传 auth_header，使用厂商存储的 API Key
+        route = router.resolve_route_for_proxy(original_model)
 
         if isinstance(route, router.RouteError):
             system_logger.warning(f"[PROXY] 路由失败: model={original_model} error={route.message}")
@@ -822,23 +824,19 @@ def proxy():
                 status=route.status_code, content_type='application/json'
             )
 
-        # 记录路由信息到日志
         system_logger.info(
             f"[PROXY] 路由: {original_model} → {route.provider_key}/{route.model_name}"
             f" ({route.base_url})"
         )
 
-        # 将 model 替换为上游实际模型名（去掉 provider 前缀）
         data['model'] = route.model_name
 
-        # ── Token 超限保护 ──────────────────────────────────────────
         data = _trim_messages_if_needed(data, context_window=route.context_window)
-        # ────────────────────────────────────────────────────────────
 
-        # 提取鉴权头部
+        # 使用厂商存储的 API Key（不暴露给客户端）
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': auth_header,
+            'Authorization': f'Bearer {route.api_key}',
         }
 
         # 判断是否流式请求
