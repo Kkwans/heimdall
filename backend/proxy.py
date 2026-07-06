@@ -816,7 +816,7 @@ def proxy_openai_chat():
 
         # ── 路由查找：根据 model 字段确定上游 API ──
         # 不传 auth_header，使用厂商存储的 API Key
-        route = router.resolve_route_for_proxy(original_model)
+        route = router.resolve_route_for_proxy(original_model, protocol="openai")
 
         if isinstance(route, router.RouteError):
             system_logger.warning(f"[PROXY] 路由失败: model={original_model} error={route.message}")
@@ -901,8 +901,8 @@ def proxy_anthropic_messages():
             return Response('{"type":"error","error":{"type":"permission_error","message":"Model access denied"}}',
                            status=403, content_type='application/json')
 
-        # 路由查找
-        route = router.resolve_route_for_proxy(original_model)
+        # 路由查找（Anthropic 协议）
+        route = router.resolve_route_for_proxy(original_model, protocol="anthropic")
         if isinstance(route, router.RouteError):
             return Response(
                 json.dumps({"type": "error", "error": {"type": "invalid_request_error", "message": route.message}}),
@@ -973,8 +973,8 @@ def proxy_openai_responses():
             return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
                            status=403, content_type='application/json')
 
-        # 路由查找
-        route = router.resolve_route_for_proxy(original_model)
+        # 路由查找（OpenAI Responses 协议）
+        route = router.resolve_route_for_proxy(original_model, protocol="openai")
         if isinstance(route, router.RouteError):
             return Response(
                 json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),

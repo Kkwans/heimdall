@@ -69,13 +69,27 @@ def init_routing_tables():
                 name        VARCHAR(64) NOT NULL UNIQUE,
                 display_name VARCHAR(128),
                 base_url    VARCHAR(512) NOT NULL,
+                openai_url  VARCHAR(512),
+                anthropic_url VARCHAR(512),
                 api_key     VARCHAR(512) NOT NULL,
                 enabled     BOOLEAN DEFAULT 1,
                 priority    INTEGER DEFAULT 0,
+                plan_type   VARCHAR(32) DEFAULT 'api',
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # 幂等添加新列（对现有表进行升级，已有列则忽略错误）
+        for col_def in [
+            "ALTER TABLE providers ADD COLUMN openai_url VARCHAR(512)",
+            "ALTER TABLE providers ADD COLUMN anthropic_url VARCHAR(512)",
+            "ALTER TABLE providers ADD COLUMN plan_type VARCHAR(32) DEFAULT 'api'",
+        ]:
+            try:
+                cursor.execute(col_def)
+            except Exception:
+                pass  # 列已存在时 SQLite 会抛错，直接忽略
 
         # 模型映射表
         cursor.execute("""
@@ -179,7 +193,7 @@ def get_context_window(model: str) -> Optional[int]:
         return config.get_context_window(model.split('/')[-1] if '/' in model else model)
 
 
-def resolve_route_for_proxy(model: str) -> Union[RouteResult, RouteError]:
+def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[RouteResult, RouteError]:
     """
     供 proxy.py 调用的路由查找。
     解析 model 字段，查询 SQLite，返回路由结果。
@@ -187,6 +201,7 @@ def resolve_route_for_proxy(model: str) -> Union[RouteResult, RouteError]:
 
     参数：
         model: 客户端请求的 model 字段（如 "mimo/mimo-v2.5-pro" 或 "deepseek-v4-pro"）
+        protocol: 协议类型 "openai" 或 "anthropic"
 
     返回：
         RouteResult: 路由成功
@@ -227,7 +242,12 @@ def resolve_route_for_proxy(model: str) -> Union[RouteResult, RouteError]:
 
         provider_id = provider_row["id"]
         provider_key = provider_row["name"]
-        base_url = provider_row["base_url"]
+
+        # 根据协议选择对应的 base_url
+        if protocol == "anthropic":
+            base_url = provider_row["anthropic_url"] or provider_row["base_url"]
+        else:
+            base_url = provider_row["openai_url"] or provider_row["base_url"]
 
         # 3. 查找模型
         cursor.execute(
@@ -304,16 +324,21 @@ def create_provider(data: dict) -> int:
     """创建厂商，返回 ID"""
     conn = _get_conn()
     cursor = conn.cursor()
+    # 如果没有 base_url，用 openai_url 作为 base_url
+    base_url = data.get("base_url") or data.get("openai_url", "")
     cursor.execute("""
-        INSERT INTO providers (name, display_name, base_url, api_key, enabled, priority)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data["name"],
         data.get("display_name", data["name"]),
-        data["base_url"],
+        base_url,
+        data.get("openai_url", base_url),
+        data.get("anthropic_url", ""),
         data["api_key"],
         data.get("enabled", True),
-        data.get("priority", 0)
+        data.get("priority", 0),
+        data.get("plan_type", "api"),
     ))
     conn.commit()
     return cursor.lastrowid
@@ -325,7 +350,7 @@ def update_provider(provider_id: int, data: dict) -> bool:
     cursor = conn.cursor()
     fields = []
     values = []
-    for key in ["name", "display_name", "base_url", "api_key", "enabled", "priority"]:
+    for key in ["name", "display_name", "base_url", "openai_url", "anthropic_url", "api_key", "enabled", "priority", "plan_type"]:
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])
@@ -453,16 +478,25 @@ def _import_from_json(json_path: str):
             # 确定 priority：default_provider 设为最高
             priority = 100 if provider_key == default_key else 0
 
+            # 获取 URL 配置
+            base_url = provider_data.get("base_url", "")
+            openai_url = provider_data.get("openai_url", base_url)
+            anthropic_url = provider_data.get("anthropic_url", "")
+            plan_type = provider_data.get("plan_type", "api")
+
             cursor.execute(
-                "INSERT INTO providers (name, display_name, base_url, api_key, enabled, priority) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     provider_key,
                     provider_data.get("name", provider_key),
-                    provider_data.get("base_url", ""),
+                    base_url,
+                    openai_url,
+                    anthropic_url,
                     provider_data.get("api_key", ""),
                     provider_data.get("enabled", True),
                     priority,
+                    plan_type,
                 )
             )
             provider_id = cursor.lastrowid

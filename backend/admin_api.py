@@ -39,10 +39,14 @@ def create_provider():
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
-    required = ["name", "base_url", "api_key"]
+    required = ["name", "api_key"]
     for field in required:
         if field not in data:
             return jsonify({"error": f"Missing required field: {field}"}), 400
+    
+    # base_url 或 openai_url 至少要有一个
+    if not data.get("base_url") and not data.get("openai_url"):
+        return jsonify({"error": "base_url or openai_url is required"}), 400
     
     try:
         provider_id = router.create_provider(data)

@@ -14,9 +14,12 @@ export interface Provider {
   name: string
   display_name: string
   base_url: string
+  openai_url: string
+  anthropic_url: string
   api_key: string
   enabled: boolean
   priority: number
+  plan_type: string
   model_count: number
   created_at: string
   updated_at: string
@@ -25,10 +28,13 @@ export interface Provider {
 export interface ProviderCreateData {
   name: string
   display_name?: string
-  base_url: string
+  base_url?: string
+  openai_url?: string
+  anthropic_url?: string
   api_key: string
   enabled?: boolean
   priority?: number
+  plan_type?: string
 }
 
 export async function fetchProviders(): Promise<{ providers: Provider[] }> {

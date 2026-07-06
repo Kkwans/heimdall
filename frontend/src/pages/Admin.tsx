@@ -63,6 +63,8 @@ function ProviderManager() {
     form.setFieldsValue({
       name: provider.name,
       display_name: provider.display_name,
+      openai_url: provider.openai_url || '',
+      anthropic_url: provider.anthropic_url || '',
       base_url: provider.base_url,
       api_key: provider.api_key,
       enabled: provider.enabled,
@@ -112,10 +114,18 @@ function ProviderManager() {
       width: 120,
     },
     {
-      title: 'API 地址',
-      dataIndex: 'base_url',
-      key: 'base_url',
+      title: 'OpenAI URL',
+      dataIndex: 'openai_url',
+      key: 'openai_url',
       ellipsis: true,
+      render: (url: string, record: Provider) => url || record.base_url || '-',
+    },
+    {
+      title: 'Anthropic URL',
+      dataIndex: 'anthropic_url',
+      key: 'anthropic_url',
+      ellipsis: true,
+      render: (url: string) => url || '-',
     },
     {
       title: 'API Key',
@@ -201,8 +211,14 @@ function ProviderManager() {
           <Form.Item name="display_name" label="显示名称">
             <Input placeholder="例如: DeepSeek" />
           </Form.Item>
-          <Form.Item name="base_url" label="API 地址" rules={[{ required: true, message: '请输入 API 地址' }]}>
+          <Form.Item name="openai_url" label="OpenAI 协议地址" help="用于 /v1/chat/completions 和 /v1/responses">
             <Input placeholder="例如: https://api.deepseek.com/v1" />
+          </Form.Item>
+          <Form.Item name="anthropic_url" label="Anthropic 协议地址" help="用于 /v1/messages">
+            <Input placeholder="例如: https://api.deepseek.com/anthropic" />
+          </Form.Item>
+          <Form.Item name="base_url" label="通用 API 地址" help="当上面两个地址为空时使用此地址">
+            <Input placeholder="例如: https://api.deepseek.com" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
             <Input.Password placeholder="sk-..." />
