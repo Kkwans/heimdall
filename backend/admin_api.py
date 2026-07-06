@@ -48,6 +48,11 @@ def create_provider():
     if not data.get("base_url") and not data.get("openai_url"):
         return jsonify({"error": "base_url or openai_url is required"}), 400
     
+    # 检查厂商名是否已存在
+    existing = router.get_provider_by_name(data["name"])
+    if existing:
+        return jsonify({"error": f"厂商 '{data['name']}' 已存在"}), 409
+    
     try:
         provider_id = router.create_provider(data)
         return jsonify({"id": provider_id, "message": "Provider created"}), 201

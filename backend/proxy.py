@@ -463,9 +463,9 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
     base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
-    # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key
+    # 如果路由有 API Key，使用路由的 Key
     upstream_headers = dict(headers)
-    if route and route.api_key and not upstream_headers.get('Authorization'):
+    if route and route.api_key:
         upstream_headers['Authorization'] = f"Bearer {route.api_key}"
 
     try:
@@ -551,9 +551,9 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
     base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
-    # 如果路由有 API Key 且请求没有自带 Authorization，使用路由的 Key
+    # 如果路由有 API Key，使用路由的 Key
     upstream_headers = dict(headers)
-    if route and route.api_key and not upstream_headers.get('Authorization'):
+    if route and route.api_key:
         upstream_headers['Authorization'] = f"Bearer {route.api_key}"
 
     provider_key = route.provider_key if route else None
@@ -920,15 +920,45 @@ def proxy_anthropic_messages():
         data['model'] = route.model_name
 
         is_stream = data.get('stream', False)
+        start_time_req = time.time()
         resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
 
         if is_stream:
+            # 流式响应：yield 并记录
             def generate():
                 for line in resp.iter_lines():
                     if line:
                         yield line + b'\n\n'
+
             return Response(generate(), content_type='text/event-stream')
         else:
+            # 非流式响应：记录请求到数据库
+            latency_ms = int((time.time() - start_time_req) * 1000)
+            usage = {}
+            resp_body_str = None
+            try:
+                resp_json = resp.json()
+                usage = resp_json.get('usage', {}) or {}
+                # Anthropic usage 格式转换为 OpenAI 格式
+                prompt_tokens = usage.get('input_tokens', 0) or 0
+                completion_tokens = usage.get('output_tokens', 0) or 0
+                usage = {
+                    'prompt_tokens': prompt_tokens,
+                    'completion_tokens': completion_tokens,
+                    'total_tokens': prompt_tokens + completion_tokens,
+                }
+                resp_body_str = json.dumps(resp_json, ensure_ascii=False)
+            except Exception:
+                pass
+
+            req_body_str = json.dumps(data, ensure_ascii=False)
+            record = build_record(data, resp.status_code, usage, latency_ms, is_stream=False,
+                                  ttfb_ms=latency_ms, client_ip=client_ip,
+                                  request_body=req_body_str, response_body=resp_body_str,
+                                  provider=route.provider_key)
+            db.insert_request(record)
+            log_request(record)
+
             return Response(resp.content, status=resp.status_code, content_type='application/json')
 
     except Exception as e:
@@ -991,6 +1021,7 @@ def proxy_openai_responses():
         data['model'] = route.model_name
 
         is_stream = data.get('stream', False)
+        start_time_req = time.time()
         resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
 
         if is_stream:
@@ -1000,6 +1031,25 @@ def proxy_openai_responses():
                         yield line + b'\n\n'
             return Response(generate(), content_type='text/event-stream')
         else:
+            # 非流式响应：记录请求到数据库
+            latency_ms = int((time.time() - start_time_req) * 1000)
+            usage = {}
+            resp_body_str = None
+            try:
+                resp_json = resp.json()
+                usage = resp_json.get('usage', {}) or {}
+                resp_body_str = json.dumps(resp_json, ensure_ascii=False)
+            except Exception:
+                pass
+
+            req_body_str = json.dumps(data, ensure_ascii=False)
+            record = build_record(data, resp.status_code, usage, latency_ms, is_stream=False,
+                                  ttfb_ms=latency_ms, client_ip=client_ip,
+                                  request_body=req_body_str, response_body=resp_body_str,
+                                  provider=route.provider_key)
+            db.insert_request(record)
+            log_request(record)
+
             return Response(resp.content, status=resp.status_code, content_type='application/json')
 
     except Exception as e:

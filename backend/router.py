@@ -112,60 +112,6 @@ def init_routing_tables():
         _logger.error(f"[ROUTER] 初始化路由表失败: {e}", exc_info=True)
 
 
-def resolve_route(model: str) -> Optional[Tuple[str, str, str]]:
-    """
-    根据模型名解析路由配置。
-    
-    Args:
-        model: 客户端请求的模型名，支持格式：
-               - "mimo/mimo-v2.5-pro" (厂商前缀格式)
-               - "deepseek-v4-pro" (简写格式)
-    
-    Returns:
-        (base_url, api_key, upstream_model) 或 None（未找到路由）
-    """
-    try:
-        conn = _get_conn()
-        cursor = conn.cursor()
-
-        provider_name = None
-        model_name = model
-
-        # 解析厂商前缀
-        if '/' in model:
-            parts = model.split('/', 1)
-            provider_name = parts[0]
-            model_name = parts[1]
-
-        if provider_name:
-            # 有厂商前缀：精确查找
-            cursor.execute("""
-                SELECT p.base_url, p.api_key, COALESCE(m.upstream_model, m.model_name) as upstream_model
-                FROM providers p
-                JOIN models m ON m.provider_id = p.id
-                WHERE p.name = ? AND m.model_name = ? AND p.enabled = 1 AND m.enabled = 1
-            """, (provider_name, model_name))
-        else:
-            # 无厂商前缀：查找所有匹配的模型，按优先级排序
-            cursor.execute("""
-                SELECT p.base_url, p.api_key, COALESCE(m.upstream_model, m.model_name) as upstream_model
-                FROM providers p
-                JOIN models m ON m.provider_id = p.id
-                WHERE m.model_name = ? AND p.enabled = 1 AND m.enabled = 1
-                ORDER BY p.priority DESC
-                LIMIT 1
-            """, (model_name,))
-
-        row = cursor.fetchone()
-        if row:
-            return (row["base_url"], row["api_key"], row["upstream_model"])
-
-        return None
-    except Exception as e:
-        _logger.error(f"[ROUTER] 路由查找失败: {e}", exc_info=True)
-        return None
-
-
 def get_context_window(model: str) -> Optional[int]:
     """获取模型的上下文窗口大小"""
     try:
@@ -316,6 +262,15 @@ def get_provider(provider_id: int) -> Optional[dict]:
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM providers WHERE id = ?", (provider_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def get_provider_by_name(name: str) -> Optional[dict]:
+    """根据名称获取厂商"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM providers WHERE name = ?", (name,))
     row = cursor.fetchone()
     return dict(row) if row else None
 
