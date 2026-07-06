@@ -18,20 +18,25 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  line-height: 1;
 }
 
 .pageTitleIcon {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  line-height: 1;
 }
 
 .pageTitleText {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
   white-space: nowrap;
+  line-height: 1;
+  transform: translateY(0.5px);
 }
 
 /* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */

@@ -25,6 +25,14 @@ import {
 
 const { Text } = Typography
 
+// 厂商预设类型
+interface VendorPreset {
+  name: string
+  plans: Record<string, { label: string; openai_url: string | null; anthropic_url: string | null }>
+  default_plan: string
+  models: string[]
+}
+
 // ==========================================
 // 厂商管理组件
 // ==========================================
@@ -35,6 +43,60 @@ function ProviderManager() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
   const [form] = Form.useForm()
+  const [vendorPresets, setVendorPresets] = useState<Record<string, VendorPreset>>({})
+  const [selectedPreset, setSelectedPreset] = useState<string>('')
+  const [selectedPlan, setSelectedPlan] = useState<string>('')
+
+  // 加载厂商预设
+  useEffect(() => {
+    const loadPresets = async () => {
+      try {
+        const resp = await fetch('/api/vendor-presets')
+        const data = await resp.json()
+        setVendorPresets(data.vendors || {})
+      } catch { /* silent */ }
+    }
+    loadPresets()
+  }, [])
+
+  // 选择预设后自动填充
+  const handlePresetChange = (presetKey: string) => {
+    setSelectedPreset(presetKey)
+    if (!presetKey) {
+      form.resetFields()
+      return
+    }
+    const preset = vendorPresets[presetKey]
+    if (!preset) return
+
+    const defaultPlan = preset.default_plan
+    const plan = preset.plans[defaultPlan]
+    setSelectedPlan(defaultPlan)
+
+    form.setFieldsValue({
+      name: presetKey,
+      display_name: preset.name,
+      openai_url: plan?.openai_url || '',
+      anthropic_url: plan?.anthropic_url || '',
+      base_url: '',
+      api_key: '',
+      enabled: true,
+      priority: 0,
+    })
+  }
+
+  // 切换计费类型
+  const handlePlanChange = (planKey: string) => {
+    setSelectedPlan(planKey)
+    const preset = vendorPresets[selectedPreset]
+    if (!preset) return
+    const plan = preset.plans[planKey]
+    if (!plan) return
+    form.setFieldsValue({
+      openai_url: plan.openai_url || '',
+      anthropic_url: plan.anthropic_url || '',
+    })
+  }
 
   const loadProviders = useCallback(async () => {
     setLoading(true)
@@ -55,6 +117,8 @@ function ProviderManager() {
   const handleAdd = () => {
     setEditingProvider(null)
     form.resetFields()
+    setSelectedPreset('')
+    setSelectedPlan('')
     setModalOpen(true)
   }
 
@@ -228,7 +292,12 @@ function ProviderManager() {
         locale={{ emptyText: loading ? <span /> : '暂无数据' }}
         size="small"
         showSorterTooltip={false}
-        pagination={false}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50'],
+          showTotal: (t) => `共 ${t} 条`,
+        }}
         scroll={{ x: 950 }}
       />
 
@@ -242,20 +311,44 @@ function ProviderManager() {
         styles={{ body: { padding: '16px 24px' } }}
       >
         <Form form={form} layout="vertical">
+          <Form.Item label="选择厂商预设">
+            <Select
+              value={selectedPreset}
+              onChange={handlePresetChange}
+              placeholder="选择内置厂商（可选）"
+              allowClear
+              options={Object.entries(vendorPresets).map(([key, v]) => ({
+                label: v.name,
+                value: key,
+              }))}
+            />
+          </Form.Item>
+          {selectedPreset && Object.keys(vendorPresets[selectedPreset]?.plans || {}).length > 1 && (
+            <Form.Item label="计费类型">
+              <Select
+                value={selectedPlan}
+                onChange={handlePlanChange}
+                options={Object.entries(vendorPresets[selectedPreset].plans).map(([key, plan]) => ({
+                  label: plan.label,
+                  value: key,
+                }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="name" label="厂商标识" rules={[{ required: true, message: '请输入厂商标识' }]}>
             <Input placeholder="例如: deepseek（用于 model 参数前缀）" />
           </Form.Item>
           <Form.Item name="display_name" label="显示名称">
             <Input placeholder="例如: DeepSeek" />
           </Form.Item>
-          <Form.Item name="openai_url" label="OpenAI 协议地址" rules={[{ required: true, message: '请输入 OpenAI 协议地址' }]} help="用于 /v1/chat/completions 和 /v1/responses">
-            <Input placeholder="例如: https://api.deepseek.com/v1" />
+          <Form.Item name="openai_url" label="OpenAI 协议地址" rules={[{ required: true, message: '请输入 OpenAI 协议地址' }]}>
+            <Input placeholder="https://api.deepseek.com/v1" />
           </Form.Item>
-          <Form.Item name="anthropic_url" label="Anthropic 协议地址" help="用于 /v1/messages，如不支持 Anthropic 协议可留空">
-            <Input placeholder="例如: https://api.deepseek.com/anthropic" />
+          <Form.Item name="anthropic_url" label="Anthropic 协议地址">
+            <Input placeholder="https://api.deepseek.com/anthropic" />
           </Form.Item>
-          <Form.Item name="base_url" label="通用 API 地址" help="当上面两个地址为空时使用此地址作为 fallback">
-            <Input placeholder="例如: https://api.deepseek.com" />
+          <Form.Item name="base_url" label="通用 API 地址">
+            <Input placeholder="上面两个地址为空时使用此地址" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
             <Input.Password placeholder="sk-..." />
@@ -392,7 +485,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (upstream: string | null) => upstream || <Text type="secondary">同上</Text>,
+      render: (upstream: string | null, record) => upstream || <Text type="secondary">-</Text>,
     },
     {
       title: '上下文窗口',
@@ -461,7 +554,12 @@ function ModelManager() {
         locale={{ emptyText: loading ? <span /> : '暂无数据' }}
         size="small"
         showSorterTooltip={false}
-        pagination={false}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50'],
+          showTotal: (t) => `共 ${t} 条`,
+        }}
         scroll={{ x: 600 }}
       />
 
@@ -505,6 +603,7 @@ function ApiKeyManager() {
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [form] = Form.useForm()
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+  const [allModels, setAllModels] = useState<string[]>([])
 
   const loadApiKeys = useCallback(async () => {
     setLoading(true)
@@ -518,9 +617,25 @@ function ApiKeyManager() {
     }
   }, [])
 
+  // 加载所有模型列表
+  const loadAllModels = useCallback(async () => {
+    try {
+      const { providers } = await fetchProviders()
+      const models: string[] = []
+      for (const p of providers) {
+        const { models: pModels } = await fetchModels(p.id)
+        for (const m of pModels) {
+          models.push(`${p.name}/${m.model_name}`)
+        }
+      }
+      setAllModels(models)
+    } catch { /* silent */ }
+  }, [])
+
   useEffect(() => {
     loadApiKeys()
-  }, [loadApiKeys])
+    loadAllModels()
+  }, [loadApiKeys, loadAllModels])
 
   const handleAdd = () => {
     setEditingKey(null)
@@ -533,7 +648,7 @@ function ApiKeyManager() {
     form.setFieldsValue({
       name: key.name,
       enabled: key.enabled,
-      allowed_models: key.allowed_models,
+      allowed_models: key.allowed_models ? key.allowed_models.split(',').map(m => m.trim()) : [],
     })
     setModalOpen(true)
   }
@@ -551,6 +666,10 @@ function ApiKeyManager() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      // 将模型数组转为逗号分隔字符串
+      if (Array.isArray(values.allowed_models)) {
+        values.allowed_models = values.allowed_models.join(',')
+      }
       if (editingKey) {
         await updateApiKey(editingKey.id, values)
         message.success('更新成功')
@@ -673,7 +792,12 @@ function ApiKeyManager() {
         locale={{ emptyText: loading ? <span /> : '暂无数据' }}
         size="small"
         showSorterTooltip={false}
-        pagination={false}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50'],
+          showTotal: (t) => `共 ${t} 条`,
+        }}
         scroll={{ x: 700 }}
       />
 
@@ -695,8 +819,18 @@ function ApiKeyManager() {
               <Input placeholder="留空自动生成 heimdall-xxx" />
             </Form.Item>
           )}
-          <Form.Item name="allowed_models" label="允许的模型" help="多个模型用逗号分隔，留空则允许所有模型">
-            <Input placeholder="例如: deepseek-chat,gpt-4" />
+          <Form.Item name="allowed_models" label="允许的模型">
+            <Select
+              mode="multiple"
+              placeholder="留空则允许所有模型"
+              allowClear
+              options={allModels.map(m => ({ label: m, value: m }))}
+              maxTagCount={3}
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
+              }
+            />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
             <Switch />
@@ -762,7 +896,7 @@ export default function Admin() {
 
   return (
     <div className="page-content">
-      <Header pageName="设置" />
+      <Header pageName="系统设置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
           <div style={{ padding: '0 16px' }}>

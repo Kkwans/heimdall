@@ -66,9 +66,11 @@ interface HeaderProps {
   hideBrand?: boolean
   /** PC端左侧显示的页面名称（含图标）；移动端不显示 */
   pageName?: string
+  /** 隐藏日期筛选，只显示刷新按钮 */
+  hideDatePicker?: boolean
 }
 
-export default function Header({ pageName }: HeaderProps = {}) {
+export default function Header({ pageName, hideDatePicker }: HeaderProps = {}) {
   const {
     datePreset,
     dateRange,
@@ -98,38 +100,42 @@ export default function Header({ pageName }: HeaderProps = {}) {
 
       <div className={styles.controls}>
         {/* 第一行：预设按钮组 */}
-        <div className={styles.presetGroup}>
-          {PRESETS.map(p => (
-            <Button
-              key={p.key}
-              size="small"
-              type={datePreset === p.key ? 'primary' : 'default'}
-              onClick={() => setDatePreset(p.key)}
-              className={styles.presetBtn}
-            >
-              {p.label}
-            </Button>
-          ))}
-        </div>
+        {!hideDatePicker && (
+          <div className={styles.presetGroup}>
+            {PRESETS.map(p => (
+              <Button
+                key={p.key}
+                size="small"
+                type={datePreset === p.key ? 'primary' : 'default'}
+                onClick={() => setDatePreset(p.key)}
+                className={styles.presetBtn}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* 日期范围选择器 */}
-        <RangePicker
-          size="small"
-          value={rangePickerValue}
-          onChange={(dates) => {
-            if (dates && dates[0] && dates[1]) {
-              setCustomDateRange({
-                start: dates[0].format('YYYY-MM-DD'),
-                end: dates[1].format('YYYY-MM-DD'),
-              } as DateRange)
-            }
-          }}
-          className={styles.rangePicker}
-          placeholder={['开始日期', '结束日期']}
-          allowClear={false}
-          format="YYYY-MM-DD"
-          style={{ width: 240 }}
-        />
+        {!hideDatePicker && (
+          <RangePicker
+            size="small"
+            value={rangePickerValue}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                setCustomDateRange({
+                  start: dates[0].format('YYYY-MM-DD'),
+                  end: dates[1].format('YYYY-MM-DD'),
+                } as DateRange)
+              }
+            }}
+            className={styles.rangePicker}
+            placeholder={['开始日期', '结束日期']}
+            allowClear={false}
+            format="YYYY-MM-DD"
+            style={{ width: 240 }}
+          />
+        )}
 
         {/* PC端刷新模块（在日历右侧），移动端由 Layout 的 topbar 负责 */}
         {!isMobile() && <RefreshModule />}
