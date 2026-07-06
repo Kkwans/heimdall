@@ -566,14 +566,13 @@ export default function ProxyStatusCard() {
                 { type: 'number', min: 1024, max: 65535, message: '端口范围 1024–65535' },
               ]}
               style={{ flex: 1 }}
-              help="Docker 环境下端口通过 docker-compose.yml 映射"
             >
               <InputNumber
                 min={1024}
                 max={65535}
                 style={{ width: '100%' }}
                 placeholder="8888"
-                disabled
+                suffix={<span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>重启生效</span>}
               />
             </Form.Item>
 

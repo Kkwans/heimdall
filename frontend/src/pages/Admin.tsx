@@ -102,21 +102,23 @@ function ProviderManager() {
 
   const columns: ColumnsType<Provider> = [
     {
-      title: '厂商名称',
+      title: '厂商',
       dataIndex: 'name',
       key: 'name',
-      width: 120,
+      width: 100,
+      fixed: 'left' as const,
     },
     {
-      title: '显示名称',
+      title: '显示名',
       dataIndex: 'display_name',
       key: 'display_name',
-      width: 120,
+      width: 100,
     },
     {
       title: 'OpenAI URL',
       dataIndex: 'openai_url',
       key: 'openai_url',
+      width: 200,
       ellipsis: true,
       render: (url: string, record: Provider) => url || record.base_url || '-',
     },
@@ -124,6 +126,7 @@ function ProviderManager() {
       title: 'Anthropic URL',
       dataIndex: 'anthropic_url',
       key: 'anthropic_url',
+      width: 200,
       ellipsis: true,
       render: (url: string) => url || '-',
     },
@@ -131,32 +134,33 @@ function ProviderManager() {
       title: 'API Key',
       dataIndex: 'api_key',
       key: 'api_key',
-      width: 200,
+      width: 150,
+      ellipsis: true,
       render: (key: string) => (
-        <Text copyable={{ text: key }} style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        <Text copyable={{ text: key }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
           {key.substring(0, 12)}...
         </Text>
       ),
     },
     {
-      title: '模型数',
+      title: '模型',
       dataIndex: 'model_count',
       key: 'model_count',
-      width: 80,
-      align: 'center',
+      width: 60,
+      align: 'center' as const,
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 80,
-      align: 'center',
+      width: 60,
+      align: 'center' as const,
     },
     {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
-      width: 80,
+      width: 60,
       render: (enabled: boolean) => (
         <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
       ),
@@ -164,7 +168,8 @@ function ProviderManager() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 80,
+      fixed: 'right' as const,
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
@@ -194,7 +199,7 @@ function ProviderManager() {
         rowKey="id"
         loading={loading ? TABLE_SPIN_INDICATOR : false}
         pagination={false}
-        scroll={{ x: 800 }}
+        scroll={{ x: 950 }}
       />
 
       <Modal
@@ -676,7 +681,7 @@ export default function Admin() {
     <div className="page-content">
       <Header pageName="设置" />
       <section className="section">
-        <Card>
+        <Card className="hd-card">
           <Tabs items={tabItems} defaultActiveKey="providers" />
         </Card>
       </section>
