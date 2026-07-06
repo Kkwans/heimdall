@@ -7,12 +7,12 @@
         "api": {
           "label": "API 调用（按量计费）",
           "openai_url": "https://api.xiaomimimo.com/v1",
-          "anthropic_url": "https://api.xiaomimimo.com/anthropic"
+          "anthropic_url": "https://api.xiaomimimo.com/anthropic/v1"
         },
         "token_plan": {
           "label": "Token Plan（订阅制）",
           "openai_url": "https://token-plan-cn.xiaomimimo.com/v1",
-          "anthropic_url": "https://token-plan-cn.xiaomimimo.com/anthropic"
+          "anthropic_url": "https://token-plan-cn.xiaomimimo.com/anthropic/v1"
         }
       },
       "default_plan": "token_plan",
@@ -25,7 +25,7 @@
         "api": {
           "label": "API 调用（按量计费）",
           "openai_url": "https://api.deepseek.com",
-          "anthropic_url": "https://api.deepseek.com/anthropic"
+          "anthropic_url": "https://api.deepseek.com/anthropic/v1"
         }
       },
       "default_plan": "api",
@@ -64,7 +64,7 @@
         "api": {
           "label": "API 调用（按量计费）",
           "openai_url": "https://api.minimax.io/v1",
-          "anthropic_url": "https://api.minimax.io/anthropic"
+          "anthropic_url": "https://api.minimax.io/anthropic/v1"
         }
       },
       "default_plan": "api",

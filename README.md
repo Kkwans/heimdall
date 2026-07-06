@@ -59,51 +59,35 @@ docker compose up -d
 
 ## 使用方式
 
-### API 调用
+### 基本信息
+
+| 协议 | 推荐 baseURL | 简化版 |
+|------|-------------|--------|
+| OpenAI | `http://<IP>:<端口>/openai` | `http://<IP>:<端口>` 或 `http://<IP>:<端口>/v1` |
+| Anthropic | `http://<IP>:<端口>/anthropic` | `http://<IP>:<端口>` 或 `http://<IP>:<端口>/v2` |
+
+### API 文档
+
+| 文档 | 说明 |
+|------|------|
+| [OpenAI API 文档](docs/openai-api.md) | Chat Completions API + Responses API 完整参数说明 |
+| [Anthropic API 文档](docs/anthropic-api.md) | Messages API 完整参数说明 + anthropic-version 头 |
+
+### 快速示例
 
 ```bash
-# 非流式
-curl http://localhost:9888/v1/chat/completions \
+# OpenAI 协议
+curl http://localhost:9888/openai/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "model": "provider/model-name",
-    "messages": [{"role": "user", "content": "你好"}],
-    "max_tokens": 100
-  }'
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{"model":"mimo/mimo-v2.5","messages":[{"role":"user","content":"你好"}]}'
 
-# 流式
-curl http://localhost:9888/v1/chat/completions \
+# Anthropic 协议
+curl http://localhost:9888/anthropic/v1/messages \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "model": "provider/model-name",
-    "messages": [{"role": "user", "content": "你好"}],
-    "stream": true
-  }'
-```
-
-### 模型格式
-
-- `provider/model`：指定厂商，如 `mimo/mimo-v2.5`
-- `model`：使用默认厂商（优先级最高），如 `mimo-v2.5`
-
-### Python SDK
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:9888/v1",
-    api_key="YOUR_API_KEY"
-)
-
-resp = client.chat.completions.create(
-    model="mimo/mimo-v2.5",
-    messages=[{"role": "user", "content": "你好"}],
-    max_tokens=100
-)
-print(resp.choices[0].message.content)
+  -H "x-api-key: YOUR_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"mimo/mimo-v2.5","max_tokens":100,"messages":[{"role":"user","content":"你好"}]}'
 ```
 
 ## Dashboard
