@@ -87,7 +87,6 @@ const navItems = [
   { to: '/requests', label: '请求明细', icon: <RequestsIcon /> },
   { to: '/stats', label: '数据统计', icon: <StatsIcon /> },
   { to: '/logs', label: '实时日志', icon: <LogsIcon /> },
-  { to: '/upstream', label: '上游配置', icon: <UpstreamIcon /> },
   { to: '/admin', label: '管理后台', icon: <AdminIcon /> },
 ]
 

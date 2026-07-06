@@ -12,7 +12,6 @@ import './styles/global.css'
 const Requests = React.lazy(() => import('./pages/Requests'))
 const Logs = React.lazy(() => import('./pages/Logs'))
 const Stats = React.lazy(() => import('./pages/Stats'))
-const UpstreamConfig = React.lazy(() => import('./pages/UpstreamConfig'))
 const Admin = React.lazy(() => import('./pages/Admin'))
 
 // Ant Design 主题配置（根据 ThemeContext 动态切换）
@@ -86,7 +85,6 @@ export default function App() {
                   <Route path="/requests" element={<Requests />} />
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/logs" element={<Logs />} />
-                  <Route path="/upstream" element={<UpstreamConfig />} />
                   <Route path="/admin" element={<Admin />} />
                 </Routes>
               </React.Suspense>

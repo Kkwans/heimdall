@@ -646,7 +646,7 @@ def proxy_status():
     
     return _cors_response({
         "running": running,
-        "port": proxy_port,
+        "port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
         "pid": None,
     })
 
@@ -813,7 +813,7 @@ def proxy_config_get():
         pass
     
     return _cors_response({
-        "proxy_port": 8888,
+        "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
         "dashboard_port": 8889,
         "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/chat/completions')),
         "upstream_url": cfg.get("upstream_url", ""),

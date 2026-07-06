@@ -64,6 +64,9 @@ REQUEST_TIMEOUT = int(os.getenv("HEIMDALL_TIMEOUT", "120"))
 # 在 Docker 网络中，代理容器可通过此主机名访问
 PROXY_HOST = os.getenv("HEIMDALL_PROXY_HOST", "heimdall-proxy")
 
+# 代理服务外部端口（Docker 映射的宿主机端口）
+PROXY_EXTERNAL_PORT = int(os.getenv("HEIMDALL_PROXY_EXTERNAL_PORT", "9888"))
+
 # ==========================================
 # Dashboard 配置
 # ==========================================

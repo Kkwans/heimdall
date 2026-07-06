@@ -30,6 +30,7 @@ services:
       - HEIMDALL_PROXY_PATH=${HEIMDALL_PROXY_PATH:-/v1/chat/completions}
       - HEIMDALL_TIMEOUT=${HEIMDALL_TIMEOUT:-120}
       - TZ=Asia/Shanghai
+      - HEIMDALL_PROXY_EXTERNAL_PORT=${PROXY_PORT:-9888}
     networks:
       - heimdall-net
     healthcheck:

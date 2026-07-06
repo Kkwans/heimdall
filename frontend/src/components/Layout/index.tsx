@@ -10,7 +10,6 @@ const PAGE_NAMES: Record<string, string> = {
   '/requests': '请求明细',
   '/stats': '数据统计',
   '/logs': '实时日志',
-  '/upstream': '上游配置',
   '/admin': '管理后台',
 }
 
@@ -47,11 +46,6 @@ const PAGE_ICONS: Record<string, React.ReactNode> = {
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
       <polyline points="10 9 9 9 8 9" />
-    </svg>
-  ),
-  '/upstream': (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
     </svg>
   ),
   '/admin': (
