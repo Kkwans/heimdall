@@ -450,7 +450,6 @@ function ModelManager() {
     form.setFieldsValue({
       model_name: model.model_name,
       upstream_model: model.upstream_model,
-      model_name: model.model_name,
       enabled: model.enabled,
       price_input: model.price_input,
       price_output: model.price_output,
