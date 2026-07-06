@@ -498,7 +498,9 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         req_body_str = json.dumps(data, ensure_ascii=False)
 
         latency_ms = int((time.time() - start_time) * 1000)
+        # 非流式请求：TTFB 等于总延迟（一次性返回）
         record = build_record(data, status_code, usage, latency_ms, is_stream=False,
+                              ttfb_ms=latency_ms,
                               trace_id=trace_id, client_ip=client_ip,
                               request_body=req_body_str, response_body=resp_body_str,
                               provider=provider_key)
