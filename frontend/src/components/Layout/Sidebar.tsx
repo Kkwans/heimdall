@@ -87,7 +87,7 @@ const navItems = [
   { to: '/requests', label: '请求明细', icon: <RequestsIcon /> },
   { to: '/stats', label: '数据统计', icon: <StatsIcon /> },
   { to: '/logs', label: '实时日志', icon: <LogsIcon /> },
-  { to: '/admin', label: '配置', icon: <AdminIcon /> },
+  { to: '/admin', label: '系统配置', icon: <AdminIcon /> },
 ]
 
 export default function Sidebar() {

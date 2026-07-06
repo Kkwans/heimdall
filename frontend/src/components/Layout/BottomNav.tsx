@@ -41,7 +41,7 @@ const navItems = [
   },
   {
     to: '/admin',
-    label: '配置',
+    label: '系统配置',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />

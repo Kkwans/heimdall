@@ -79,10 +79,9 @@ function ProviderManager() {
       display_name: preset.name,
       openai_url: plan?.openai_url || '',
       anthropic_url: plan?.anthropic_url || '',
-      base_url: '',
       api_key: '',
-      enabled: true,
       priority: 0,
+      plan_type: defaultPlan,
     })
   }
 
@@ -132,10 +131,9 @@ function ProviderManager() {
       display_name: provider.display_name,
       openai_url: provider.openai_url || '',
       anthropic_url: provider.anthropic_url || '',
-      base_url: provider.base_url,
       api_key: provider.api_key,
-      enabled: provider.enabled,
       priority: provider.priority,
+      plan_type: provider.plan_type,
     })
     setModalOpen(true)
   }
@@ -153,6 +151,11 @@ function ProviderManager() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      // 验证至少填写了一个 URL
+      if (!values.openai_url && !values.anthropic_url) {
+        message.error('OpenAI 和 Anthropic 协议地址至少填写一个')
+        return
+      }
       if (editingProvider) {
         await updateProvider(editingProvider.id, values)
         message.success('更新成功')
@@ -168,13 +171,20 @@ function ProviderManager() {
   }
 
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const columns: ColumnsType<Provider> = [
     {
       title: '厂商',
       dataIndex: 'name',
       key: 'name',
-      width: 100,
+      width: isMobile ? 80 : 100,
       fixed: 'left' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
@@ -184,27 +194,17 @@ function ProviderManager() {
       title: '显示名',
       dataIndex: 'display_name',
       key: 'display_name',
-      width: 100,
+      width: isMobile ? 80 : 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
+      responsive: ['md' as const],
     },
     {
       title: 'OpenAI URL',
       dataIndex: 'openai_url',
       key: 'openai_url',
-      width: 200,
-      ellipsis: true,
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-      render: (url: string, record: Provider) => url || record.base_url || '-',
-    },
-    {
-      title: 'Anthropic URL',
-      dataIndex: 'anthropic_url',
-      key: 'anthropic_url',
-      width: 200,
+      width: isMobile ? 120 : 200,
       ellipsis: true,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
@@ -212,10 +212,22 @@ function ProviderManager() {
       render: (url: string) => url || '-',
     },
     {
+      title: 'Anthropic URL',
+      dataIndex: 'anthropic_url',
+      key: 'anthropic_url',
+      width: isMobile ? 120 : 200,
+      ellipsis: true,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (url: string) => url || '-',
+      responsive: ['md' as const],
+    },
+    {
       title: 'API Key',
       dataIndex: 'api_key',
       key: 'api_key',
-      width: 150,
+      width: isMobile ? 100 : 150,
       ellipsis: true,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
@@ -225,6 +237,7 @@ function ProviderManager() {
           {key.substring(0, 12)}...
         </Text>
       ),
+      responsive: ['lg' as const],
     },
     {
       title: '模型',
@@ -243,6 +256,7 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
+      responsive: ['md' as const],
     },
     {
       title: '状态',
@@ -356,27 +370,18 @@ function ProviderManager() {
           <Form.Item name="display_name" label="显示名称">
             <Input placeholder="例如: DeepSeek" />
           </Form.Item>
-          <Form.Item name="openai_url" label="OpenAI 协议地址" rules={[{ required: true, message: '请输入 OpenAI 协议地址' }]}>
+          <Form.Item name="openai_url" label="OpenAI 协议地址">
             <Input placeholder="https://api.deepseek.com/v1" />
           </Form.Item>
           <Form.Item name="anthropic_url" label="Anthropic 协议地址">
-            <Input placeholder="https://api.deepseek.com/anthropic" />
-          </Form.Item>
-          <Form.Item name="base_url" label="通用 API 地址">
-            <Input placeholder="上面两个地址为空时使用此地址" />
+            <Input placeholder="https://api.anthropic.com/v1" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
             <Input.Password placeholder="sk-..." />
           </Form.Item>
           <Space>
-            <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
-              <Switch />
-            </Form.Item>
             <Form.Item name="priority" label="优先级" initialValue={0}>
               <InputNumber min={0} max={100} />
-            </Form.Item>
-            <Form.Item name="plan_type" label="计费类型" initialValue="api" style={{ width: 120 }}>
-              <Select options={[{ value: 'api', label: 'API 按量' }, { value: 'token_plan', label: 'Token Plan' }]} />
             </Form.Item>
           </Space>
         </Form>
@@ -971,7 +976,7 @@ export default function Admin() {
 
   return (
     <div className="page-content">
-      <Header pageName="配置" hideDatePicker />
+      <Header pageName="系统配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
           <div style={{ padding: '0 16px' }}>
