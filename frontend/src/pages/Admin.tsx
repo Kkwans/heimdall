@@ -237,22 +237,24 @@ function ProviderManager() {
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
-        width={600}
+        width={560}
+        destroyOnClose
+        styles={{ body: { padding: '16px 24px' } }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="厂商名称" rules={[{ required: true, message: '请输入厂商名称' }]}>
-            <Input placeholder="例如: deepseek" />
+          <Form.Item name="name" label="厂商标识" rules={[{ required: true, message: '请输入厂商标识' }]}>
+            <Input placeholder="例如: deepseek（用于 model 参数前缀）" />
           </Form.Item>
           <Form.Item name="display_name" label="显示名称">
             <Input placeholder="例如: DeepSeek" />
           </Form.Item>
-          <Form.Item name="openai_url" label="OpenAI 协议地址" help="用于 /v1/chat/completions 和 /v1/responses">
+          <Form.Item name="openai_url" label="OpenAI 协议地址" rules={[{ required: true, message: '请输入 OpenAI 协议地址' }]} help="用于 /v1/chat/completions 和 /v1/responses">
             <Input placeholder="例如: https://api.deepseek.com/v1" />
           </Form.Item>
-          <Form.Item name="anthropic_url" label="Anthropic 协议地址" help="用于 /v1/messages">
+          <Form.Item name="anthropic_url" label="Anthropic 协议地址" help="用于 /v1/messages，如不支持 Anthropic 协议可留空">
             <Input placeholder="例如: https://api.deepseek.com/anthropic" />
           </Form.Item>
-          <Form.Item name="base_url" label="通用 API 地址" help="当上面两个地址为空时使用此地址">
+          <Form.Item name="base_url" label="通用 API 地址" help="当上面两个地址为空时使用此地址作为 fallback">
             <Input placeholder="例如: https://api.deepseek.com" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
@@ -264,6 +266,9 @@ function ProviderManager() {
             </Form.Item>
             <Form.Item name="priority" label="优先级" initialValue={0}>
               <InputNumber min={0} max={100} />
+            </Form.Item>
+            <Form.Item name="plan_type" label="计费类型" initialValue="api" style={{ width: 120 }}>
+              <Select options={[{ value: 'api', label: 'API 按量' }, { value: 'token_plan', label: 'Token Plan' }]} />
             </Form.Item>
           </Space>
         </Form>
@@ -462,7 +467,9 @@ function ModelManager() {
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
-        width={500}
+        width={560}
+        destroyOnClose
+        styles={{ body: { padding: '16px 24px' } }}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]}>
@@ -671,7 +678,9 @@ function ApiKeyManager() {
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
-        width={500}
+        width={560}
+        destroyOnClose
+        styles={{ body: { padding: '16px 24px' } }}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="名称">
@@ -751,8 +760,10 @@ export default function Admin() {
     <div className="page-content">
       <Header pageName="设置" />
       <section className="section">
-        <Card className="hd-card">
-          <Tabs items={tabItems} defaultActiveKey="providers" />
+        <Card className="hd-card" styles={{ body: { padding: '0' } }}>
+          <div style={{ padding: '0 16px' }}>
+            <Tabs items={tabItems} defaultActiveKey="providers" />
+          </div>
         </Card>
       </section>
     </div>

@@ -348,8 +348,8 @@ export default function ProxyStatusCard() {
   const isRunning = status?.running ?? false
   const autostart = cfg?.autostart_enabled ?? false
   const proxyAddr = cfg
-    ? `localhost:${cfg.proxy_port}${cfg.proxy_path}`
-    : `localhost:${status?.port ?? 8888}`
+    ? `${cfg.proxy_port}${cfg.proxy_path}`
+    : `${status?.port ?? 8888}`
   const upstreamDisplay = cfg?.upstream_url
     ? cfg.upstream_url.replace(/^https?:\/\//, '')
     : '—'
