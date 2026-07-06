@@ -289,6 +289,7 @@ function ModelManager() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<Model | null>(null)
   const [form] = Form.useForm()
+  const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
 
   const loadProviders = useCallback(async () => {
     try {
@@ -503,6 +504,7 @@ function ApiKeyManager() {
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null)
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [form] = Form.useForm()
+  const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
 
   const loadApiKeys = useCallback(async () => {
     setLoading(true)
