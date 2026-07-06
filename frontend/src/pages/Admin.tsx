@@ -100,6 +100,8 @@ function ProviderManager() {
     }
   }
 
+  const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+
   const columns: ColumnsType<Provider> = [
     {
       title: '厂商',
@@ -107,12 +109,18 @@ function ProviderManager() {
       key: 'name',
       width: 100,
       fixed: 'left' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: '显示名',
       dataIndex: 'display_name',
       key: 'display_name',
       width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: 'OpenAI URL',
@@ -120,6 +128,9 @@ function ProviderManager() {
       key: 'openai_url',
       width: 200,
       ellipsis: true,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (url: string, record: Provider) => url || record.base_url || '-',
     },
     {
@@ -128,6 +139,9 @@ function ProviderManager() {
       key: 'anthropic_url',
       width: 200,
       ellipsis: true,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (url: string) => url || '-',
     },
     {
@@ -136,6 +150,9 @@ function ProviderManager() {
       key: 'api_key',
       width: 150,
       ellipsis: true,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (key: string) => (
         <Text copyable={{ text: key }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
           {key.substring(0, 12)}...
@@ -147,21 +164,27 @@ function ProviderManager() {
       dataIndex: 'model_count',
       key: 'model_count',
       width: 60,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
       width: 60,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
       width: 60,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean) => (
         <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
       ),
@@ -171,7 +194,9 @@ function ProviderManager() {
       key: 'action',
       width: 80,
       fixed: 'right' as const,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
@@ -354,12 +379,18 @@ function ModelManager() {
       dataIndex: 'model_name',
       key: 'model_name',
       width: 150,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: '上游模型名',
       dataIndex: 'upstream_model',
       key: 'upstream_model',
       width: 150,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (upstream: string | null) => upstream || <Text type="secondary">同上</Text>,
     },
     {
@@ -367,7 +398,9 @@ function ModelManager() {
       dataIndex: 'context_window',
       key: 'context_window',
       width: 120,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (window: number | null) => window ? `${(window / 1000).toFixed(0)}K` : '-',
     },
     {
@@ -375,7 +408,9 @@ function ModelManager() {
       dataIndex: 'enabled',
       key: 'enabled',
       width: 80,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean) => (
         <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
       ),
@@ -384,7 +419,9 @@ function ModelManager() {
       title: '操作',
       key: 'action',
       width: 120,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
@@ -538,16 +575,24 @@ function ApiKeyManager() {
       dataIndex: 'name',
       key: 'name',
       width: 120,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
     },
     {
       title: 'API Key',
       dataIndex: 'key_preview',
       key: 'key_preview',
       width: 200,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (preview: string, record) => (
-        <Text copyable={{ text: record.key_value }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-          {preview || record.key_value}
-        </Text>
+        <Space>
+          <Text copyable={{ text: record.key_value }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+            {preview || record.key_value}
+          </Text>
+        </Space>
       ),
     },
     {
@@ -555,6 +600,9 @@ function ApiKeyManager() {
       dataIndex: 'allowed_models',
       key: 'allowed_models',
       ellipsis: true,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (models: string | null) => (
         models ? (
           <Space wrap size={4}>
@@ -568,7 +616,9 @@ function ApiKeyManager() {
       dataIndex: 'enabled',
       key: 'enabled',
       width: 80,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean) => (
         <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
       ),
@@ -578,13 +628,18 @@ function ApiKeyManager() {
       dataIndex: 'last_used_at',
       key: 'last_used_at',
       width: 160,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (time: string | null) => time || <Text type="secondary">未使用</Text>,
     },
     {
       title: '操作',
       key: 'action',
       width: 120,
-      align: 'center' as const,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
