@@ -29,6 +29,7 @@ services:
       - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
       - HEIMDALL_PROXY_PATH=${HEIMDALL_PROXY_PATH:-/v1/chat/completions}
       - HEIMDALL_TIMEOUT=${HEIMDALL_TIMEOUT:-120}
+      - TZ=Asia/Shanghai
     networks:
       - heimdall-net
     healthcheck:
