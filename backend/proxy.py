@@ -6,7 +6,10 @@ import json
 import threading
 import subprocess
 from logging.handlers import WatchedFileHandler
-from datetime import datetime, date as date_type
+from datetime import datetime, date as date_type, timezone, timedelta
+
+# 中国时区 (UTC+8)
+CST = timezone(timedelta(hours=8))
 
 # ==========================================
 # 1. 优先初始化日志与接管输出
@@ -310,8 +313,8 @@ def build_record(
     today = str(date_type.today())
 
     return {
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "date": today,
+        "created_at": datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S"),
+        "date": datetime.now(CST).strftime("%Y-%m-%d"),
         "model": model,
         "original_model": original_model,
         "stream": 1 if is_stream else 0,
@@ -553,13 +556,17 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
 
     provider_key = route.provider_key if route else None
 
+    # 请求流式响应时，添加 stream_options 以获取 usage 统计
+    stream_data = dict(data)
+    stream_data["stream_options"] = {"include_usage": True}
+
     # 先建立连接，检查上游状态码
     # 上游非 200 时直接返回带正确 HTTP 状态码的 JSON 错误响应，
     # 让客户端（如 Codex）能感知到具体错误原因，而不是静默失败
     try:
         upstream_resp = http_requests.post(
             upstream_url,
-            json=data,
+            json=stream_data,
             headers=upstream_headers,
             stream=True,
             timeout=config.REQUEST_TIMEOUT
