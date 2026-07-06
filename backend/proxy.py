@@ -779,7 +779,8 @@ def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
 
 @app.route('/v1/chat/completions', methods=['POST'])
 @app.route('/chat/completions', methods=['POST'])
-def proxy():
+@app.route('/openai/chat/completions', methods=['POST'])
+def proxy_openai_chat():
     start_time = time.time()
     client_ip = request.remote_addr or ""
 
@@ -862,6 +863,164 @@ def proxy():
             pass
         return Response('{"error":{"message":"Internal Server Error","type":"proxy_error"}}',
                         status=500, content_type='application/json')
+
+
+# ==========================================
+# Anthropic 协议支持
+# ==========================================
+
+@app.route('/v1/messages', methods=['POST'])
+@app.route('/v2/messages', methods=['POST'])
+@app.route('/anthropic/messages', methods=['POST'])
+def proxy_anthropic_messages():
+    """Anthropic Messages API 代理"""
+    start_time = time.time()
+    client_ip = request.remote_addr or ""
+
+    try:
+        data = request.get_json(silent=True, force=True) or {}
+
+        if not data or 'model' not in data:
+            return Response('{"type":"error","error":{"type":"invalid_request_error","message":"Missing model field"}}',
+                            status=400, content_type='application/json')
+
+        original_model = data['model']
+
+        # Heimdall API Key 认证
+        api_key = request.headers.get('x-api-key', '') or request.headers.get('Authorization', '').replace('Bearer ', '')
+        if not api_key:
+            return Response('{"type":"error","error":{"type":"authentication_error","message":"Missing API Key"}}',
+                           status=401, content_type='application/json')
+
+        key_info = auth.validate_api_key(api_key)
+        if not key_info:
+            return Response('{"type":"error","error":{"type":"authentication_error","message":"Invalid API Key"}}',
+                           status=401, content_type='application/json')
+
+        if not auth.check_model_access(key_info, original_model):
+            return Response('{"type":"error","error":{"type":"permission_error","message":"Model access denied"}}',
+                           status=403, content_type='application/json')
+
+        # 路由查找
+        route = router.resolve_route_for_proxy(original_model)
+        if isinstance(route, router.RouteError):
+            return Response(
+                json.dumps({"type": "error", "error": {"type": "invalid_request_error", "message": route.message}}),
+                status=route.status_code, content_type='application/json'
+            )
+
+        # 转发到上游 Anthropic 端点
+        upstream_url = f"{route.base_url}/messages"
+        headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': route.api_key,
+            'anthropic-version': request.headers.get('anthropic-version', '2023-06-01'),
+        }
+
+        data['model'] = route.model_name
+
+        is_stream = data.get('stream', False)
+        resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+
+        if is_stream:
+            def generate():
+                for line in resp.iter_lines():
+                    if line:
+                        yield line + b'\n\n'
+            return Response(generate(), content_type='text/event-stream')
+        else:
+            return Response(resp.content, status=resp.status_code, content_type='application/json')
+
+    except Exception as e:
+        system_logger.error(f"[PROXY] Anthropic 代理错误: {e}", exc_info=True)
+        return Response('{"type":"error","error":{"type":"api_error","message":"Internal Server Error"}}',
+                        status=500, content_type='application/json')
+
+
+# ==========================================
+# OpenAI Responses API 支持
+# ==========================================
+
+@app.route('/v1/responses', methods=['POST'])
+@app.route('/openai/responses', methods=['POST'])
+def proxy_openai_responses():
+    """OpenAI Responses API 代理"""
+    start_time = time.time()
+    client_ip = request.remote_addr or ""
+
+    try:
+        data = request.get_json(silent=True, force=True) or {}
+
+        if not data or 'model' not in data:
+            return Response('{"error":{"message":"Missing model field","type":"invalid_request_error"}}',
+                            status=400, content_type='application/json')
+
+        original_model = data['model']
+
+        # Heimdall API Key 认证
+        auth_header = request.headers.get('Authorization', '')
+        api_key = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
+        if not api_key:
+            return Response('{"error":{"message":"Missing API Key","type":"auth_error"}}',
+                           status=401, content_type='application/json')
+
+        key_info = auth.validate_api_key(api_key)
+        if not key_info:
+            return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
+                           status=401, content_type='application/json')
+
+        if not auth.check_model_access(key_info, original_model):
+            return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
+                           status=403, content_type='application/json')
+
+        # 路由查找
+        route = router.resolve_route_for_proxy(original_model)
+        if isinstance(route, router.RouteError):
+            return Response(
+                json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),
+                status=route.status_code, content_type='application/json'
+            )
+
+        # 转发到上游 Responses 端点
+        upstream_url = f"{route.base_url}/responses"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {route.api_key}',
+        }
+
+        data['model'] = route.model_name
+
+        is_stream = data.get('stream', False)
+        resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+
+        if is_stream:
+            def generate():
+                for line in resp.iter_lines():
+                    if line:
+                        yield line + b'\n\n'
+            return Response(generate(), content_type='text/event-stream')
+        else:
+            return Response(resp.content, status=resp.status_code, content_type='application/json')
+
+    except Exception as e:
+        system_logger.error(f"[PROXY] Responses API 代理错误: {e}", exc_info=True)
+        return Response('{"error":{"message":"Internal Server Error","type":"proxy_error"}}',
+                        status=500, content_type='application/json')
+
+
+# ==========================================
+# 厂商预设 API
+# ==========================================
+
+@app.route('/api/vendor-presets', methods=['GET'])
+def get_vendor_presets():
+    """获取厂商预设配置"""
+    import json as _json
+    presets_path = os.path.join(os.path.dirname(__file__), 'vendor_presets.json')
+    if os.path.isfile(presets_path):
+        with open(presets_path, 'r', encoding='utf-8') as f:
+            return Response(_json.dumps(_json.load(f), ensure_ascii=False), content_type='application/json')
+    return Response('{"vendors":{}}', content_type='application/json')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "vendors": {
+    "mimo": {
+      "name": "小米 MiMo",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.xiaomimimo.com/v1",
+          "anthropic_url": "https://api.xiaomimimo.com/anthropic"
+        },
+        "token_plan": {
+          "label": "Token Plan（订阅制）",
+          "openai_url": "https://token-plan-cn.xiaomimimo.com/v1",
+          "anthropic_url": "https://token-plan-cn.xiaomimimo.com/anthropic"
+        }
+      },
+      "default_plan": "token_plan",
+      "models": ["mimo-v2.5", "mimo-v2.5-pro"],
+      "docs": "https://mimo.mi.com/docs/zh-CN/api/chat/openai-api"
+    },
+    "deepseek": {
+      "name": "DeepSeek",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.deepseek.com",
+          "anthropic_url": "https://api.deepseek.com/anthropic"
+        }
+      },
+      "default_plan": "api",
+      "models": ["deepseek-v4-pro", "deepseek-v4-flash"],
+      "docs": "https://api-docs.deepseek.com/zh-cn/"
+    },
+    "glm": {
+      "name": "智谱 GLM",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://open.bigmodel.cn/api/paas/v4",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["glm-5.1", "glm-5", "glm-4.5", "glm-4-flash"],
+      "docs": "https://open.bigmodel.cn/dev/api/normal-model/glm-4"
+    },
+    "kimi": {
+      "name": "Moonshot Kimi",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.moonshot.ai/v1",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["kimi-k2.6", "kimi-k2.5", "kimi-k2"],
+      "docs": "https://platform.kimi.ai/docs/api/overview"
+    },
+    "minimax": {
+      "name": "MiniMax",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.minimax.io/v1",
+          "anthropic_url": "https://api.minimax.io/anthropic"
+        }
+      },
+      "default_plan": "api",
+      "models": ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"],
+      "docs": "https://platform.minimaxi.com/document/ChatCompletion%20v2"
+    },
+    "openai": {
+      "name": "OpenAI",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.openai.com/v1",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o1-mini", "o1-pro"],
+      "docs": "https://platform.openai.com/docs/api-reference/chat"
+    },
+    "anthropic": {
+      "name": "Anthropic Claude",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": null,
+          "anthropic_url": "https://api.anthropic.com/v1"
+        }
+      },
+      "default_plan": "api",
+      "models": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022"],
+      "docs": "https://docs.anthropic.com/en/api/messages"
+    },
+    "gemini": {
+      "name": "Google Gemini",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://generativelanguage.googleapis.com/v1beta",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+      "docs": "https://ai.google.dev/gemini-api/docs/openai"
+    },
+    "hunyuan": {
+      "name": "腾讯混元",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://api.hunyuan.cloud.tencent.com/v1",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["hunyuan-turbos-latest", "hunyuan-turbo-latest"],
+      "docs": "https://cloud.tencent.com/document/product/1729/111007"
+    },
+    "qwen": {
+      "name": "阿里通义千问",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["qwen-max", "qwen-plus", "qwen-turbo", "qwen-long"],
+      "docs": "https://help.aliyun.com/zh/model-studio/developer-reference/compatibility-of-openai-with-dashscope"
+    },
+    "longcat": {
+      "name": "美团 LongCat",
+      "plans": {
+        "api": {
+          "label": "API 调用（按量计费）",
+          "openai_url": "https://aigc.sankuai.com/v1/openai/native",
+          "anthropic_url": null
+        }
+      },
+      "default_plan": "api",
+      "models": ["longcat-2.0-preview", "longcat-flash-omni-2603"],
+      "docs": ""
+    }
+  }
+}
