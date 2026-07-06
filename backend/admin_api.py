@@ -3,11 +3,29 @@
 提供厂商、模型和 API Key 的 CRUD 接口。
 """
 
+import json
+import os
 from flask import Blueprint, request, jsonify
 import router
 import auth
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def load_vendor_presets():
+    """加载厂商预设配置"""
+    presets_path = os.path.join(os.path.dirname(__file__), 'vendor_presets.json')
+    try:
+        with open(presets_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"version": 1, "vendors": {}}
+
+
+@admin_bp.route('/api/vendor-presets', methods=['GET'])
+def get_vendor_presets():
+    """获取厂商预设配置"""
+    return jsonify(load_vendor_presets())
 
 
 # ==========================================

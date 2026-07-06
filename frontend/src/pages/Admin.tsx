@@ -9,12 +9,13 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import {
   Card, Table, Button, Modal, Form, Input, Switch, InputNumber, Select,
-  Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography
+  Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography, Popover
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, EyeOutlined, EyeInvisibleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import Header from '../components/Header'
+import { useFilter } from '../context/FilterContext'
 import {
   fetchProviders, createProvider, updateProvider, deleteProvider,
   fetchModels, createModel, updateModel, deleteModel,
@@ -110,9 +111,11 @@ function ProviderManager() {
     }
   }, [])
 
+  const { refreshTick } = useFilter()
+
   useEffect(() => {
     loadProviders()
-  }, [loadProviders])
+  }, [loadProviders, refreshTick])
 
   const handleAdd = () => {
     setEditingProvider(null)
@@ -245,12 +248,24 @@ function ProviderManager() {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
-      width: 60,
+      width: 80,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (enabled: boolean) => (
-        <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
+      render: (enabled: boolean, record) => (
+        <Switch
+          size="small"
+          checked={enabled}
+          onChange={async (checked) => {
+            try {
+              await updateProvider(record.id, { enabled: checked })
+              message.success(checked ? '已启用' : '已禁用')
+              loadProviders()
+            } catch {
+              message.error('操作失败')
+            }
+          }}
+        />
       ),
     },
     {
@@ -293,7 +308,7 @@ function ProviderManager() {
         size="small"
         showSorterTooltip={false}
         pagination={{
-          pageSize: 20,
+          pageSize: 15,
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50'],
           showTotal: (t) => `共 ${t} 条`,
@@ -412,11 +427,13 @@ function ModelManager() {
     loadProviders()
   }, [loadProviders])
 
+  const { refreshTick } = useFilter()
+
   useEffect(() => {
     if (selectedProvider) {
       loadModels(selectedProvider)
     }
-  }, [selectedProvider, loadModels])
+  }, [selectedProvider, loadModels, refreshTick])
 
   const handleAdd = () => {
     if (!selectedProvider) {
@@ -433,8 +450,12 @@ function ModelManager() {
     form.setFieldsValue({
       model_name: model.model_name,
       upstream_model: model.upstream_model,
+      model_name: model.model_name,
       enabled: model.enabled,
-      context_window: model.context_window,
+      price_input: model.price_input,
+      price_output: model.price_output,
+      price_cache_read: model.price_cache_read,
+      price_cache_write: model.price_cache_write,
     })
     setModalOpen(true)
   }
@@ -488,14 +509,24 @@ function ModelManager() {
       render: (upstream: string | null, record) => upstream || <Text type="secondary">-</Text>,
     },
     {
-      title: '上下文窗口',
-      dataIndex: 'context_window',
-      key: 'context_window',
-      width: 120,
+      title: '输入价格',
+      dataIndex: 'price_input',
+      key: 'price_input',
+      width: 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (window: number | null) => window ? `${(window / 1000).toFixed(0)}K` : '-',
+      render: (price: number) => price ? `¥${price}` : '-',
+    },
+    {
+      title: '输出价格',
+      dataIndex: 'price_output',
+      key: 'price_output',
+      width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (price: number) => price ? `¥${price}` : '-',
     },
     {
       title: '状态',
@@ -505,8 +536,20 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (enabled: boolean) => (
-        <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
+      render: (enabled: boolean, record) => (
+        <Switch
+          size="small"
+          checked={enabled}
+          onChange={async (checked) => {
+            try {
+              await updateModel(record.id, { enabled: checked })
+              message.success(checked ? '已启用' : '已禁用')
+              if (selectedProvider) loadModels(selectedProvider)
+            } catch {
+              message.error('操作失败')
+            }
+          }}
+        />
       ),
     },
     {
@@ -555,7 +598,7 @@ function ModelManager() {
         size="small"
         showSorterTooltip={false}
         pagination={{
-          pageSize: 20,
+          pageSize: 15,
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50'],
           showTotal: (t) => `共 ${t} 条`,
@@ -573,15 +616,34 @@ function ModelManager() {
         styles={{ body: { padding: '16px 24px' } }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]}>
-            <Input placeholder="例如: deepseek-chat" />
+          <Form.Item name="upstream_model" label="上游模型名" rules={[{ required: true, message: '请输入上游模型名' }]}
+            tooltip="上游 API 实际使用的模型名称，例如 deepseek-chat">
+            <Input placeholder="例如: deepseek-chat" onChange={(e) => {
+              const val = e.target.value
+              if (!form.getFieldValue('model_name')) {
+                form.setFieldsValue({ model_name: val })
+              }
+            }} />
           </Form.Item>
-          <Form.Item name="upstream_model" label="上游模型名" help="如果上游 API 使用不同的模型名，可在此配置">
-            <Input placeholder="留空则使用模型名称" />
+          <Form.Item name="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]}
+            tooltip="在 Heimdall 中显示的模型名称，默认与上游模型名相同">
+            <Input placeholder="自动填充，可修改" />
           </Form.Item>
-          <Form.Item name="context_window" label="上下文窗口">
-            <InputNumber min={0} placeholder="例如: 32000" style={{ width: '100%' }} />
-          </Form.Item>
+          <Divider plain>定价配置（元/百万 tokens）</Divider>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Form.Item name="price_input" label="输入价格">
+              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="price_output" label="输出价格">
+              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="price_cache_read" label="缓存读取">
+              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="price_cache_write" label="缓存写入">
+              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
           <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
             <Switch />
           </Form.Item>
@@ -632,10 +694,12 @@ function ApiKeyManager() {
     } catch { /* silent */ }
   }, [])
 
+  const { refreshTick } = useFilter()
+
   useEffect(() => {
     loadApiKeys()
     loadAllModels()
-  }, [loadApiKeys, loadAllModels])
+  }, [loadApiKeys, loadAllModels, refreshTick])
 
   const handleAdd = () => {
     setEditingKey(null)
@@ -740,8 +804,20 @@ function ApiKeyManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (enabled: boolean) => (
-        <Tag color={enabled ? 'green' : 'red'}>{enabled ? '启用' : '禁用'}</Tag>
+      render: (enabled: boolean, record) => (
+        <Switch
+          size="small"
+          checked={enabled}
+          onChange={async (checked) => {
+            try {
+              await updateApiKey(record.id, { enabled: checked })
+              message.success(checked ? '已启用' : '已禁用')
+              loadApiKeys()
+            } catch {
+              message.error('操作失败')
+            }
+          }}
+        />
       ),
     },
     {
@@ -793,7 +869,7 @@ function ApiKeyManager() {
         size="small"
         showSorterTooltip={false}
         pagination={{
-          pageSize: 20,
+          pageSize: 15,
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50'],
           showTotal: (t) => `共 ${t} 条`,
@@ -815,7 +891,7 @@ function ApiKeyManager() {
             <Input placeholder="例如: 我的应用" />
           </Form.Item>
           {!editingKey && (
-            <Form.Item name="key_value" label="API Key" help="留空则自动生成">
+            <Form.Item name="key_value" label="API Key" tooltip="留空则自动生成 heimdall-xxx 格式的 Key">
               <Input placeholder="留空自动生成 heimdall-xxx" />
             </Form.Item>
           )}
@@ -896,7 +972,7 @@ export default function Admin() {
 
   return (
     <div className="page-content">
-      <Header pageName="系统设置" hideDatePicker />
+      <Header pageName="配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
           <div style={{ padding: '0 16px' }}>

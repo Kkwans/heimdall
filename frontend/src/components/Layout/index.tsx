@@ -10,7 +10,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/requests': '请求明细',
   '/stats': '数据统计',
   '/logs': '实时日志',
-  '/admin': '系统设置',
+  '/admin': '配置',
 }
 
 // 路由 → 页面专属图标映射（与 Sidebar.tsx 保持一致）

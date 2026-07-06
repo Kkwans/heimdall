@@ -100,6 +100,10 @@ def init_routing_tables():
                 upstream_model  VARCHAR(128),
                 enabled         BOOLEAN DEFAULT 1,
                 context_window  INTEGER,
+                price_input     REAL DEFAULT 0,
+                price_output    REAL DEFAULT 0,
+                price_cache_read REAL DEFAULT 0,
+                price_cache_write REAL DEFAULT 0,
                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(provider_id, model_name),
                 FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
@@ -108,6 +112,19 @@ def init_routing_tables():
 
         conn.commit()
         _logger.info("[ROUTER] 路由配置表初始化完成")
+
+        # 幂等添加定价列
+        for col_def in [
+            "ALTER TABLE models ADD COLUMN price_input REAL DEFAULT 0",
+            "ALTER TABLE models ADD COLUMN price_output REAL DEFAULT 0",
+            "ALTER TABLE models ADD COLUMN price_cache_read REAL DEFAULT 0",
+            "ALTER TABLE models ADD COLUMN price_cache_write REAL DEFAULT 0",
+        ]:
+            try:
+                conn.execute(col_def)
+            except Exception:
+                pass
+        conn.commit()
     except Exception as e:
         _logger.error(f"[ROUTER] 初始化路由表失败: {e}", exc_info=True)
 
@@ -342,14 +359,19 @@ def create_model(provider_id: int, data: dict) -> int:
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window,
+                          price_input, price_output, price_cache_read, price_cache_write)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         provider_id,
         data["model_name"],
         data.get("upstream_model"),
         data.get("enabled", True),
-        data.get("context_window")
+        data.get("context_window"),
+        data.get("price_input", 0),
+        data.get("price_output", 0),
+        data.get("price_cache_read", 0),
+        data.get("price_cache_write", 0),
     ))
     conn.commit()
     return cursor.lastrowid
@@ -361,7 +383,8 @@ def update_model(model_id: int, data: dict) -> bool:
     cursor = conn.cursor()
     fields = []
     values = []
-    for key in ["model_name", "upstream_model", "enabled", "context_window"]:
+    for key in ["model_name", "upstream_model", "enabled", "context_window",
+                "price_input", "price_output", "price_cache_read", "price_cache_write"]:
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])

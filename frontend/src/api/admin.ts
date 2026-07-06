@@ -73,6 +73,10 @@ export interface Model {
   upstream_model: string | null
   enabled: boolean
   context_window: number | null
+  price_input: number
+  price_output: number
+  price_cache_read: number
+  price_cache_write: number
   created_at: string
 }
 
@@ -81,6 +85,10 @@ export interface ModelCreateData {
   upstream_model?: string
   enabled?: boolean
   context_window?: number
+  price_input?: number
+  price_output?: number
+  price_cache_read?: number
+  price_cache_write?: number
 }
 
 export async function fetchModels(providerId: number): Promise<{ models: Model[] }> {
