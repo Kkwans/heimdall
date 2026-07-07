@@ -96,7 +96,7 @@ def init_routing_tables():
             CREATE TABLE IF NOT EXISTS models (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 provider_id     INTEGER NOT NULL,
-                model_name      VARCHAR(128) NOT NULL,
+                model_name      VARCHAR(128) NOT NULL UNIQUE,
                 upstream_model  VARCHAR(128),
                 enabled         BOOLEAN DEFAULT 1,
                 context_window  INTEGER,
@@ -105,7 +105,6 @@ def init_routing_tables():
                 price_cache_read REAL DEFAULT 0,
                 price_cache_write REAL DEFAULT 0,
                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(provider_id, model_name),
                 FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
             )
         """)
@@ -183,20 +182,45 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
             provider_name = parts[0]
             model_name = parts[1]
 
-        # 2. 查找厂商
-        if provider_name:
+        # 2. 查找模型（优先全局唯一匹配）
+        if not provider_name:
+            # 无厂商前缀：先尝试全局唯一模型名
+            cursor.execute("""
+                SELECT m.*, p.name as provider_name, p.display_name, p.api_key,
+                       p.openai_url, p.anthropic_url, p.base_url, p.priority
+                FROM models m
+                JOIN providers p ON m.provider_id = p.id
+                WHERE m.model_name = ? AND m.enabled = 1 AND p.enabled = 1
+            """, (model_name,))
+            model_row = cursor.fetchone()
+
+            if model_row:
+                # 找到全局唯一模型，直接使用
+                base_url = model_row["anthropic_url"] if protocol == "anthropic" else model_row["openai_url"]
+                if not base_url:
+                    base_url = model_row["base_url"]
+                upstream_model = model_row["upstream_model"] or model_name
+                return RouteResult(
+                    base_url=base_url,
+                    api_key=model_row["api_key"] or "",
+                    model_name=upstream_model,
+                    provider_key=model_row["provider_name"],
+                    context_window=model_row["context_window"],
+                )
+
+            # 全局未找到，使用 priority 最高的厂商
+            cursor.execute(
+                "SELECT * FROM providers WHERE enabled = 1 ORDER BY priority DESC LIMIT 1"
+            )
+            provider_row = cursor.fetchone()
+        else:
             # 有厂商前缀：精确查找
             cursor.execute(
                 "SELECT * FROM providers WHERE name = ? AND enabled = 1",
                 (provider_name,)
             )
-        else:
-            # 无厂商前缀：使用 priority 最高的厂商
-            cursor.execute(
-                "SELECT * FROM providers WHERE enabled = 1 ORDER BY priority DESC LIMIT 1"
-            )
+            provider_row = cursor.fetchone()
 
-        provider_row = cursor.fetchone()
         if not provider_row:
             if provider_name:
                 return RouteError(400, f"未知厂商: {provider_name}")
@@ -212,7 +236,7 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
         else:
             base_url = provider_row["openai_url"] or provider_row["base_url"]
 
-        # 3. 查找模型
+        # 3. 查找模型（厂商内匹配）
         cursor.execute(
             "SELECT * FROM models WHERE provider_id = ? AND model_name = ? AND enabled = 1",
             (provider_id, model_name)

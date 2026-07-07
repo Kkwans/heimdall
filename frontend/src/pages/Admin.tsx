@@ -219,9 +219,11 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
         <Tooltip title={url} placement="top">
-          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-            {url}
-          </Text>
+          <Space>
+            <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 160 }} ellipsis>
+              {url}
+            </Text>
+          </Space>
         </Tooltip>
       ) : '-',
     },
@@ -236,9 +238,11 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
         <Tooltip title={url} placement="top">
-          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-            {url}
-          </Text>
+          <Space>
+            <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 160 }} ellipsis>
+              {url}
+            </Text>
+          </Space>
         </Tooltip>
       ) : '-',
     },
@@ -662,8 +666,8 @@ function ModelManager() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="upstream_model" label="上游模型名" rules={[{ required: true, message: '请输入上游模型名' }]}
-            tooltip="上游厂商 API 要求的模型名称，必须与厂商文档一致，例如 deepseek-chat、mimo-v2.5-pro">
-            <Input placeholder="例如: deepseek-chat" onChange={(e) => {
+            tooltip="上游厂商 API 要求的模型名称，必须与厂商文档一致，例如 deepseek-v4-flash、mimo-v2.5-pro">
+            <Input placeholder="例如: deepseek-v4-flash" onChange={(e) => {
               const val = e.target.value
               if (!form.getFieldValue('model_name')) {
                 form.setFieldsValue({ model_name: val })

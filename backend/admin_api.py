@@ -166,13 +166,15 @@ def delete_model(model_id):
 
 @admin_bp.route('/api/keys', methods=['GET'])
 def list_api_keys():
-    """获取所有 API Key"""
+    """获取所有 API Key（脱敏处理）"""
     keys = auth.get_all_api_keys()
-    # 脱敏处理
     for key in keys:
         if key.get("key_value"):
             v = key["key_value"]
-            key["key_preview"] = v[:12] + "..." + v[-4:] if len(v) > 16 else v
+            if len(v) > 12:
+                key["key_preview"] = v[:6] + "*" * (len(v) - 10) + v[-4:]
+            else:
+                key["key_preview"] = v[:3] + "*" * (len(v) - 3)
     return jsonify({"keys": keys})
 
 

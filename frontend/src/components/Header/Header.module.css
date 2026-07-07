@@ -14,19 +14,21 @@
 
 /* PC端页面标题（图标 + 文字） */
 .pageTitle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  line-height: 1;
+  vertical-align: middle;
 }
 
 .pageTitleIcon {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  line-height: 1;
+  vertical-align: middle;
+  height: 18px;
+  width: 18px;
 }
 
 .pageTitleText {
@@ -35,7 +37,8 @@
   color: var(--text-primary);
   letter-spacing: -0.01em;
   white-space: nowrap;
-  line-height: 1;
+  line-height: 18px;
+  vertical-align: middle;
 }
 
 /* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */

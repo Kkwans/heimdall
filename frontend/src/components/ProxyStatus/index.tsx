@@ -346,7 +346,8 @@ export default function ProxyStatusCard() {
 
   const isRunning = status?.running ?? false
   const autostart = cfg?.autostart_enabled ?? false
-  const proxyAddr = cfg ? `localhost:${cfg.proxy_port}` : `localhost:${status?.port ?? 8888}`
+  const proxyAddrOpenAI = cfg ? `localhost:${cfg.proxy_port}/openai` : `localhost:${status?.port ?? 8888}/openai`
+  const proxyAddrAnthropic = cfg ? `localhost:${cfg.proxy_port}/anthropic` : `localhost:${status?.port ?? 8888}/anthropic`
 
   const borderColor = isRunning ? 'rgba(16,185,129,0.35)' : 'rgba(244,63,94,0.35)'
   const bgGrad = isRunning ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)'
@@ -467,11 +468,11 @@ export default function ProxyStatusCard() {
 
         {/* ══ 信息行 ═══════════════════════════════════════════ */}
         <div className={styles.infoRow}>
-          <InfoCell label="代理地址" value={proxyAddr} className={styles.infoCellFull} />
+          <InfoCell label="BaseURL-OpenAI" value={proxyAddrOpenAI} className={styles.infoCellFull} />
           <VSep />
-          <InfoCell label="代理路径" value={cfg?.proxy_path ?? '—'} className={styles.infoCellFull} />
+          <InfoCell label="BaseURL-Anthropic" value={proxyAddrAnthropic} className={styles.infoCellFull} />
           <VSep />
-          {/* 端口三项：超时时间 / 代理端口 / Dashboard端口 */}
+          {/* 端口三项：超时时间 / 代理端口 / 系统端口 */}
           <div className={styles.portRow}>
             <InfoCell
               label="超时时间"
@@ -486,7 +487,7 @@ export default function ProxyStatusCard() {
             />
             <VSep />
             <InfoCell
-              label="Dashboard"
+              label="系统端口"
               value={cfg ? String(cfg.dashboard_port) : '—'}
               className={styles.portCell}
             />
@@ -520,21 +521,6 @@ export default function ProxyStatusCard() {
           requiredMark={false}
           style={{ marginTop: 4 }}
         >
-          {/* 代理路径（单独一行，全宽） */}
-          <Form.Item
-            label="代理路径"
-            name="proxy_path"
-            rules={[
-              { required: true, message: '请输入路径' },
-              { pattern: /^\//, message: '路径须以 / 开头' },
-            ]}
-          >
-            <Input
-              placeholder="/v1/chat/completions"
-              suffix={<span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>重启生效</span>}
-            />
-          </Form.Item>
-
           {/* 代理端口 + 超时时间（同行等宽两列） */}
           <div style={{ display: 'flex', gap: 12 }}>
             <Form.Item
@@ -585,7 +571,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: '#6366f1', fontWeight: 500 }}>💡</span>
-            {' '}超时时间<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口和路径需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
+            {' '}超时时间<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
           </div>
         </Form>
       </Modal>
