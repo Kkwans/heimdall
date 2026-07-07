@@ -218,9 +218,8 @@ export default function ProxyStatusCard() {
   // ── 编辑弹窗 ──────────────────────────────
   const openEdit = () => {
     editForm.setFieldsValue({
-      upstream_url: cfg?.upstream_url ?? '',
       proxy_port: cfg?.proxy_port ?? 8888,
-      proxy_path: cfg?.proxy_path ?? '/v1/openai/native',
+      proxy_path: cfg?.proxy_path ?? '/v1/chat/completions',
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)
@@ -347,12 +346,7 @@ export default function ProxyStatusCard() {
 
   const isRunning = status?.running ?? false
   const autostart = cfg?.autostart_enabled ?? false
-  const proxyAddr = cfg
-    ? `${cfg.proxy_port}${cfg.proxy_path}`
-    : `${status?.port ?? 8888}`
-  const upstreamDisplay = cfg?.upstream_url
-    ? cfg.upstream_url.replace(/^https?:\/\//, '')
-    : '—'
+  const proxyAddr = cfg ? `localhost:${cfg.proxy_port}` : `localhost:${status?.port ?? 8888}`
 
   const borderColor = isRunning ? 'rgba(16,185,129,0.35)' : 'rgba(244,63,94,0.35)'
   const bgGrad = isRunning ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)'
@@ -475,9 +469,9 @@ export default function ProxyStatusCard() {
         <div className={styles.infoRow}>
           <InfoCell label="代理地址" value={proxyAddr} className={styles.infoCellFull} />
           <VSep />
-          <InfoCell label="上游 API" value={upstreamDisplay} className={styles.infoCellFull} />
+          <InfoCell label="代理路径" value={cfg?.proxy_path ?? '—'} className={styles.infoCellFull} />
           <VSep />
-          {/* 端口三项：超时时间 / 代理端口 / 进程ID */}
+          {/* 端口三项：超时时间 / 代理端口 / Dashboard端口 */}
           <div className={styles.portRow}>
             <InfoCell
               label="超时时间"
@@ -492,8 +486,8 @@ export default function ProxyStatusCard() {
             />
             <VSep />
             <InfoCell
-              label="进程 ID"
-              value={status?.pid ? String(status.pid) : '—'}
+              label="Dashboard"
+              value={cfg ? String(cfg.dashboard_port) : '—'}
               className={styles.portCell}
             />
           </div>
@@ -526,21 +520,6 @@ export default function ProxyStatusCard() {
           requiredMark={false}
           style={{ marginTop: 4 }}
         >
-          {/* 上游 API（单独一行，全宽） */}
-          <Form.Item
-            label="上游 API"
-            name="upstream_url"
-            rules={[
-              { required: true, message: '请输入上游地址' },
-              { type: 'url', message: '请输入有效 URL（需含 http/https）' },
-            ]}
-          >
-            <Input
-              placeholder="例如: https://api.mimo.com/v1"
-              suffix={<span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>立即生效</span>}
-            />
-          </Form.Item>
-
           {/* 代理路径（单独一行，全宽） */}
           <Form.Item
             label="代理路径"
@@ -606,7 +585,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: '#6366f1', fontWeight: 500 }}>💡</span>
-            {' '}上游地址和超时<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口和路径需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
+            {' '}超时时间<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口和路径需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
           </div>
         </Form>
       </Modal>
