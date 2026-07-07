@@ -140,8 +140,7 @@ function ProviderManager() {
       display_name: provider.display_name,
       openai_url: provider.openai_url || '',
       anthropic_url: provider.anthropic_url || '',
-      api_key: provider.api_key,
-      priority: provider.priority,
+      api_key: '',
       plan_type: provider.plan_type,
     })
     setModalOpen(true)
@@ -256,28 +255,23 @@ function ProviderManager() {
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
       render: (key: string) => (
-        <Text copyable={{ text: key }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-          {key.substring(0, 12)}...
-        </Text>
+        <Tooltip title="点击复制完整 Key">
+          <Tag
+            style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+            onClick={() => {
+              // 无法复制完整 Key（已脱敏），提示用户
+              message.info('API Key 已脱敏，请在厂商配置中查看完整 Key')
+            }}
+          >
+            {key || '—'}
+          </Tag>
+        </Tooltip>
       ),
     },
     {
       title: '模型',
       dataIndex: 'model_count',
       key: 'model_count',
-      width: 60,
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-    },
-    {
-      title: (
-        <Tooltip title="同一模型匹配多个厂商时，优先级高的优先路由">
-          <span>优先级 <span style={{ fontSize: 10, color: 'var(--text-muted)', cursor: 'help' }}>?</span></span>
-        </Tooltip>
-      ),
-      dataIndex: 'priority',
-      key: 'priority',
       width: 60,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
@@ -404,11 +398,6 @@ function ProviderManager() {
           <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
             <Input.Password placeholder="sk-..." />
           </Form.Item>
-          <Space>
-            <Form.Item name="priority" label="优先级" initialValue={0}>
-              <InputNumber min={0} max={100} />
-            </Form.Item>
-          </Space>
         </Form>
       </Modal>
     </>

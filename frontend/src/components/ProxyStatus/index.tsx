@@ -219,7 +219,6 @@ export default function ProxyStatusCard() {
   const openEdit = () => {
     editForm.setFieldsValue({
       proxy_port: cfg?.proxy_port ?? 8888,
-      proxy_path: cfg?.proxy_path ?? '/v1/chat/completions',
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)

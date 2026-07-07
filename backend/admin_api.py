@@ -34,8 +34,12 @@ def get_vendor_presets():
 
 @admin_bp.route('/api/providers', methods=['GET'])
 def list_providers():
-    """获取所有厂商列表"""
+    """获取所有厂商列表（API Key 脱敏）"""
     providers = router.get_all_providers()
+    for p in providers:
+        if p.get("api_key"):
+            v = p["api_key"]
+            p["api_key"] = v[:4] + "****" + v[-4:] if len(v) > 8 else "****"
     return jsonify({"providers": providers})
 
 
@@ -166,15 +170,13 @@ def delete_model(model_id):
 
 @admin_bp.route('/api/keys', methods=['GET'])
 def list_api_keys():
-    """获取所有 API Key（脱敏处理）"""
+    """获取所有 API Key"""
     keys = auth.get_all_api_keys()
+    # 脱敏处理
     for key in keys:
         if key.get("key_value"):
             v = key["key_value"]
-            if len(v) > 12:
-                key["key_preview"] = v[:6] + "*" * (len(v) - 10) + v[-4:]
-            else:
-                key["key_preview"] = v[:3] + "*" * (len(v) - 3)
+            key["key_preview"] = v[:12] + "..." + v[-4:] if len(v) > 16 else v
     return jsonify({"keys": keys})
 
 

@@ -715,12 +715,34 @@ def proxy_restart():
         return resp
     
     try:
+        # 检查端口是否变更：对比 runtime config 和 docker-compose
+        cfg = _load_runtime_config()
+        new_port = cfg.get("proxy_port")
+        
+        # 如果有新端口，用 docker compose up 重建容器
+        compose_path = "/volume1/DockerProject/heimdall/docker-compose.yml"
+        if new_port and os.path.isfile(compose_path):
+            # 先停止容器
+            subprocess.run(["docker", "stop", "heimdall-proxy"], capture_output=True, timeout=15)
+            subprocess.run(["docker", "rm", "heimdall-proxy"], capture_output=True, timeout=10)
+            # 用 docker compose 启动
+            result = subprocess.run(
+                ["docker", "compose", "-f", compose_path, "up", "-d", "proxy"],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                import time as _time
+                _time.sleep(3)
+                return _cors_response({"success": True, "message": f"代理服务已重启（端口 {new_port}）"})
+            else:
+                return _cors_response({"success": False, "message": f"重启失败: {result.stderr}"}, 500)
+        
+        # 普通重启
         result = subprocess.run(
             ["docker", "restart", "heimdall-proxy"],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
-            # 等待容器重启
             import time as _time
             _time.sleep(3)
             return _cors_response({"success": True, "message": "代理服务已重启"})
@@ -824,7 +846,7 @@ def proxy_config_get():
 
 @stats_bp.route("/api/proxy/config", methods=["PUT", "OPTIONS"])
 def proxy_config_put():
-    """更新代理配置（upstream_url / proxy_path / request_timeout）"""
+    """更新代理配置（upstream_url / proxy_path / proxy_port / request_timeout）"""
     if request.method == "OPTIONS":
         resp = jsonify({})
         resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -833,18 +855,50 @@ def proxy_config_put():
         return resp
     try:
         body = request.get_json(silent=True) or {}
-        allowed = {"upstream_url", "proxy_path", "request_timeout"}  # Docker 环境不允许改端口
+        allowed = {"upstream_url", "proxy_path", "request_timeout"}
         to_save = {k: v for k, v in body.items() if k in allowed}
+
+        # 端口变更需要特殊处理：更新 docker-compose.yml 并重建容器
+        new_port = body.get("proxy_port")
+        if new_port is not None:
+            new_port = int(new_port)
+            if new_port < 1024 or new_port > 65535:
+                return _cors_response({"success": False, "message": "端口范围 1024-65535"}, 400)
+            # 保存到 runtime config
+            to_save["proxy_port"] = new_port
+
         if not to_save:
             return _cors_response({"success": False, "message": "无有效字段"}, 400)
+
         _save_runtime_config(to_save)
-        # 同步到 config 模块内存（重启后以持久化文件为准）
+        # 同步到 config 模块内存
         if "upstream_url" in to_save:
             config.TARGET_BASE_URL = to_save["upstream_url"]
         if "proxy_path" in to_save:
             config.PROXY_PATH = to_save["proxy_path"]
         if "request_timeout" in to_save:
             config.REQUEST_TIMEOUT = int(to_save["request_timeout"])
+
+        # 端口变更：更新 docker-compose.yml 中的端口映射
+        if new_port is not None:
+            try:
+                compose_path = "/volume1/DockerProject/heimdall/docker-compose.yml"
+                if os.path.isfile(compose_path):
+                    import re
+                    with open(compose_path, 'r') as f:
+                        content = f.read()
+                    # 替换 proxy 端口映射
+                    content = re.sub(
+                        r'"\d+:8888"',
+                        f'"{new_port}:8888"',
+                        content,
+                        count=1
+                    )
+                    with open(compose_path, 'w') as f:
+                        f.write(content)
+            except Exception as e:
+                return _cors_response({"success": False, "message": f"更新 compose 失败: {str(e)}"}, 500)
+
         return _cors_response({"success": True, "message": "配置已更新，重启代理后完全生效"})
     except Exception as e:
         return _cors_response({"success": False, "message": str(e)}, 500)
