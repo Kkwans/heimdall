@@ -19,7 +19,6 @@
   gap: 8px;
   flex-shrink: 0;
   line-height: 1;
-  height: 100%;
 }
 
 .pageTitleIcon {
@@ -28,7 +27,6 @@
   justify-content: center;
   flex-shrink: 0;
   line-height: 1;
-  transform: translateY(1px);
 }
 
 .pageTitleText {
@@ -38,7 +36,6 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
   line-height: 1;
-  transform: translateY(1px);
 }
 
 /* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */

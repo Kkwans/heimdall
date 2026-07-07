@@ -11,6 +11,7 @@ import {
 import dayjs, { type Dayjs } from 'dayjs'
 import { createLogsStream, fetchLogsDates, fetchLogsHistory, fetchLogsConfig, updateLogsConfig } from '../api/stats'
 import { useTheme } from '../context/ThemeContext'
+import Header from '../components/Header'
 
 type LogFile = 'business' | 'system'
 
@@ -402,17 +403,7 @@ export default function Logs() {
 
   return (
     <div className="page-content" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {/* PC端显示实时日志标题（移动端通过 CSS 隐藏 .page-header-inline） */}
-      <div className="page-header page-header-inline" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
-        <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>实时日志</span>
-      </div>
+      <Header pageName="实时日志" hideDatePicker />
 
       {/* 工具栏 */}
       <div style={{
