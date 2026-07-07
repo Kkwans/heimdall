@@ -62,9 +62,9 @@ def create_provider():
         if field not in data:
             return jsonify({"error": f"Missing required field: {field}"}), 400
     
-    # base_url 或 openai_url 至少要有一个
-    if not data.get("base_url") and not data.get("openai_url"):
-        return jsonify({"error": "base_url or openai_url is required"}), 400
+    # openai_url 和 anthropic_url 至少要有一个
+    if not data.get("openai_url") and not data.get("anthropic_url"):
+        return jsonify({"error": "OpenAI 和 Anthropic 协议地址至少填写一个"}), 400
     
     # 检查厂商名是否已存在
     existing = router.get_provider_by_name(data["name"])
@@ -127,6 +127,9 @@ def create_model(provider_id):
     
     if "model_name" not in data:
         return jsonify({"error": "Missing required field: model_name"}), 400
+    
+    if "upstream_model" not in data or not data["upstream_model"]:
+        return jsonify({"error": "Missing required field: upstream_model"}), 400
     
     try:
         model_id = router.create_model(provider_id, data)

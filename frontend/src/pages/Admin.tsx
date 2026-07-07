@@ -9,9 +9,9 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import {
   Card, Table, Button, Modal, Form, Input, Switch, InputNumber, Select,
-  Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography, Popover
+  Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, EyeOutlined, EyeInvisibleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import Header from '../components/Header'
@@ -126,6 +126,15 @@ function ProviderManager() {
 
   const handleEdit = (provider: Provider) => {
     setEditingProvider(provider)
+    // 尝试匹配预设
+    const matchedPreset = Object.entries(vendorPresets).find(([key]) => key === provider.name)
+    if (matchedPreset) {
+      setSelectedPreset(matchedPreset[0])
+      setSelectedPlan(matchedPreset[1].default_plan)
+    } else {
+      setSelectedPreset('')
+      setSelectedPlan('')
+    }
     form.setFieldsValue({
       name: provider.name,
       display_name: provider.display_name,
@@ -198,7 +207,6 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      responsive: ['md' as const],
     },
     {
       title: 'OpenAI URL',
@@ -221,7 +229,6 @@ function ProviderManager() {
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url || '-',
-      responsive: ['md' as const],
     },
     {
       title: 'API Key',
@@ -237,7 +244,6 @@ function ProviderManager() {
           {key.substring(0, 12)}...
         </Text>
       ),
-      responsive: ['lg' as const],
     },
     {
       title: '模型',
@@ -256,7 +262,6 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      responsive: ['md' as const],
     },
     {
       title: '状态',
@@ -324,10 +329,10 @@ function ProviderManager() {
         pagination={{
           pageSize: 15,
           showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50'],
+          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: 950 }}
+        scroll={{ x: isMobile ? 600 : 950 }}
       />
 
       <Modal
@@ -533,6 +538,26 @@ function ModelManager() {
       render: (price: number) => price ? `¥${price}` : '-',
     },
     {
+      title: '缓存读取',
+      dataIndex: 'price_cache_read',
+      key: 'price_cache_read',
+      width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (price: number) => price ? `¥${price}` : '-',
+    },
+    {
+      title: '缓存写入',
+      dataIndex: 'price_cache_write',
+      key: 'price_cache_write',
+      width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (price: number) => price ? `¥${price}` : '-',
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
@@ -604,7 +629,7 @@ function ModelManager() {
         pagination={{
           pageSize: 15,
           showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50'],
+          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
         scroll={{ x: 600 }}
@@ -648,9 +673,6 @@ function ModelManager() {
               <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
             </Form.Item>
           </div>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
-            <Switch />
-          </Form.Item>
         </Form>
       </Modal>
     </>
@@ -875,7 +897,7 @@ function ApiKeyManager() {
         pagination={{
           pageSize: 15,
           showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50'],
+          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
         scroll={{ x: 700 }}
@@ -911,9 +933,6 @@ function ApiKeyManager() {
                 (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
               }
             />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
-            <Switch />
           </Form.Item>
         </Form>
       </Modal>
