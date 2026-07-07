@@ -217,7 +217,13 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (url: string) => url || '-',
+      render: (url: string) => url ? (
+        <Tooltip title={url} placement="top">
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+            {url}
+          </Text>
+        </Tooltip>
+      ) : '-',
     },
     {
       title: 'Anthropic URL',
@@ -228,7 +234,13 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (url: string) => url || '-',
+      render: (url: string) => url ? (
+        <Tooltip title={url} placement="top">
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+            {url}
+          </Text>
+        </Tooltip>
+      ) : '-',
     },
     {
       title: 'API Key',
@@ -255,7 +267,11 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
     },
     {
-      title: '优先级',
+      title: (
+        <Tooltip title="同一模型匹配多个厂商时，优先级高的优先路由">
+          <span>优先级 <span style={{ fontSize: 10, color: 'var(--text-muted)', cursor: 'help' }}>?</span></span>
+        </Tooltip>
+      ),
       dataIndex: 'priority',
       key: 'priority',
       width: 60,
@@ -646,7 +662,7 @@ function ModelManager() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="upstream_model" label="上游模型名" rules={[{ required: true, message: '请输入上游模型名' }]}
-            tooltip="上游 API 实际使用的模型名称，例如 deepseek-chat">
+            tooltip="上游厂商 API 要求的模型名称，必须与厂商文档一致，例如 deepseek-chat、mimo-v2.5-pro">
             <Input placeholder="例如: deepseek-chat" onChange={(e) => {
               const val = e.target.value
               if (!form.getFieldValue('model_name')) {
@@ -655,7 +671,7 @@ function ModelManager() {
             }} />
           </Form.Item>
           <Form.Item name="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]}
-            tooltip="在 Heimdall 中显示的模型名称，默认与上游模型名相同">
+            tooltip="调用方请求时使用的模型名称，可自定义。例如上游是 mimo-v2.5-pro，可简化为 mimo">
             <Input placeholder="自动填充，可修改" />
           </Form.Item>
           <Divider plain>定价配置（元/百万 tokens）</Divider>
@@ -823,6 +839,16 @@ function ApiKeyManager() {
       ),
     },
     {
+      title: '最后使用',
+      dataIndex: 'last_used_at',
+      key: 'last_used_at',
+      width: 160,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (time: string | null) => time || <Text type="secondary">未使用</Text>,
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
@@ -845,16 +871,6 @@ function ApiKeyManager() {
           }}
         />
       ),
-    },
-    {
-      title: '最后使用',
-      dataIndex: 'last_used_at',
-      key: 'last_used_at',
-      width: 160,
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-      render: (time: string | null) => time || <Text type="secondary">未使用</Text>,
     },
     {
       title: '操作',
@@ -917,8 +933,8 @@ function ApiKeyManager() {
             <Input placeholder="例如: 我的应用" />
           </Form.Item>
           {!editingKey && (
-            <Form.Item name="key_value" label="API Key" tooltip="留空则自动生成 heimdall-xxx 格式的 Key">
-              <Input placeholder="留空自动生成 heimdall-xxx" />
+            <Form.Item name="key_value" label="API Key">
+              <Input placeholder="留空自动生成" />
             </Form.Item>
           )}
           <Form.Item name="allowed_models" label="允许的模型">
