@@ -718,7 +718,7 @@ export default function Requests() {
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Tooltip title={record.original_model !== v ? `原始模型: ${record.original_model}` : undefined}>
-              <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontFamily: 'var(--font-mono)', fontSize: 11, borderRadius: 2, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{v}</Tag>
+              <Tag color={vc.color} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, borderRadius: 2, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{v}</Tag>
             </Tooltip>
           </div>
         )

@@ -34,12 +34,8 @@ def get_vendor_presets():
 
 @admin_bp.route('/api/providers', methods=['GET'])
 def list_providers():
-    """获取所有厂商列表（API Key 脱敏）"""
+    """获取所有厂商列表"""
     providers = router.get_all_providers()
-    for p in providers:
-        if p.get("api_key"):
-            v = p["api_key"]
-            p["api_key"] = v[:4] + "****" + v[-4:] if len(v) > 8 else "****"
     return jsonify({"providers": providers})
 
 

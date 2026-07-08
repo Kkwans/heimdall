@@ -348,8 +348,8 @@ export default function ProxyStatusCard() {
   const proxyAddrOpenAI = cfg ? `localhost:${cfg.proxy_port}/openai` : `localhost:${status?.port ?? 8888}/openai`
   const proxyAddrAnthropic = cfg ? `localhost:${cfg.proxy_port}/anthropic` : `localhost:${status?.port ?? 8888}/anthropic`
 
-  const borderColor = isRunning ? 'var(--color-success-bg)' : 'var(--color-danger-bg)'
-  const bgGrad = isRunning ? 'var(--color-success-bg)' : 'var(--color-danger-bg)'
+  const borderColor = isRunning ? 'rgba(16,185,129,0.35)' : 'rgba(244,63,94,0.35)'
+  const bgGrad = isRunning ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)'
 
   return (
     <>
@@ -455,7 +455,7 @@ export default function ProxyStatusCard() {
                   icon={<PlayCircleOutlined />}
                   loading={operating}
                   onClick={handleStart}
-                  style={{ background: 'var(--color-success)', borderColor: 'var(--color-success)' }}
+                  style={{ background: '#10b981', borderColor: '#10b981' }}
                 >
                   启动
                 </Button>

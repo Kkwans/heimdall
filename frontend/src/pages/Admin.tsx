@@ -141,7 +141,7 @@ function ProviderManager() {
       display_name: provider.display_name,
       openai_url: provider.openai_url || '',
       anthropic_url: provider.anthropic_url || '',
-      api_key: '',
+      api_key: provider.api_key || '',
       plan_type: provider.plan_type,
     })
     setModalOpen(true)
@@ -180,6 +180,7 @@ function ProviderManager() {
   }
 
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+  const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
 
   useEffect(() => {
@@ -197,10 +198,10 @@ function ProviderManager() {
       fixed: 'left' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onCell: () => ({ style: cellCenterFixed }),
       render: (name: string) => {
         const vc = getVendorColor(name)
-        return <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontWeight: 600, fontSize: 12 }}>{vc.label || name}</Tag>
+        return <Tag color={vc.color} style={{ fontWeight: 600, fontSize: 12 }}>{vc.label || name}</Tag>
       },
     },
     {
@@ -255,19 +256,23 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (key: string) => (
-        <Tooltip title="点击复制完整 Key">
-          <Tag
-            style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-            onClick={() => {
-              // 无法复制完整 Key（已脱敏），提示用户
-              message.info('API Key 已脱敏，请在厂商配置中查看完整 Key')
-            }}
-          >
-            {key || '—'}
-          </Tag>
-        </Tooltip>
-      ),
+      render: (key: string) => {
+        if (!key) return '—'
+        const masked = key.length > 12 ? key.substring(0, 6) + '****' + key.substring(key.length - 4) : '****'
+        return (
+          <Tooltip title="点击复制完整 Key">
+            <Tag
+              style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+              onClick={() => {
+                navigator.clipboard.writeText(key)
+                message.success('已复制到剪贴板')
+              }}
+            >
+              {masked}
+            </Tag>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '模型',
@@ -309,7 +314,7 @@ function ProviderManager() {
       fixed: 'right' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onCell: () => ({ style: cellCenterFixed }),
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
@@ -418,6 +423,7 @@ function ModelManager() {
   const [editingModel, setEditingModel] = useState<Model | null>(null)
   const [form] = Form.useForm()
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+  const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
 
   const loadProviders = useCallback(async () => {
     try {
@@ -711,6 +717,7 @@ function ApiKeyManager() {
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [form] = Form.useForm()
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
+  const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
   const [allModels, setAllModels] = useState<string[]>([])
 
   const loadApiKeys = useCallback(async () => {
