@@ -321,8 +321,8 @@ function DailyTokenChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     },
     series: [
       { name: '输入', type: 'line', data: data.map(d => d.prompt_tokens), smooth: true, itemStyle: { color: '#0ea5e9' } },
-      { name: '输出', type: 'line', data: data.map(d => d.completion_tokens), smooth: true, itemStyle: { color: '#10b981' } },
-      { name: '缓存命中', type: 'line', data: data.map(d => d.cache_hit_tokens), smooth: true, itemStyle: { color: '#06b6d4' }, lineStyle: { type: 'dashed' } },
+      { name: '输出', type: 'line', data: data.map(d => d.completion_tokens), smooth: true, itemStyle: { color: '#a78bfa' } },
+      { name: '缓存命中', type: 'line', data: data.map(d => d.cache_hit_tokens), smooth: true, itemStyle: { color: '#10b981' }, lineStyle: { type: 'dashed' } },
     ],
   }
   return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />

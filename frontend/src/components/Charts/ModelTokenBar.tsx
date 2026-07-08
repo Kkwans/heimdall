@@ -123,7 +123,7 @@ const ModelTokenBar = memo(function ModelTokenBar() {
         type: 'bar',
         stack: 'tokens',
         data: sorted.map(d => d.cache_hit_tokens),
-        itemStyle: { color: CHART_COLORS.cache },
+        itemStyle: { color: CHART_COLORS.success },
         barMaxWidth: 24,
       },
       {
@@ -131,7 +131,7 @@ const ModelTokenBar = memo(function ModelTokenBar() {
         type: 'bar',
         stack: 'tokens',
         data: sorted.map(d => d.completion_tokens),
-        itemStyle: { color: CHART_COLORS.success, borderRadius: [0, 3, 3, 0] },
+        itemStyle: { color: CHART_COLORS.output, borderRadius: [0, 3, 3, 0] },
         barMaxWidth: 24,
       },
     ],

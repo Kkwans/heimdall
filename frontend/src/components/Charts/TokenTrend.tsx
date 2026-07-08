@@ -89,7 +89,7 @@ const TokenTrend = memo(function TokenTrend() {
         type: 'bar',
         stack: 'tokens',
         data: data.map(d => d.cache_hit_tokens),
-        itemStyle: { color: CHART_COLORS.cache },
+        itemStyle: { color: CHART_COLORS.success },
         barMaxWidth: 40,
       },
       {
@@ -97,7 +97,7 @@ const TokenTrend = memo(function TokenTrend() {
         type: 'bar',
         stack: 'tokens',
         data: data.map(d => d.completion_tokens),
-        itemStyle: { color: CHART_COLORS.success, borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: CHART_COLORS.output, borderRadius: [3, 3, 0, 0] },
         barMaxWidth: 40,
       },
     ],
