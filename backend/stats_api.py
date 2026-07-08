@@ -202,9 +202,10 @@ def _auto_archive_if_needed():
     在每次日志相关接口被调用时执行，完全透明，前端无感知。
     """
     import re as _re
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
-    today = _dt.now().strftime("%Y-%m-%d")
+    CST = _tz(_td(hours=8))
+    today = _dt.now(CST).strftime("%Y-%m-%d")
     DATE_RE = _re.compile(r'^(\d{4}-\d{2}-\d{2})')
 
     for log_file in ("proxy-business.log", "proxy-system.log"):

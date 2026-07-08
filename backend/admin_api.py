@@ -168,11 +168,11 @@ def delete_model(model_id):
 def list_api_keys():
     """获取所有 API Key"""
     keys = auth.get_all_api_keys()
-    # 脱敏处理
+    # 脱敏处理：heimdall-xxxx...后四位
     for key in keys:
         if key.get("key_value"):
             v = key["key_value"]
-            key["key_preview"] = v[:12] + "..." + v[-4:] if len(v) > 16 else v
+            key["key_preview"] = v[:8] + "..." + v[-4:] if len(v) > 12 else v
     return jsonify({"keys": keys})
 
 

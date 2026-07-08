@@ -41,6 +41,14 @@ if not os.path.exists(config.LOG_DIR):
 # WatchedFileHandler 自身不做任何轮转，只在每次写入前检测文件是否被外部修改；
 # 轮转由 _archive_missed_log_days / _start_midnight_archiver 负责（纯文件复制），
 # 两者完全解耦，句柄始终有效。
+class CSTFormatter(logging.Formatter):
+    """使用中国时区 (UTC+8) 的日志格式器，不依赖进程时区设置"""
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=CST)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+
 def setup_logger(name, log_file, level=logging.INFO):
     log_path = os.path.join(config.LOG_DIR, log_file)
     # 确保文件存在（WatchedFileHandler 要求文件预先存在或可创建）
@@ -48,7 +56,7 @@ def setup_logger(name, log_file, level=logging.INFO):
         open(log_path, 'a', encoding='utf-8').close()
     handler = WatchedFileHandler(filename=log_path, encoding="utf-8")
 
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter = CSTFormatter('%(asctime)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
 
     logger = logging.getLogger(name)
@@ -77,7 +85,7 @@ def _archive_missed_log_days(log_file: str) -> None:
     if not os.path.isfile(log_path):
         return
 
-    today = _dt.now().strftime("%Y-%m-%d")
+    today = datetime.now(CST).strftime("%Y-%m-%d")
 
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -165,9 +173,9 @@ def _start_midnight_archiver():
 
     def _run():
         while True:
-            now = _dt.now()
+            now = datetime.now(CST)
             # 计算到下一个 00:01:00（零点后1分钟，留出归档操作的执行时间）
-            tomorrow = (now + _td(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
+            tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
             wait_sec = (tomorrow - now).total_seconds()
             import time as _time
             _time.sleep(max(wait_sec, 1))

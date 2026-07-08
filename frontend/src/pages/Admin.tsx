@@ -259,7 +259,7 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (key: string) => {
         if (!key) return '—'
-        const masked = key.length > 12 ? key.substring(0, 6) + '****' + key.substring(key.length - 4) : '****'
+        const masked = key.length > 8 ? key.substring(0, 4) + '...' + key.substring(key.length - 4) : key
         return (
           <Tooltip title="点击复制完整 Key">
             <Tag
@@ -335,10 +335,9 @@ function ProviderManager() {
       title: '操作',
       key: 'action',
       width: 80,
-      
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenterFixed }),
+      onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
@@ -354,6 +353,11 @@ function ProviderManager() {
     },
   ]
 
+  // 移动端隐藏次要列
+  const filteredColumns = isMobile
+    ? columns.filter(c => c.key !== 'display_name' && c.key !== 'anthropic_url')
+    : columns
+
   return (
     <>
       <div style={{ marginBottom: 16 }}>
@@ -363,7 +367,7 @@ function ProviderManager() {
       </div>
 
       <Table
-        columns={columns}
+        columns={filteredColumns}
         dataSource={providers}
         rowKey="id"
         loading={loading ? TABLE_SPIN_INDICATOR : false}
@@ -376,7 +380,7 @@ function ProviderManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: isMobile ? 650 : 950 }}
+        scroll={{ x: isMobile ? 'max-content' : 950 }}
       />
 
       <Modal
@@ -545,6 +549,8 @@ function ModelManager() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const vendorName = providers.find(p => p.id === selectedProvider)?.name || ''
+
   const columns: ColumnsType<Model> = [
     {
       title: '模型名称',
@@ -555,7 +561,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
-      render: (v: string) => <ModelTag name={v} />,
+      render: (v: string) => <ModelTag name={v} vendorName={vendorName} />,
     },
     {
       title: '上游模型名',
@@ -654,6 +660,11 @@ function ModelManager() {
     },
   ]
 
+  // 移动端隐藏次要列
+  const filteredModelColumns = isMobile
+    ? columns.filter(c => c.key !== 'price_cache_read' && c.key !== 'price_cache_write')
+    : columns
+
   return (
     <>
       <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -670,7 +681,7 @@ function ModelManager() {
       </div>
 
       <Table
-        columns={columns}
+        columns={filteredModelColumns}
         dataSource={models}
         rowKey="id"
         loading={loading ? TABLE_SPIN_INDICATOR : false}
@@ -683,7 +694,7 @@ function ModelManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: isMobile ? 650 : 800 }}
+        scroll={{ x: isMobile ? 'max-content' : 800 }}
       />
 
       <Modal
@@ -984,7 +995,7 @@ function ApiKeyManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: isMobile ? 620 : 800 }}
+        scroll={{ x: isMobile ? 'max-content' : 800 }}
       />
 
       <Modal

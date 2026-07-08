@@ -17,7 +17,7 @@ services:
     container_name: heimdall-proxy
     restart: unless-stopped
     ports:
-      - "${PROXY_PORT:-8888}:8888"
+      - "${PROXY_PORT:-9888}:8888"
     volumes:
       - heimdall-data:/data
       - heimdall-logs:/logs
@@ -63,6 +63,7 @@ services:
       - HEIMDALL_DETAIL_LOG=${HEIMDALL_DETAIL_LOG:-false}
       - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
       - DOCKER_HOST=unix:///var/run/docker.sock  # Docker API 地址
+      - TZ=Asia/Shanghai
     networks:
       - heimdall-net
     healthcheck:
