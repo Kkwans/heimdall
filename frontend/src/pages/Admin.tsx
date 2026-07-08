@@ -531,6 +531,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
+      render: (v: string) => <Tag color="blue" style={{ fontSize: 11 }}>{v}</Tag>,
     },
     {
       title: '上游模型名',
@@ -853,10 +854,10 @@ function ApiKeyManager() {
       onCell: () => ({ style: cellCenter }),
       render: (models: string | null) => (
         models ? (
-          <Space wrap size={4}>
-            {models.split(',').map(m => <Tag key={m}>{m.trim()}</Tag>)}
-          </Space>
-        ) : <Tag color="blue">全部</Tag>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+            {models.split(',').map(m => <Tag key={m} style={{ margin: 0 }}>{m.trim()}</Tag>)}
+          </div>
+        ) : <Tag color="blue" style={{ margin: 0 }}>全部</Tag>
       ),
     },
     {
@@ -1036,7 +1037,7 @@ export default function Admin() {
       <Header pageName="系统配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
-          <div style={{ padding: '0 16px' }}>
+          <div style={{ padding: '0 16px 8px' }}>
             <Tabs items={tabItems} defaultActiveKey="providers" />
           </div>
         </Card>

@@ -533,7 +533,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   <GridCell label="输出时间">
                     {rec.stream && rec.ttfb_ms > 0
                       ? <span style={{ color: 'var(--color-warning)' }}>{fmtMs(outputMs)}</span>
-                      : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
+                      : <span style={{ color: 'var(--text-muted)' }}>{fmtMs(rec.latency_ms)}</span>}
                   </GridCell>
                   <GridCell label="总耗时">
                     <span style={{ color: latencyColor(rec.latency_ms), fontWeight: 700 }}>

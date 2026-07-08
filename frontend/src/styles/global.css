@@ -1088,3 +1088,8 @@ body {
   animation: hd-shimmer 1.4s ease-in-out infinite;
   border: 1px solid var(--border-subtle, #e7e5e4);
 }
+
+/* 减少表格分页组件底部间距 */
+.ant-table-pagination.ant-pagination {
+  margin: 12px 0 0 0 !important;
+}
