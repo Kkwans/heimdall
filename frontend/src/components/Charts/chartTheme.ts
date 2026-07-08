@@ -1,11 +1,11 @@
 // 图表颜色 — 与设计规范对齐
 export const CHART_COLORS = {
-  primary: '#0ea5e9',   // 电光蓝
-  success: '#10b981',   // 翡翠绿
-  warning: '#f59e0b',   // 琥珀橙
-  danger: '#f43f5e',    // 珊瑚红
-  accent: '#8b5cf6',    // 紫
-  cyan: '#06b6d4',      // 青
+  primary: '#0ea5e9',   // 电光蓝（输入/主色调）
+  success: '#10b981',   // 翡翠绿（输出/成功）
+  warning: '#f59e0b',   // 琥珀橙（警告/中等）
+  danger: '#f43f5e',    // 珊瑚红（错误/危险）
+  accent: '#8b5cf6',    // 紫（推理/延迟）
+  cache: '#06b6d4',     // 青（缓存命中）
   orange: '#f97316',    // 橙红
   purple: '#a78bfa',    // 浅紫
 }
