@@ -264,8 +264,31 @@ function ProviderManager() {
             <Tag
               style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
               onClick={() => {
-                navigator.clipboard.writeText(key)
-                message.success('已复制到剪贴板')
+                const text = key
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(text).then(() => message.success('已复制到剪贴板')).catch(() => {
+                    // 降级方案
+                    const ta = document.createElement('textarea')
+                    ta.value = text
+                    ta.style.position = 'fixed'
+                    ta.style.left = '-9999px'
+                    document.body.appendChild(ta)
+                    ta.select()
+                    document.execCommand('copy')
+                    document.body.removeChild(ta)
+                    message.success('已复制到剪贴板')
+                  })
+                } else {
+                  const ta = document.createElement('textarea')
+                  ta.value = text
+                  ta.style.position = 'fixed'
+                  ta.style.left = '-9999px'
+                  document.body.appendChild(ta)
+                  ta.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(ta)
+                  message.success('已复制到剪贴板')
+                }
               }}
             >
               {masked}
@@ -311,7 +334,7 @@ function ProviderManager() {
       title: '操作',
       key: 'action',
       width: 80,
-      fixed: 'right' as const,
+      
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenterFixed }),
@@ -610,8 +633,8 @@ function ModelManager() {
     {
       title: '操作',
       key: 'action',
-      width: 100,
-      fixed: 'right' as const,
+      width: 80,
+      
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -804,8 +827,29 @@ function ApiKeyManager() {
   }
 
   const handleCopyKey = (key: string) => {
-    navigator.clipboard.writeText(key)
-    message.success('已复制到剪贴板')
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(key).then(() => message.success('已复制到剪贴板')).catch(() => {
+        const ta = document.createElement('textarea')
+        ta.value = key
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+        message.success('已复制到剪贴板')
+      })
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = key
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      message.success('已复制到剪贴板')
+    }
   }
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
@@ -897,8 +941,8 @@ function ApiKeyManager() {
     {
       title: '操作',
       key: 'action',
-      width: 100,
-      fixed: 'right' as const,
+      width: 80,
+      
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),

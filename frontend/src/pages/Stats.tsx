@@ -106,13 +106,17 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
 
+  const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
+  const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
+
   const columns: ColumnsType<ModelStats> = [
     {
       title: '模型',
       dataIndex: 'model',
+      fixed: 'left' as const,
       align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
+      onCell: () => ({ style: cellCenterFixed }),
       render: (v: string) => {
         const vc = getVendorColor(v)
         return (
@@ -899,14 +903,16 @@ function ProviderOverviewChart({ data, isDark }: { data: ProviderStats[]; isDark
 function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading: boolean }) {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
+  const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
 
   const columns: ColumnsType<ProviderStats> = [
     {
       title: '厂商',
       dataIndex: 'provider',
+      fixed: 'left' as const,
       align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
+      onCell: () => ({ style: cellCenterFixed }),
       render: (v: string) => {
         const vc = getVendorColor(v)
         return (

@@ -91,11 +91,17 @@ export default function RequestTable() {
     setPage(1)
   }, [modelFilter, statusFilter, dateRange.start, dateRange.end])
 
+  const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
+  const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
+
   const columns: ColumnsType<RequestRecord> = [
     {
       title: '时间',
       dataIndex: 'created_at',
       width: 160,
+      fixed: 'left' as const,
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
+      onCell: () => ({ style: cellCenterFixed }),
       render: (v: string) => (
         <span className={styles.mono}>{v}</span>
       ),
