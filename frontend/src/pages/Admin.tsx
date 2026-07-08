@@ -1037,7 +1037,7 @@ export default function Admin() {
       <Header pageName="系统配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
-          <div style={{ padding: '0 16px 8px' }}>
+          <div style={{ padding: isMobile ? '0 8px 4px' : '0 16px 8px' }}>
             <Tabs items={tabItems} defaultActiveKey="providers" />
           </div>
         </Card>
