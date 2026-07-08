@@ -13,20 +13,12 @@ from flask import request, jsonify
 
 import config
 import crypto
+from db import _get_conn
 
 _logger = logging.getLogger("stderr")
-_local = threading.local()
 
-
-def _get_conn() -> sqlite3.Connection:
-    """获取当前线程的 SQLite 连接"""
-    if not hasattr(_local, "conn") or _local.conn is None:
-        conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        _local.conn = conn
-    return _local.conn
+# 使用 db 模块的统一连接管理
+# _get_conn 从 db.py 导入
 
 
 def init_auth_tables():
