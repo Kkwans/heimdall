@@ -354,20 +354,31 @@ def create_provider(data: dict) -> int:
     return cursor.lastrowid
 
 
+# 允许更新的字段白名单
+_PROVIDER_ALLOWED_FIELDS = {"name", "display_name", "base_url", "openai_url", "anthropic_url", "api_key", "enabled", "priority", "plan_type"}
+_MODEL_ALLOWED_FIELDS = {"model_name", "upstream_model", "enabled", "context_window", "price_input", "price_output", "price_cache_read", "price_cache_write"}
+
+
+def _validate_field_name(field: str, allowed: set) -> bool:
+    """验证字段名是否在白名单中（防止 SQL 注入）"""
+    return field in allowed
+
+
 def update_provider(provider_id: int, data: dict) -> bool:
-    """更新厂商（API Key 加密存储）"""
+    """更新厂商（API Key 加密存储，字段名白名单校验）"""
     conn = _get_conn()
     cursor = conn.cursor()
     fields = []
     values = []
-    for key in ["name", "display_name", "base_url", "openai_url", "anthropic_url", "api_key", "enabled", "priority", "plan_type"]:
-        if key in data:
-            if key == "api_key":
-                fields.append(f"{key} = ?")
-                values.append(crypto.encrypt(data[key]))
-            else:
-                fields.append(f"{key} = ?")
-                values.append(data[key])
+    for key, value in data.items():
+        if not _validate_field_name(key, _PROVIDER_ALLOWED_FIELDS):
+            continue
+        if key == "api_key":
+            fields.append(f"{key} = ?")
+            values.append(crypto.encrypt(value))
+        else:
+            fields.append(f"{key} = ?")
+            values.append(value)
     if not fields:
         return False
     fields.append("updated_at = CURRENT_TIMESTAMP")
@@ -420,16 +431,16 @@ def create_model(provider_id: int, data: dict) -> int:
 
 
 def update_model(model_id: int, data: dict) -> bool:
-    """更新模型"""
+    """更新模型（字段名白名单校验）"""
     conn = _get_conn()
     cursor = conn.cursor()
     fields = []
     values = []
-    for key in ["model_name", "upstream_model", "enabled", "context_window",
-                "price_input", "price_output", "price_cache_read", "price_cache_write"]:
-        if key in data:
-            fields.append(f"{key} = ?")
-            values.append(data[key])
+    for key, value in data.items():
+        if not _validate_field_name(key, _MODEL_ALLOWED_FIELDS):
+            continue
+        fields.append(f"{key} = ?")
+        values.append(value)
     if not fields:
         return False
     values.append(model_id)
