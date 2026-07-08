@@ -11,6 +11,15 @@ from datetime import datetime, date as date_type, timezone, timedelta
 # 中国时区 (UTC+8)
 CST = timezone(timedelta(hours=8))
 
+# 常量定义
+PROXY_INTERNAL_PORT = 8888  # 代理容器内部端口
+DASHBOARD_PORT = 8889       # Dashboard 端口
+DEFAULT_TIMEOUT = 120       # 默认请求超时（秒）
+DOCKER_STOP_TIMEOUT = 15    # Docker 停止超时（秒）
+DOCKER_RM_TIMEOUT = 10      # Docker 删除超时（秒）
+COMPOSE_UP_TIMEOUT = 30     # Docker Compose 启动超时（秒）
+RESTART_WAIT_SEC = 3        # 重启后等待秒数
+
 # ==========================================
 # 1. 优先初始化日志与接管输出
 # 注意：必须在导入第三方库（如 requests）之前执行，
