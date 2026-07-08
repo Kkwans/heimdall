@@ -223,11 +223,9 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
         <Tooltip title={url} placement="top">
-          <Space>
-            <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 160 }} ellipsis>
-              {url}
-            </Text>
-          </Space>
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} ellipsis>
+            {url}
+          </Text>
         </Tooltip>
       ) : '-',
     },
@@ -242,11 +240,9 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
         <Tooltip title={url} placement="top">
-          <Space>
-            <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 160 }} ellipsis>
-              {url}
-            </Text>
-          </Space>
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} ellipsis>
+            {url}
+          </Text>
         </Tooltip>
       ) : '-',
     },

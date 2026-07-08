@@ -125,7 +125,7 @@ def init_routing_tables():
             except Exception:
                 pass
         conn.commit()
-    except Exception as e:
+    except sqlite3.Error as e:
         _logger.error(f"[ROUTER] 初始化路由表失败: {e}", exc_info=True)
 
 
@@ -278,6 +278,9 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
             context_window=context_window,
         )
 
+    except sqlite3.Error as e:
+        _logger.error(f"[ROUTER] 路由查找数据库错误: {e}", exc_info=True)
+        return RouteError(500, f"路由查找数据库错误: {str(e)}")
     except Exception as e:
         _logger.error(f"[ROUTER] 路由查找失败: {e}", exc_info=True)
         return RouteError(500, f"路由查找异常: {str(e)}")
