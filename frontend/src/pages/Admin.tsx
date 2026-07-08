@@ -14,7 +14,7 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
-import { getVendorColor } from '../components/Charts/chartTheme'
+import { VendorTag, ModelTag } from '../components/CommonTag'
 import Header from '../components/Header'
 import { useFilter } from '../context/FilterContext'
 import {
@@ -201,7 +201,7 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenterFixed }),
       render: (name: string) => {
         const vc = getVendorColor(name)
-        return <Tag color={vc.color} style={{ fontWeight: 600, fontSize: 12, background: vc.bg, border: `1px solid ${vc.color}30` }}>{vc.label || name}</Tag>
+        return <VendorTag name={vc.label || name} />
       },
     },
     {
@@ -554,7 +554,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
-      render: (v: string) => <Tag color="blue" style={{ fontSize: 11 }}>{v}</Tag>,
+      render: (v: string) => <ModelTag name={v} />,
     },
     {
       title: '上游模型名',

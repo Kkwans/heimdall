@@ -29,6 +29,7 @@ import { useTheme } from '../context/ThemeContext'
 import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
 import { fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
 import { PAGE_ICON_STYLE, getVendorColor } from '../components/Charts/chartTheme'
+import { VendorTag, ModelTag } from '../components/CommonTag'
 
 const CHART_HEIGHT = 280
 const CHART_HEIGHT_MOBILE = 240
@@ -119,7 +120,7 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
         const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{v}</Tag>
+            <ModelTag name={v} />
           </div>
         )
       },
@@ -915,7 +916,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
         const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{v}</Tag>
+            <ModelTag name={v} />
           </div>
         )
       },
@@ -991,11 +992,8 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       render: (_, r) => (
         <Space size={4} wrap>
           {r.models.slice(0, 3).map(m => {
-            const vc = getVendorColor(m)
             return (
-              <Tag key={m} color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 10, borderRadius: 2, margin: 0, fontWeight: 500 }}>
-                {m.length > 15 ? m.slice(0, 15) + '…' : m}
-              </Tag>
+              <VendorTag key={m} name={m.length > 15 ? m.slice(0, 15) + '…' : m} style={{ fontSize: 10 }} />
             )
           })}
           {r.models.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{r.models.length - 3}</span>}

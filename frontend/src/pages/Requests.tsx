@@ -13,7 +13,7 @@ import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
 import { fmtTokens, fmtMs, latencyColor } from '../utils/format'
-import { getVendorColor } from '../components/Charts/chartTheme'
+import { VendorTag, ModelTag } from '../components/CommonTag'
 
 // 移动端检测
 const isMobileCheck = () => window.innerWidth < 768
@@ -479,7 +479,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                 {/* ── 基本信息：单列 label+value ── */}
                 <InfoRow label="请求时间">{rec.created_at}</InfoRow>
                 <InfoRow label="请求模型">
-                  <Tag color={getVendorColor(rec.model).color} style={{ fontSize: 11, borderRadius: 3, margin: 0, background: getVendorColor(rec.model).bg, border: `1px solid ${getVendorColor(rec.model).color}30` }}>{rec.model}</Tag>
+                  <ModelTag name={rec.model} style={{ fontSize: 11, borderRadius: 3 }} />
                   {rec.original_model !== rec.model && (
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→ {rec.original_model}</span>
                   )}
@@ -714,11 +714,10 @@ export default function Requests() {
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
       render: (v: string, record) => {
-        const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Tooltip title={record.original_model !== v ? `原始模型: ${record.original_model}` : undefined}>
-              <Tag color={vc.color} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, borderRadius: 2, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{v}</Tag>
+              <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
             </Tooltip>
           </div>
         )
