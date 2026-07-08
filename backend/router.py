@@ -243,7 +243,7 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
             model_row = cursor.fetchone()
 
         if not model_row:
-            return RouteError(400, f"不支持的模型: {model_name}（厂商: {provider_row.get('display_name', provider_key)}）")
+            return RouteError(400, f"不支持的模型: {model_name}（厂商: {dict(provider_row).get('display_name', provider_key)}）")
 
         context_window = model_row["context_window"]
         # fallback 到 config.py 的硬编码映射
