@@ -529,8 +529,8 @@ function ModelManager() {
       width: isMobile ? 100 : 150,
       fixed: 'left' as const,
       align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
+      onCell: () => ({ style: cellCenterFixed }),
     },
     {
       title: '上游模型名',
@@ -823,8 +823,8 @@ function ApiKeyManager() {
       width: isMobile ? 90 : 120,
       fixed: 'left' as const,
       align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
+      onCell: () => ({ style: cellCenterFixed }),
     },
     {
       title: 'API Key',

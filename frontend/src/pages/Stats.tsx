@@ -117,7 +117,7 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
         const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{vc.label || v}</Tag>
+            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{v}</Tag>
           </div>
         )
       },
@@ -192,7 +192,7 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
       onCell: () => ({ style: cellCenter }),
       sorter: (a, b) => a.avg_cache_hit_rate - b.avg_cache_hit_rate,
       render: (v: number) => (
-        <span style={{ color: v >= 0.3 ? '#f59e0b' : 'var(--text-secondary)', ...mono }}>
+        <span style={{ color: v >= 0.8 ? '#10b981' : v >= 0.5 ? '#f59e0b' : '#f43f5e', ...mono }}>
           {pctStr(v)}
         </span>
       ),
@@ -318,7 +318,7 @@ function DailyTokenChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     series: [
       { name: '输入', type: 'line', data: data.map(d => d.prompt_tokens), smooth: true, itemStyle: { color: '#0ea5e9' } },
       { name: '输出', type: 'line', data: data.map(d => d.completion_tokens), smooth: true, itemStyle: { color: '#10b981' } },
-      { name: '缓存命中', type: 'line', data: data.map(d => d.cache_hit_tokens), smooth: true, itemStyle: { color: '#f59e0b' }, lineStyle: { type: 'dashed' } },
+      { name: '缓存命中', type: 'line', data: data.map(d => d.cache_hit_tokens), smooth: true, itemStyle: { color: '#34d399' }, lineStyle: { type: 'dashed' } },
     ],
   }
   return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
@@ -911,7 +911,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
         const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{vc.label || v}</Tag>
+            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{v}</Tag>
           </div>
         )
       },
@@ -955,7 +955,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       onCell: () => ({ style: cellCenter }),
       sorter: (a, b) => a.cache_hit_rate - b.cache_hit_rate,
       render: (v: number) => (
-        <span style={{ color: v >= 0.3 ? '#f59e0b' : 'var(--text-secondary)', ...mono }}>
+        <span style={{ color: v >= 0.8 ? '#10b981' : v >= 0.5 ? '#f59e0b' : '#f43f5e', ...mono }}>
           {pctStr(v)}
         </span>
       ),
