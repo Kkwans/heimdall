@@ -1155,12 +1155,12 @@ export default function Stats() {
         <>
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={12}>
-              <Card title={sectionTitle('厂商 Token 占比', '按厂商分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
+              <Card title={sectionTitle('厂商 Token 占比', '按厂商分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
                 <ProviderTokenPieChart data={providerStats} isMobile={isMobile} />
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title={sectionTitle('厂商延迟对比', 'P50 / P90 / P99')} bordered={false} className="hd-card" style={cardStyle} size="small">
+              <Card title={sectionTitle('厂商延迟对比', 'P50 / P90 / P99')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
                 <ProviderLatencyCompare data={providerStats} isDark={isDark} />
               </Card>
             </Col>
@@ -1230,12 +1230,12 @@ export default function Stats() {
       {/* Token 占比 + 错误码分析：各占一半，与下方两图对称 */}
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
-          <Card title={sectionTitle('Token 占比', '按模型分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
+          <Card title={sectionTitle('Token 占比', '按模型分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
             {modelStats.length > 0 ? <ModelTokenPieChart data={modelStats} isMobile={isMobile} /> : <EmptyPlaceholder />}
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card title={sectionTitle('错误码分析', `共 ${totalErrors} 次错误`)} bordered={false} className="hd-card" style={cardStyle} size="small">
+          <Card title={sectionTitle('错误码分析', `共 ${totalErrors} 次错误`)} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
             <ErrorAnalysisChart data={errorAnalysis} isDark={isDark} />
           </Card>
         </Col>
