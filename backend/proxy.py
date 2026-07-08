@@ -1130,7 +1130,7 @@ if __name__ == '__main__':
                     config.PROXY_PORT = int(_rt['proxy_port'])
         except Exception:
             pass
-        proxy_logger.info(f"代理服务启动 → :{config.PROXY_PORT}")
+        system_logger.info(f"代理服务启动 → 宿主机端口 {getattr(config, 'PROXY_EXTERNAL_PORT', config.PROXY_PORT)}")
         app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
 
     elif mode == '--dashboard':
@@ -1154,14 +1154,14 @@ if __name__ == '__main__':
         dashboard_app.register_blueprint(_stats_bp)
         dashboard_app.register_blueprint(_dashboard_bp)
         dashboard_app.register_blueprint(_admin_bp)
-        proxy_logger.info(f"Dashboard 服务启动 → :{config.DASHBOARD_PORT}")
+        system_logger.info(f"Dashboard 服务启动 → 宿主机端口 {getattr(config, 'DASHBOARD_EXTERNAL_PORT', config.DASHBOARD_PORT)}")
         dashboard_app.run(host='0.0.0.0', port=config.DASHBOARD_PORT, threaded=True, use_reloader=False)
 
     else:
         # 启动器模式：确保两个服务都在运行
-        proxy_logger.info("=" * 60)
-        proxy_logger.info("Heimdall 启动（双进程解耦模式）")
-        proxy_logger.info(f"  代理服务:   :{config.PROXY_PORT}   (AI 请求转发)")
+        system_logger.info("=" * 60)
+        system_logger.info("Heimdall 启动（双进程解耦模式）")
+        system_logger.info(f"  代理服务:   宿主机端口 {getattr(config, 'PROXY_EXTERNAL_PORT', config.PROXY_PORT)} (AI 请求转发)")
         proxy_logger.info(f"  Dashboard:  :{config.DASHBOARD_PORT}  (统计面板，独立进程)")
         proxy_logger.info("=" * 60)
 
