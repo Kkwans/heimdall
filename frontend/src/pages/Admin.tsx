@@ -15,6 +15,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-d
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import { VendorTag, ModelTag } from '../components/CommonTag'
+import MobileTooltip from '../components/MobileTooltip'
 import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
 import { useFilter } from '../context/FilterContext'
@@ -261,7 +262,7 @@ function ProviderManager() {
         if (!key) return '—'
         const masked = key.length > 8 ? key.substring(0, 4) + '...' + key.substring(key.length - 4) : key
         return (
-          <Tooltip title="点击复制完整 Key">
+          <MobileTooltip title="点击复制完整 Key">
             <Tag
               style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
               onClick={() => {
@@ -294,7 +295,7 @@ function ProviderManager() {
             >
               {masked}
             </Tag>
-          </Tooltip>
+          </MobileTooltip>
         )
       },
     },
