@@ -5,9 +5,7 @@ import { fetchModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
-import { emptyOption, tooltipStyle, PAGE_ICON_STYLE } from './chartTheme'
-
-const COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#06b6d4', '#f97316', '#a78bfa']
+import { emptyOption, tooltipStyle, PAGE_ICON_STYLE, getVendorColor } from './chartTheme'
 
 const ModelDistribution = memo(function ModelDistribution() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -103,7 +101,7 @@ const ModelDistribution = memo(function ModelDistribution() {
           name: d.model,
           value: d.total_requests,
           raw: d,
-          itemStyle: { color: COLORS[i % COLORS.length] },
+          itemStyle: { color: getVendorColor(d.model).color },
         })),
         emphasis: {
           itemStyle: {

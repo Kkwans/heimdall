@@ -28,7 +28,7 @@ import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
 import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
 import { fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
-import { PAGE_ICON_STYLE } from '../components/Charts/chartTheme'
+import { PAGE_ICON_STYLE, getVendorColor } from '../components/Charts/chartTheme'
 
 const CHART_HEIGHT = 280
 const CHART_HEIGHT_MOBILE = 240
@@ -42,6 +42,7 @@ const pctStr = pctStrUtil
 const latencyColor = latencyColorUtil
 
 // ECharts 通用主题色
+// 厂商颜色列表（已迁移到 getVendorColor 全局方案）
 const SERIES_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a78bfa', '#f43f5e', '#38bdf8', '#34d399']
 
 // 通用空状态占位
@@ -526,7 +527,7 @@ function ModelTokenPieChart({ data, isMobile }: { data: ModelStats[]; isMobile: 
         data: data.map((d, i) => ({
           name: d.model,
           value: d.total_tokens,
-          itemStyle: { color: SERIES_COLORS[i % SERIES_COLORS.length] },
+          itemStyle: { color: getVendorColor(d.model).color },
         })),
         label: {
           show: !isMobile,
@@ -770,7 +771,7 @@ function ProviderTokenPieChart({ data, isMobile }: { data: ProviderStats[]; isMo
         data: data.map((d, i) => ({
           name: d.provider,
           value: d.total_tokens,
-          itemStyle: { color: SERIES_COLORS[i % SERIES_COLORS.length] },
+          itemStyle: { color: getVendorColor(d.provider).color },
         })),
         label: { show: !isMobile, fontSize: 10, formatter: '{d}%' },
         labelLine: { show: !isMobile },

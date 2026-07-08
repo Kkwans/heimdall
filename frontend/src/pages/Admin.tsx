@@ -14,6 +14,7 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
+import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
 import { useFilter } from '../context/FilterContext'
 import {
@@ -197,6 +198,10 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
+      render: (name: string) => {
+        const vc = getVendorColor(name)
+        return <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontWeight: 600, fontSize: 12 }}>{vc.label || name}</Tag>
+      },
     },
     {
       title: '显示名',

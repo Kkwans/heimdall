@@ -84,3 +84,83 @@ export const PAGE_ICON_STYLE = {
   pageButtonItemGap: 4,
   pageTextStyle: { fontSize: 11, color: '#a8a29e' },
 }
+
+// ============================================================
+// 厂商主题色 — 全局统一配色
+// 每个厂商有固定的主色，用于图表、Tag、状态指示等
+// ============================================================
+export const VENDOR_COLORS: Record<string, { color: string; bg: string; label: string }> = {
+  deepseek:      { color: '#1a56db', bg: '#dbeafe', label: 'DeepSeek' },
+  openai:        { color: '#10a37f', bg: '#d1fae5', label: 'OpenAI' },
+  anthropic:     { color: '#d97706', bg: '#fef3c7', label: 'Anthropic' },
+  google:        { color: '#4285f4', bg: '#dbeafe', label: 'Google' },
+  gemini:        { color: '#4285f4', bg: '#dbeafe', label: 'Gemini' },
+  mimo:          { color: '#7c3aed', bg: '#ede9fe', label: 'MiMo' },
+  moonshot:      { color: '#1e40af', bg: '#dbeafe', label: 'Moonshot' },
+  kimi:          { color: '#1e40af', bg: '#dbeafe', label: 'Kimi' },
+  zhipu:         { color: '#0891b2', bg: '#cffafe', label: '智谱' },
+  glm:           { color: '#0891b2', bg: '#cffafe', label: 'GLM' },
+  baidu:         { color: '#2563eb', bg: '#dbeafe', label: '百度' },
+  ernie:         { color: '#2563eb', bg: '#dbeafe', label: '文心' },
+  alibaba:       { color: '#ea580c', bg: '#ffedd5', label: '阿里' },
+  qwen:          { color: '#ea580c', bg: '#ffedd5', label: '通义千问' },
+  minimax:       { color: '#059669', bg: '#d1fae5', label: 'MiniMax' },
+  siliconflow:   { color: '#06b6d4', bg: '#cffafe', label: 'SiliconFlow' },
+  together:      { color: '#7c3aed', bg: '#ede9fe', label: 'Together' },
+  fireworks:     { color: '#dc2626', bg: '#fee2e2', label: 'Fireworks' },
+  groq:          { color: '#f97316', bg: '#ffedd5', label: 'Groq' },
+  mistral:       { color: '#f43f5e', bg: '#ffe4e6', label: 'Mistral' },
+  cohere:        { color: '#8b5cf6', bg: '#ede9fe', label: 'Cohere' },
+  aws:           { color: '#f59e0b', bg: '#fef3c7', label: 'AWS' },
+  bedrock:       { color: '#f59e0b', bg: '#fef3c7', label: 'Bedrock' },
+  azure:         { color: '#0ea5e9', bg: '#e0f2fe', label: 'Azure' },
+  vertex:        { color: '#4285f4', bg: '#dbeafe', label: 'Vertex' },
+  xai:           { color: '#1a1a1a', bg: '#f5f5f4', label: 'xAI' },
+  grok:          { color: '#1a1a1a', bg: '#f5f5f4', label: 'Grok' },
+  yi:            { color: '#0d9488', bg: '#ccfbf1', label: '零一万物' },
+  step:          { color: '#6366f1', bg: '#e0e7ff', label: '阶跃星辰' },
+  baichuan:      { color: '#2563eb', bg: '#dbeafe', label: '百川' },
+  hunyuan:       { color: '#0ea5e9', bg: '#e0f2fe', label: '混元' },
+  spark:         { color: '#f97316', bg: '#ffedd5', label: '讯飞星火' },
+  iflytek:       { color: '#f97316', bg: '#ffedd5', label: '讯飞' },
+  volcengine:    { color: '#2563eb', bg: '#dbeafe', label: '火山引擎' },
+  doubao:        { color: '#2563eb', bg: '#dbeafe', label: '豆包' },
+}
+
+// 默认回退颜色列表（未知厂商按序轮询）
+const VENDOR_FALLBACK_COLORS = [
+  '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6',
+  '#06b6d4', '#f97316', '#a78bfa', '#ec4899', '#14b8a6',
+]
+
+/**
+ * 根据厂商名称获取主题色
+ * 支持模糊匹配（如 deepseek-chat 匹配 deepseek）
+ */
+export function getVendorColor(vendorName: string): { color: string; bg: string; label: string } {
+  if (!vendorName) {
+    return { color: VENDOR_FALLBACK_COLORS[0], bg: '#e0f2fe', label: '' }
+  }
+  const lower = vendorName.toLowerCase()
+  // 精确匹配
+  if (VENDOR_COLORS[lower]) return VENDOR_COLORS[lower]
+  // 模糊匹配（名称包含关键字）
+  for (const [key, val] of Object.entries(VENDOR_COLORS)) {
+    if (lower.includes(key) || key.includes(lower)) return val
+  }
+  // 回退：根据名称 hash 分配颜色
+  let hash = 0
+  for (let i = 0; i < lower.length; i++) {
+    hash = ((hash << 5) - hash + lower.charCodeAt(i)) | 0
+  }
+  const idx = Math.abs(hash) % VENDOR_FALLBACK_COLORS.length
+  return { color: VENDOR_FALLBACK_COLORS[idx], bg: VENDOR_FALLBACK_COLORS[idx] + '1a', label: vendorName }
+}
+
+/**
+ * 获取厂商颜色列表（用于图表）
+ * 按厂商名称顺序返回颜色数组
+ */
+export function getVendorColorList(vendorNames: string[]): string[] {
+  return vendorNames.map(v => getVendorColor(v).color)
+}

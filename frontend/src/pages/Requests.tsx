@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
 import { fmtTokens, fmtMs, latencyColor } from '../utils/format'
+import { getVendorColor } from '../components/Charts/chartTheme'
 
 // 移动端检测
 const isMobile = () => window.innerWidth < 768
@@ -704,13 +705,16 @@ export default function Requests() {
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
-      render: (v: string, record) => (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-          <Tooltip title={record.original_model !== v ? `原始模型: ${record.original_model}` : undefined}>
-            <Tag color="blue" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, borderRadius: 2, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{v}</Tag>
-          </Tooltip>
-        </div>
-      ),
+      render: (v: string, record) => {
+        const vc = getVendorColor(v)
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Tooltip title={record.original_model !== v ? `原始模型: ${record.original_model}` : undefined}>
+              <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontFamily: 'var(--font-mono)', fontSize: 11, borderRadius: 2, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{v}</Tag>
+            </Tooltip>
+          </div>
+        )
+      },
     },
     {
       title: '模式',
