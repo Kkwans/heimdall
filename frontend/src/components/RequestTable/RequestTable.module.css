@@ -1,7 +1,11 @@
+/* RequestTable — 请求明细表格样式
+ * 所有颜色使用 CSS 变量，自动适配深色/浅色主题
+ */
+
 .card {
-  background: #161b22 !important;
-  border: 1px solid #21262d !important;
-  border-radius: 10px !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
 }
 
 .table :global(.ant-table) {
@@ -9,42 +13,42 @@
 }
 
 .table :global(.ant-table-thead > tr > th) {
-  background: #0d1117 !important;
-  border-bottom: 1px solid #21262d !important;
-  color: #8b949e !important;
+  background: var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
   font-size: 12px;
 }
 
 .table :global(.ant-table-tbody > tr > td) {
-  border-bottom: 1px solid #1c2330 !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
   background: transparent !important;
-  color: #e6edf3;
+  color: var(--text-primary);
 }
 
 .table :global(.ant-table-tbody > tr:hover > td) {
-  background: rgba(78, 155, 255, 0.06) !important;
+  background: var(--bg-secondary) !important;
 }
 
 .table :global(.ant-pagination-item) {
-  background: #161b22 !important;
-  border-color: #30363d !important;
+  background: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
 }
 
 .table :global(.ant-pagination-item a) {
-  color: #8b949e !important;
+  color: var(--text-secondary) !important;
 }
 
 .table :global(.ant-pagination-item-active) {
-  border-color: #4e9bff !important;
-  background: rgba(78, 155, 255, 0.1) !important;
+  border-color: var(--accent-blue) !important;
+  background: var(--accent-blue-light) !important;
 }
 
 .table :global(.ant-pagination-item-active a) {
-  color: #4e9bff !important;
+  color: var(--accent-blue) !important;
 }
 
 .mono {
-  font-family: 'SF Mono', 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 

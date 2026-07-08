@@ -197,11 +197,11 @@ function ProviderManager() {
       width: isMobile ? 80 : 100,
       fixed: 'left' as const,
       align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
       render: (name: string) => {
         const vc = getVendorColor(name)
-        return <Tag color={vc.color} style={{ fontWeight: 600, fontSize: 12 }}>{vc.label || name}</Tag>
+        return <Tag color={vc.color} style={{ fontWeight: 600, fontSize: 12, background: vc.bg, border: `1px solid ${vc.color}30` }}>{vc.label || name}</Tag>
       },
     },
     {

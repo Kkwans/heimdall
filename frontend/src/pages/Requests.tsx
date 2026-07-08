@@ -479,7 +479,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                 {/* ── 基本信息：单列 label+value ── */}
                 <InfoRow label="请求时间">{rec.created_at}</InfoRow>
                 <InfoRow label="请求模型">
-                  <Tag color="blue" style={{ fontSize: 11, borderRadius: 3, margin: 0 }}>{rec.model}</Tag>
+                  <Tag color={getVendorColor(rec.model).color} style={{ fontSize: 11, borderRadius: 3, margin: 0, background: getVendorColor(rec.model).bg, border: `1px solid ${getVendorColor(rec.model).color}30` }}>{rec.model}</Tag>
                   {rec.original_model !== rec.model && (
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→ {rec.original_model}</span>
                   )}

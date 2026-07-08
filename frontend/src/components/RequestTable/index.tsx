@@ -7,6 +7,7 @@ import { useFilter } from '../../context/FilterContext'
 import type { RequestRecord } from '../../types'
 import styles from './RequestTable.module.css'
 import { fmtTokens } from '../../utils/format'
+import { getVendorColor } from '../Charts/chartTheme'
 
 /**
  * 耗时分段颜色（与日志页/后端规则统一）
@@ -103,11 +104,14 @@ export default function RequestTable() {
       title: '模型',
       dataIndex: 'model',
       width: 160,
-      render: (v: string, record) => (
-        <Tooltip title={record.original_model !== v ? `原始: ${record.original_model}` : undefined}>
-          <Tag color="blue" className={styles.modelTag}>{v}</Tag>
-        </Tooltip>
-      ),
+      render: (v: string) => {
+        const vc = getVendorColor(v)
+        return (
+          <Tooltip title={record?.original_model !== v ? `原始: ${record?.original_model}` : undefined}>
+            <Tag color={vc.color} style={{ fontSize: 11, background: vc.bg, border: `1px solid ${vc.color}30` }} className={styles.modelTag}>{v}</Tag>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '模式',
@@ -185,10 +189,10 @@ export default function RequestTable() {
         record.stream
           ? (
             <Tooltip title={`首字节 ${v.toLocaleString()}ms`}>
-              <span className={styles.mono} style={{ color: '#8b949e' }}>{fmtDuration(v)}</span>
+              <span className={styles.mono} style={{ color: 'var(--text-muted)' }}>{fmtDuration(v)}</span>
             </Tooltip>
           )
-          : <span style={{ color: '#3d444d' }}>—</span>
+          : <span style={{ color: 'var(--text-disabled)' }}>—</span>
       ),
     },
     {
@@ -197,10 +201,10 @@ export default function RequestTable() {
       width: 80,
       render: (v: number, record) => (
         v
-          ? <Badge status="success" text={<span style={{ color: '#52c41a', fontSize: 12 }}>{record.status_code}</span>} />
+          ? <Badge status="success" text={<span style={{ color: 'var(--color-success)', fontSize: 12 }}>{record.status_code}</span>} />
           : <Badge status="error" text={
             <Tooltip title={record.error_type}>
-              <span style={{ color: '#ff4d4f', fontSize: 12 }}>{record.status_code}</span>
+              <span style={{ color: 'var(--color-danger)', fontSize: 12 }}>{record.status_code}</span>
             </Tooltip>
           } />
       ),
@@ -211,11 +215,11 @@ export default function RequestTable() {
       width: 100,
       render: (v: string) => v ? (
         <Tooltip title={v}>
-          <span className={styles.mono} style={{ color: '#8b949e', fontSize: 11 }}>
+          <span className={styles.mono} style={{ color: 'var(--text-muted)', fontSize: 11 }}>
             {v.slice(0, 10)}…
           </span>
         </Tooltip>
-      ) : <span style={{ color: '#3d444d' }}>—</span>,
+      ) : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
     },
   ]
 
@@ -224,7 +228,7 @@ export default function RequestTable() {
       title={
         <Space size={16}>
           <span>请求明细</span>
-          <span style={{ fontSize: 13, color: '#8b949e', fontWeight: 400 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 400 }}>
             共 {total} 条记录
           </span>
         </Space>

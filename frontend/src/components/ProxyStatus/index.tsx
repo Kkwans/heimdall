@@ -249,14 +249,14 @@ export default function ProxyStatusCard() {
               width: 24,
               height: 24,
               borderRadius: '50%',
-              background: '#fff7e6',
-              border: '1.5px solid #fa8c16',
-              color: '#fa8c16',
+              background: 'var(--color-warning-bg, #fff7e6)',
+              border: '1.5px solid var(--color-warning, #fa8c16)',
+              color: 'var(--color-warning, #fa8c16)',
               fontSize: 13,
               fontWeight: 700,
               flexShrink: 0,
             }}>!</span>
-            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary, #1c1917)' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
               确认修改代理端口？
             </span>
           </div>
@@ -265,18 +265,18 @@ export default function ProxyStatusCard() {
         width: 420,
         content: (
           <div style={{ lineHeight: 1.75, fontSize: 13, paddingTop: 4 }}>
-            <p style={{ marginBottom: 12, color: 'var(--text-secondary, #374151)' }}>
+            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
               你正在将代理端口从{' '}
-              <strong style={{ color: '#1d1d1f', fontWeight: 700 }}>{oldPort}</strong>{' '}
+              <strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{oldPort}</strong>{' '}
               修改为{' '}
-              <strong style={{ color: '#1d1d1f', fontWeight: 700 }}>{values.proxy_port as number}</strong>。
+              <strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{values.proxy_port as number}</strong>。
             </p>
             <div style={{
-              background: 'rgba(244,63,94,0.06)',
+              background: 'var(--color-danger-bg, rgba(244,63,94,0.06))',
               border: '1px solid rgba(244,63,94,0.2)',
               borderRadius: 8,
               padding: '10px 12px',
-              color: '#be123c',
+              color: 'var(--color-danger)',
               fontSize: 13,
               lineHeight: 1.7,
             }}>
@@ -455,7 +455,7 @@ export default function ProxyStatusCard() {
                   icon={<PlayCircleOutlined />}
                   loading={operating}
                   onClick={handleStart}
-                  style={{ background: '#10b981', borderColor: '#10b981' }}
+                  style={{ background: 'var(--color-success)', borderColor: 'var(--color-success)' }}
                 >
                   启动
                 </Button>
@@ -498,7 +498,7 @@ export default function ProxyStatusCard() {
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <EditOutlined style={{ color: '#6366f1' }} />
+            <EditOutlined style={{ color: 'var(--color-info)' }} />
             <span>编辑代理配置</span>
           </div>
         }
@@ -569,7 +569,7 @@ export default function ProxyStatusCard() {
             color: 'var(--text-muted)',
             lineHeight: 1.7,
           }}>
-            <span style={{ color: '#6366f1', fontWeight: 500 }}>💡</span>
+            <span style={{ color: 'var(--color-info)', fontWeight: 500 }}>💡</span>
             {' '}超时时间<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
           </div>
         </Form>
