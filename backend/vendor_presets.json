@@ -3,6 +3,7 @@
   "vendors": {
     "mimo": {
       "name": "小米 MiMo",
+      "color": "#FF6900",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -21,6 +22,7 @@
     },
     "deepseek": {
       "name": "DeepSeek",
+      "color": "#4D6BFE",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -34,6 +36,7 @@
     },
     "glm": {
       "name": "智谱 GLM",
+      "color": "#3266FE",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -47,6 +50,7 @@
     },
     "kimi": {
       "name": "Moonshot Kimi",
+      "color": "#7C3AED",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -60,6 +64,7 @@
     },
     "minimax": {
       "name": "MiniMax",
+      "color": "#E11D48",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -73,6 +78,7 @@
     },
     "openai": {
       "name": "OpenAI",
+      "color": "#10A37F",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -86,6 +92,7 @@
     },
     "anthropic": {
       "name": "Anthropic Claude",
+      "color": "#D97706",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -99,6 +106,7 @@
     },
     "gemini": {
       "name": "Google Gemini",
+      "color": "#4285F4",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -112,6 +120,7 @@
     },
     "hunyuan": {
       "name": "腾讯混元",
+      "color": "#0052D9",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -125,6 +134,7 @@
     },
     "qwen": {
       "name": "阿里通义千问",
+      "color": "#FF6A00",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
@@ -138,6 +148,7 @@
     },
     "longcat": {
       "name": "美团 LongCat",
+      "color": "#FFD000",
       "plans": {
         "api": {
           "label": "API 调用（按量计费）",
