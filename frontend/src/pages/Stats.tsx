@@ -113,11 +113,14 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (v: string) => (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <Tag color="blue" style={{ fontSize: 11, borderRadius: 2, margin: 0 }}>{v}</Tag>
-        </div>
-      ),
+      render: (v: string) => {
+        const vc = getVendorColor(v)
+        return (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{vc.label || v}</Tag>
+          </div>
+        )
+      },
     },
     {
       title: '总请求',
@@ -904,11 +907,14 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (v: string) => (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <Tag color="purple" style={{ fontSize: 11, borderRadius: 2, margin: 0 }}>{v}</Tag>
-        </div>
-      ),
+      render: (v: string) => {
+        const vc = getVendorColor(v)
+        return (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Tag color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 11, borderRadius: 2, margin: 0, fontWeight: 600 }}>{vc.label || v}</Tag>
+          </div>
+        )
+      },
     },
     {
       title: '总请求',
@@ -980,11 +986,14 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       onCell: () => ({ style: cellCenter }),
       render: (_, r) => (
         <Space size={4} wrap>
-          {r.models.slice(0, 3).map(m => (
-            <Tag key={m} color="geekblue" style={{ fontSize: 10, borderRadius: 2, margin: 0 }}>
-              {m.length > 15 ? m.slice(0, 15) + '…' : m}
-            </Tag>
-          ))}
+          {r.models.slice(0, 3).map(m => {
+            const vc = getVendorColor(m)
+            return (
+              <Tag key={m} color="" style={{ background: vc.bg, color: vc.color, border: 'none', fontSize: 10, borderRadius: 2, margin: 0, fontWeight: 500 }}>
+                {m.length > 15 ? m.slice(0, 15) + '…' : m}
+              </Tag>
+            )
+          })}
           {r.models.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{r.models.length - 3}</span>}
         </Space>
       ),

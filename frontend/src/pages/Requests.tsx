@@ -16,7 +16,7 @@ import { fmtTokens, fmtMs, latencyColor } from '../utils/format'
 import { getVendorColor } from '../components/Charts/chartTheme'
 
 // 移动端检测
-const isMobile = () => window.innerWidth < 768
+const isMobileCheck = () => window.innerWidth < 768
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -33,25 +33,25 @@ function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
   const isDark = theme === 'dark'
 
   const colors = isDark ? {
-    key: '#79b8ff',
-    string: '#9ecbff',
-    number: '#79c0ff',
-    boolean: '#ffab70',
-    null: '#6e7681',
-    bracket: '#c9d1d9',
-    punctuation: '#8b949e',
-    arrow: '#8b949e',
-    count: '#8b949e',
+    key: 'var(--color-info)',
+    string: 'var(--accent-blue)',
+    number: 'var(--color-info)',
+    boolean: 'var(--color-warning)',
+    null: 'var(--text-muted)',
+    bracket: 'var(--text-secondary)',
+    punctuation: 'var(--text-muted)',
+    arrow: 'var(--text-muted)',
+    count: 'var(--text-muted)',
   } : {
-    key: '#0550ae',
-    string: '#0a3069',
-    number: '#0550ae',
-    boolean: '#953800',
-    null: '#6e7781',
-    bracket: '#24292f',
-    punctuation: '#57606a',
-    arrow: '#57606a',
-    count: '#57606a',
+    key: 'var(--color-info)',
+    string: 'var(--accent-blue)',
+    number: 'var(--color-info)',
+    boolean: 'var(--color-warning)',
+    null: 'var(--text-muted)',
+    bracket: 'var(--text-primary)',
+    punctuation: 'var(--text-secondary)',
+    arrow: 'var(--text-secondary)',
+    count: 'var(--text-secondary)',
   }
 
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
@@ -169,9 +169,9 @@ function JsonViewer({ data }: { data: unknown }) {
       // 非 JSON 字符串，直接展示
       return (
         <pre style={{
-          background: isDark ? '#161b22' : '#f8f9fa',
-          color: isDark ? '#c9d1d9' : '#1c1917',
-          border: `1px solid ${isDark ? '#30363d' : '#e2e8f0'}`,
+          background: 'var(--bg-secondary)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border-subtle)',
           padding: 16,
           borderRadius: 6,
           fontSize: 12,
@@ -190,8 +190,8 @@ function JsonViewer({ data }: { data: unknown }) {
 
   return (
     <div style={{
-      background: isDark ? '#161b22' : '#f8f9fa',
-      border: `1px solid ${isDark ? '#30363d' : '#e2e8f0'}`,
+      background: 'var(--bg-secondary)',
+      border: '1px solid var(--border-subtle)',
       padding: '12px 16px',
       borderRadius: 6,
       fontSize: 12,
@@ -226,15 +226,15 @@ function StreamContentBlock({ label, icon, content, isDark, defaultExpand = true
   const isReasoning = icon === '💭'
   // 思考过程与输出内容均渲染为 Markdown，仅背景色不同
   const wrapStyle: React.CSSProperties = isReasoning ? {
-    background: isDark ? 'rgba(14,165,233,0.06)' : 'rgba(14,165,233,0.03)',
-    border: `1px solid ${isDark ? 'rgba(14,165,233,0.2)' : 'rgba(14,165,233,0.15)'}`,
+    background: 'var(--accent-blue-light)',
+    border: '1px solid var(--accent-blue-light)',
     borderRadius: 6,
     padding: '10px 14px',
     maxHeight: 480,
     overflowY: 'auto' as const,
   } : {
-    background: isDark ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.03)',
-    border: `1px solid ${isDark ? 'rgba(16,185,129,0.2)' : 'rgba(16,185,129,0.15)'}`,
+    background: 'var(--color-success-bg)',
+    border: '1px solid var(--color-success-bg)',
     borderRadius: 6,
     padding: '10px 14px',
     maxHeight: 480,
@@ -370,7 +370,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
     : '0%'
   const outputMs = rec ? (rec.latency_ms - rec.ttfb_ms) : 0
 
-  const mobile = isMobile()
+  const mobile = isMobileCheck()
 
   // ── 从 request_body / response_body 中提取额外信息 ──
   const reqBody = rec?.request_body as Record<string, unknown> | null | undefined
@@ -674,6 +674,14 @@ export default function Requests() {
     }
   }
 
+  const [isMobile, setIsMobile] = useState(isMobileCheck())
+
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(isMobileCheck())
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const cellStyle: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
 
   const columns: ColumnsType<RequestRecord> = [
@@ -681,8 +689,8 @@ export default function Requests() {
       title: '时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      // 时间格式 MM-DD HH:mm 约10字符，加上padding约96px足够
-      width: 96,
+      width: isMobile ? 90 : 96,
+      fixed: isMobile ? ('left' as const) : undefined,
       align: 'center' as const,
       sorter: true,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
@@ -701,7 +709,7 @@ export default function Requests() {
     {
       title: '模型',
       dataIndex: 'model',
-      width: 140,
+      width: isMobile ? 100 : 140,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
@@ -882,7 +890,7 @@ export default function Requests() {
         <section className="section">
           <Card
             title={
-              isMobile() ? null : (
+              isMobile ? null : (
                 <Space size={12}>
                   <span>请求明细</span>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
@@ -892,7 +900,7 @@ export default function Requests() {
               )
             }
             extra={
-              !isMobile() ? (
+              !isMobile ? (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Select
                     size="small"
@@ -926,7 +934,7 @@ export default function Requests() {
           >
             {/* 筛选组件：独立一行，解决标题被遮挡问题 */}
             {/* 移动端：筛选框独立一行，各占约 50% 宽度 */}
-            {isMobile() && (
+            {isMobile && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Select
                   size="small"
@@ -970,7 +978,7 @@ export default function Requests() {
                 showQuickJumper: false,
                 // 移动端：simple 模式（上一页/页码/下一页），彻底避免末页重叠
                 // PC端：showLessItems 减少显示页码数量，使末页与省略号间距更宽松
-                ...(isMobile() ? { simple: true } : { showLessItems: true }),
+                ...(isMobile ? { simple: true } : { showLessItems: true }),
                 pageSizeOptions: ['15', '30', '50', '100'],
                 showTotal: (t) => `共 ${t.toLocaleString()} 条`,
                 // itemRender：为省略号按钮（jump-next/jump-prev）包裹额外间距，彻底避免与末页重叠
@@ -995,7 +1003,7 @@ export default function Requests() {
                 size: 'small',
               }}
               scroll={{ x: 'max-content' }}
-              onRow={isMobile() ? (record) => ({
+              onRow={isMobile ? (record) => ({
                 onClick: () => setDetailId(record.id),
                 style: { cursor: 'pointer' },
               }) : undefined}

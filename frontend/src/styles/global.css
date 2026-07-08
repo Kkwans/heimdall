@@ -40,6 +40,25 @@
   --color-info: #6366f1;
   --color-info-bg: #e0e7ff;
 
+  /* 日志级别色 */
+  --log-success: #057a55;
+  --log-error: #c81e1e;
+  --log-warning: #b45309;
+  --log-info: #1c1917;
+  --log-muted: #78716c;
+  --log-tag-info: #0369a1;
+  --log-tag-debug: #7c3aed;
+  --log-tag-warning: #b45309;
+  --log-tag-error: #dc2626;
+  --log-tag-critical: #be123c;
+
+  /* 速度指示色 */
+  --speed-fast: #10b981;
+  --speed-normal: #60a5fa;
+  --speed-default: #374151;
+  --speed-slow: #f59e0b;
+  --speed-very-slow: #ef4444;
+
   /* 阴影 */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -87,6 +106,25 @@
   --color-warning-bg: rgba(245, 158, 11, 0.12);
   --color-danger-bg: rgba(244, 63, 94, 0.12);
   --color-info-bg: rgba(99, 102, 241, 0.12);
+
+  /* 日志级别色（深色） */
+  --log-success: #10b981;
+  --log-error: #ff6b7a;
+  --log-warning: #f59e0b;
+  --log-info: #c8c4bf;
+  --log-muted: #3d3a38;
+  --log-tag-info: #38bdf8;
+  --log-tag-debug: #a78bfa;
+  --log-tag-warning: #fbbf24;
+  --log-tag-error: #f87171;
+  --log-tag-critical: #fb7185;
+
+  /* 速度指示色（深色） */
+  --speed-fast: #10b981;
+  --speed-normal: #60a5fa;
+  --speed-default: #c8c4bf;
+  --speed-slow: #f59e0b;
+  --speed-very-slow: #ef4444;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
