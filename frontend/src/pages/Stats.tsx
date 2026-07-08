@@ -105,8 +105,6 @@ function splitLine(isDark: boolean) {
 function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boolean }) {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
-
-  const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
   const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
 
   const columns: ColumnsType<ModelStats> = [
