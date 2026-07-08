@@ -13,6 +13,7 @@ import logging
 from typing import Optional, Tuple, Union
 
 import config
+import crypto
 
 # ==========================================
 # 路由结果数据类
@@ -202,7 +203,7 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
                 upstream_model = model_row["upstream_model"] or model_name
                 return RouteResult(
                     base_url=base_url,
-                    api_key=model_row["api_key"] or "",
+                    api_key=crypto.decrypt(model_row["api_key"] or ""),
                     model_name=upstream_model,
                     provider_key=model_row["provider_name"],
                     context_window=model_row["context_window"],
@@ -259,8 +260,8 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
         if not context_window:
             context_window = config.get_context_window(model_name)
 
-        # 4. 使用厂商存储的 API Key
-        api_key = provider_row["api_key"] or ""
+        # 4. 使用厂商存储的 API Key（解密）
+        api_key = crypto.decrypt(provider_row["api_key"] or "")
         if not api_key:
             # 尝试从环境变量读取
             env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"
@@ -285,7 +286,7 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
 # CRUD 操作：厂商
 
 def get_all_providers() -> list:
-    """获取所有厂商（含模型数量）"""
+    """获取所有厂商（含模型数量，API Key 解密）"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("""
@@ -295,33 +296,46 @@ def get_all_providers() -> list:
         GROUP BY p.id
         ORDER BY p.priority DESC, p.name
     """)
-    return [dict(row) for row in cursor.fetchall()]
+    rows = []
+    for row in cursor.fetchall():
+        d = dict(row)
+        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        rows.append(d)
+    return rows
 
 
 def get_provider(provider_id: int) -> Optional[dict]:
-    """获取单个厂商详情"""
+    """获取单个厂商详情（API Key 解密）"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM providers WHERE id = ?", (provider_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        d = dict(row)
+        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        return d
+    return None
 
 
 def get_provider_by_name(name: str) -> Optional[dict]:
-    """根据名称获取厂商"""
+    """根据名称获取厂商（API Key 解密）"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM providers WHERE name = ?", (name,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        d = dict(row)
+        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        return d
+    return None
 
 
 def create_provider(data: dict) -> int:
-    """创建厂商，返回 ID"""
+    """创建厂商，返回 ID（API Key 加密存储）"""
     conn = _get_conn()
     cursor = conn.cursor()
-    # 如果没有 base_url，用 openai_url 作为 base_url
     base_url = data.get("base_url") or data.get("openai_url", "")
+    encrypted_key = crypto.encrypt(data["api_key"])
     cursor.execute("""
         INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -331,7 +345,7 @@ def create_provider(data: dict) -> int:
         base_url,
         data.get("openai_url", base_url),
         data.get("anthropic_url", ""),
-        data["api_key"],
+        encrypted_key,
         data.get("enabled", True),
         data.get("priority", 0),
         data.get("plan_type", "api"),
@@ -341,15 +355,19 @@ def create_provider(data: dict) -> int:
 
 
 def update_provider(provider_id: int, data: dict) -> bool:
-    """更新厂商"""
+    """更新厂商（API Key 加密存储）"""
     conn = _get_conn()
     cursor = conn.cursor()
     fields = []
     values = []
     for key in ["name", "display_name", "base_url", "openai_url", "anthropic_url", "api_key", "enabled", "priority", "plan_type"]:
         if key in data:
-            fields.append(f"{key} = ?")
-            values.append(data[key])
+            if key == "api_key":
+                fields.append(f"{key} = ?")
+                values.append(crypto.encrypt(data[key]))
+            else:
+                fields.append(f"{key} = ?")
+                values.append(data[key])
     if not fields:
         return False
     fields.append("updated_at = CURRENT_TIMESTAMP")

@@ -12,6 +12,7 @@ from functools import wraps
 from flask import request, jsonify
 
 import config
+import crypto
 
 _logger = logging.getLogger("stderr")
 _local = threading.local()
@@ -70,17 +71,21 @@ def validate_api_key(key_value: str) -> Optional[dict]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM api_keys 
-            WHERE key_value = ? AND enabled = 1
-        """, (key_value,))
-        row = cursor.fetchone()
-        if row:
-            # 更新最后使用时间
-            cursor.execute("""
-                UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            """, (row["id"],))
-            conn.commit()
-            return dict(row)
+            WHERE enabled = 1
+        """)
+        rows = cursor.fetchall()
+        for row in rows:
+            stored_key = row["key_value"]
+            # 解密后比较
+            decrypted = crypto.decrypt(stored_key)
+            if decrypted == key_value:
+                # 更新最后使用时间
+                cursor.execute("""
+                    UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                """, (row["id"],))
+                conn.commit()
+                return dict(row)
         return None
     except Exception as e:
         _logger.error(f"[AUTH] 验证 API Key 失败: {e}", exc_info=True)
@@ -126,23 +131,29 @@ def require_auth(f):
 # CRUD 操作
 
 def get_all_api_keys() -> list:
-    """获取所有 API Key"""
+    """获取所有 API Key（解密后返回）"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT id, key_value, name, enabled, allowed_models, created_at, last_used_at FROM api_keys ORDER BY created_at DESC")
-    return [dict(row) for row in cursor.fetchall()]
+    rows = []
+    for row in cursor.fetchall():
+        d = dict(row)
+        d["key_value"] = crypto.decrypt(d["key_value"])
+        rows.append(d)
+    return rows
 
 
 def create_api_key(data: dict) -> dict:
-    """创建 API Key"""
+    """创建 API Key（加密存储）"""
     conn = _get_conn()
     cursor = conn.cursor()
     key_value = data.get("key_value") or generate_api_key()
+    encrypted_key = crypto.encrypt(key_value)
     cursor.execute("""
         INSERT INTO api_keys (key_value, name, enabled, allowed_models)
         VALUES (?, ?, ?, ?)
     """, (
-        key_value,
+        encrypted_key,
         data.get("name", ""),
         data.get("enabled", True),
         data.get("allowed_models")
