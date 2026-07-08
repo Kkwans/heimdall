@@ -15,6 +15,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-d
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import { VendorTag, ModelTag } from '../components/CommonTag'
+import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
 import { useFilter } from '../context/FilterContext'
 import {
