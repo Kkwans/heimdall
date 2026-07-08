@@ -346,7 +346,7 @@ function ProviderManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: isMobile ? 600 : 950 }}
+        scroll={{ x: isMobile ? 650 : 950 }}
       />
 
       <Modal
@@ -506,12 +506,21 @@ function ModelManager() {
     }
   }
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const columns: ColumnsType<Model> = [
     {
       title: '模型名称',
       dataIndex: 'model_name',
       key: 'model_name',
-      width: 150,
+      width: isMobile ? 100 : 150,
+      fixed: 'left' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -520,17 +529,17 @@ function ModelManager() {
       title: '上游模型名',
       dataIndex: 'upstream_model',
       key: 'upstream_model',
-      width: 150,
+      width: isMobile ? 100 : 150,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (upstream: string | null, record) => upstream || <Text type="secondary">-</Text>,
+      render: (upstream: string | null) => upstream || <Text type="secondary">-</Text>,
     },
     {
       title: '输入价格',
       dataIndex: 'price_input',
       key: 'price_input',
-      width: 100,
+      width: isMobile ? 70 : 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -540,7 +549,7 @@ function ModelManager() {
       title: '输出价格',
       dataIndex: 'price_output',
       key: 'price_output',
-      width: 100,
+      width: isMobile ? 70 : 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -550,7 +559,7 @@ function ModelManager() {
       title: '缓存读取',
       dataIndex: 'price_cache_read',
       key: 'price_cache_read',
-      width: 100,
+      width: isMobile ? 70 : 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -560,7 +569,7 @@ function ModelManager() {
       title: '缓存写入',
       dataIndex: 'price_cache_write',
       key: 'price_cache_write',
-      width: 100,
+      width: isMobile ? 70 : 100,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -570,7 +579,7 @@ function ModelManager() {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
-      width: 80,
+      width: 70,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -593,7 +602,8 @@ function ModelManager() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 100,
+      fixed: 'right' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -641,7 +651,7 @@ function ModelManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: 600 }}
+        scroll={{ x: isMobile ? 650 : 800 }}
       />
 
       <Modal
@@ -789,12 +799,21 @@ function ApiKeyManager() {
     message.success('已复制到剪贴板')
   }
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const columns: ColumnsType<ApiKey> = [
     {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 120,
+      width: isMobile ? 90 : 120,
+      fixed: 'left' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -803,7 +822,7 @@ function ApiKeyManager() {
       title: 'API Key',
       dataIndex: 'key_preview',
       key: 'key_preview',
-      width: 200,
+      width: isMobile ? 140 : 200,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -819,6 +838,7 @@ function ApiKeyManager() {
       title: '允许的模型',
       dataIndex: 'allowed_models',
       key: 'allowed_models',
+      width: isMobile ? 120 : undefined,
       ellipsis: true,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
@@ -835,7 +855,7 @@ function ApiKeyManager() {
       title: '最后使用',
       dataIndex: 'last_used_at',
       key: 'last_used_at',
-      width: 160,
+      width: isMobile ? 120 : 160,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -845,7 +865,7 @@ function ApiKeyManager() {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
-      width: 80,
+      width: 70,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -868,7 +888,8 @@ function ApiKeyManager() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 100,
+      fixed: 'right' as const,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
@@ -909,7 +930,7 @@ function ApiKeyManager() {
           pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
           showTotal: (t) => `共 ${t} 条`,
         }}
-        scroll={{ x: 700 }}
+        scroll={{ x: isMobile ? 620 : 800 }}
       />
 
       <Modal
