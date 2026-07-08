@@ -1032,6 +1032,8 @@ export default function Admin() {
     },
   ]
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
   return (
     <div className="page-content">
       <Header pageName="系统配置" hideDatePicker />
