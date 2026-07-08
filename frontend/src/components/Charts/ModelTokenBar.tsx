@@ -5,11 +5,14 @@ import { fetchModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
-import { CHART_COLORS, emptyOption, tooltipStyle, legendStyle, PAGE_ICON_STYLE } from './chartTheme'
+import { CHART_COLORS, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle, PAGE_ICON_STYLE } from './chartTheme'
+import { useTheme } from '../../context/ThemeContext'
 import { fmtTokens, fmtAxis } from '../../utils/format'
 
 const ModelTokenBar = memo(function ModelTokenBar() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [data, setData] = useState<ModelData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
@@ -58,12 +61,13 @@ const ModelTokenBar = memo(function ModelTokenBar() {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      ...tooltipStyle,
+      ...getTooltipForTheme(isDark),
       formatter: (params: any[]) => {
         const model = params[0]?.axisValue
-        let html = `<div style="font-weight:600;margin-bottom:4px;color:#1c1917">${model}</div>`
+        const t = isDark ? chartText.dark : chartText.light
+        let html = `<div style="font-weight:600;margin-bottom:4px;color:${t.primary}">${model}</div>`
         params.forEach((p: any) => {
-          html += `<div style="color:#57534e">${p.marker}${p.seriesName}: <b style="color:#1c1917">${fmtTokens(p.value)}</b></div>`
+          html += `<div style="color:${t.secondary}">${p.marker}${p.seriesName}: <b style="color:${t.primary}">${fmtTokens(p.value)}</b></div>`
         })
         return html
       },
@@ -87,17 +91,17 @@ const ModelTokenBar = memo(function ModelTokenBar() {
     xAxis: {
       type: 'value',
       splitNumber: isMobile ? 3 : 5,
-      splitLine: { lineStyle: { color: '#f0ede9', type: 'dashed' } },
-      axisLabel: { color: '#a8a29e', fontSize: 11, formatter: fmtAxis },
+      splitLine: getAxisForTheme(isDark).splitLine,
+      axisLabel: { ...getAxisForTheme(isDark).label, formatter: fmtAxis },
       axisLine: { show: false },
       axisTick: { show: false },
     },
     yAxis: {
       type: 'category',
       data: sorted.map(d => d.model),
-      axisLine: { lineStyle: { color: '#e7e5e4' } },
+      axisLine: getAxisForTheme(isDark).line,
       axisLabel: {
-        color: '#57534e',
+        color: isDark ? '#d6d3d1' : '#57534e',
         fontSize: 11,
         width: isMobile ? 60 : 100,
         overflow: 'truncate',

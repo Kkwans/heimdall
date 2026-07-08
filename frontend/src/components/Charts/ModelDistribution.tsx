@@ -5,10 +5,13 @@ import { fetchModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
-import { emptyOption, tooltipStyle, PAGE_ICON_STYLE, getVendorColor } from './chartTheme'
+import { emptyOption, getTooltipForTheme, PAGE_ICON_STYLE, getVendorColor, chartText } from './chartTheme'
+import { useTheme } from '../../context/ThemeContext'
 
 const ModelDistribution = memo(function ModelDistribution() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [data, setData] = useState<ModelData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
@@ -76,15 +79,16 @@ const ModelDistribution = memo(function ModelDistribution() {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      ...tooltipStyle,
+      ...getTooltipForTheme(isDark),
       formatter: (p: any) => {
         const d: ModelData = p.data.raw
+        const t = isDark ? chartText.dark : chartText.light
         return `
-          <div style="font-weight:600;margin-bottom:6px;color:#1c1917">${p.name}</div>
-          <div style="color:#57534e">请求数: <b style="color:#1c1917">${p.data.value}</b> (${p.percent}%)</div>
-          <div style="color:#57534e">Token: <b style="color:#1c1917">${(d.total_tokens / 1000).toFixed(1)}K</b></div>
-          <div style="color:#57534e">成功率: <b style="color:#1c1917">${(d.success_rate * 100).toFixed(1)}%</b></div>
-          <div style="color:#57534e">平均延迟: <b style="color:#1c1917">${d.avg_latency_ms?.toFixed(0)}ms</b></div>
+          <div style="font-weight:600;margin-bottom:6px;color:${t.primary}">${p.name}</div>
+          <div style="color:${t.secondary}">请求数: <b style="color:${t.primary}">${p.data.value}</b> (${p.percent}%)</div>
+          <div style="color:${t.secondary}">Token: <b style="color:${t.primary}">${(d.total_tokens / 1000).toFixed(1)}K</b></div>
+          <div style="color:${t.secondary}">成功率: <b style="color:${t.primary}">${(d.success_rate * 100).toFixed(1)}%</b></div>
+          <div style="color:${t.secondary}">平均延迟: <b style="color:${t.primary}">${d.avg_latency_ms?.toFixed(0)}ms</b></div>
         `
       },
     },

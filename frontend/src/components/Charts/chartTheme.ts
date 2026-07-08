@@ -21,6 +21,17 @@ export const tooltipStyle = {
   extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.08);',
 }
 
+// 深色模式 tooltip 样式
+export const tooltipStyleDark = {
+  backgroundColor: '#292524',
+  borderColor: '#44403c',
+  borderWidth: 1,
+  borderRadius: 4,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+  textStyle: { color: '#fafaf9', fontSize: 12 },
+  extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.4);',
+}
+
 // 图表通用坐标轴样式 (浅色)
 export const axisStyle = {
   line: { lineStyle: { color: '#e7e5e4' } },
@@ -33,6 +44,36 @@ export const axisStyleDark = {
   line: { lineStyle: { color: '#44403c' } },
   label: { color: '#78716c', fontSize: 11 },
   splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)', type: 'dashed' as const } },
+}
+
+/**
+ * 根据主题返回对应的 tooltip 配置
+ */
+export function getTooltipForTheme(isDark: boolean) {
+  return isDark ? tooltipStyleDark : tooltipStyle
+}
+
+/**
+ * 根据主题返回对应的坐标轴配置
+ */
+export function getAxisForTheme(isDark: boolean) {
+  return isDark ? axisStyleDark : axisStyle
+}
+
+/**
+ * 图表文字颜色（用于 tooltip formatter 中的 HTML）
+ */
+export const chartText = {
+  light: { primary: '#1c1917', secondary: '#57534e', muted: '#a8a29e' },
+  dark:  { primary: '#fafaf9', secondary: '#d6d3d1', muted: '#78716c' },
+}
+
+/**
+ * 图表图例文字颜色
+ */
+export const legendTextStyle = {
+  light: { color: '#57534e', fontSize: 11 },
+  dark:  { color: '#d6d3d1', fontSize: 11 },
 }
 
 // 基础 grid 配置（底部留足空间给图例）

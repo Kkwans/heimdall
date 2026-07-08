@@ -5,10 +5,13 @@ import { fetchDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, tooltipStyle, axisStyle } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, chartText } from './chartTheme'
+import { useTheme } from '../../context/ThemeContext'
 
 const CacheHitTrend = memo(function CacheHitTrend() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [data, setData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
@@ -43,25 +46,26 @@ const CacheHitTrend = memo(function CacheHitTrend() {
     ...chartBaseOption,
     tooltip: {
       trigger: 'axis',
-      ...tooltipStyle,
+      ...getTooltipForTheme(isDark),
       formatter: (params: any[]) => {
         const p = params[0]
-        return `<b style="color:#1c1917">${p.axisValue}</b><br/><span style="color:#57534e">缓存命中率: <b style="color:#1c1917">${p.value}%</b></span>`
+        const t = isDark ? chartText.dark : chartText.light
+        return `<b style="color:${t.primary}">${p.axisValue}</b><br/><span style="color:${t.secondary}">缓存命中率: <b style="color:${t.primary}">${p.value}%</b></span>`
       },
     },
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLine: axisStyle.line,
-      axisLabel: axisStyle.label,
+      axisLine: getAxisForTheme(isDark).line,
+      axisLabel: getAxisForTheme(isDark).label,
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       min: 0,
       max: 100,
-      splitLine: axisStyle.splitLine,
-      axisLabel: { ...axisStyle.label, formatter: (v: number) => `${v}%` },
+      splitLine: getAxisForTheme(isDark).splitLine,
+      axisLabel: { ...getAxisForTheme(isDark).label, formatter: (v: number) => `${v}%` },
       axisLine: { show: false },
       axisTick: { show: false },
     },

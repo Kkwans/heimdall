@@ -5,7 +5,8 @@ import { fetchDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, tooltipStyle, axisStyle, legendStyle } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle } from './chartTheme'
+import { useTheme } from '../../context/ThemeContext'
 import { fmtTokens, fmtAxis } from '../../utils/format'
 
 // fmtK 已不应再使用，改用全局 fmtAxis
@@ -13,6 +14,8 @@ const fmtK = fmtAxis
 
 const TokenTrend = memo(function TokenTrend() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [data, setData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
@@ -44,11 +47,12 @@ const TokenTrend = memo(function TokenTrend() {
     ...chartBaseOption,
     tooltip: {
       trigger: 'axis',
-      ...tooltipStyle,
+      ...getTooltipForTheme(isDark),
       formatter: (params: any[]) => {
-        let html = `<div style="font-weight:600;margin-bottom:4px;color:#1c1917">${params[0]?.axisValue}</div>`
+        const t = isDark ? chartText.dark : chartText.light
+        let html = `<div style="font-weight:600;margin-bottom:4px;color:${t.primary}">${params[0]?.axisValue}</div>`
         params.forEach((p: any) => {
-          html += `<div style="color:#57534e">${p.marker}${p.seriesName}: <b style="color:#1c1917">${fmtTokens(p.value)}</b></div>`
+          html += `<div style="color:${t.secondary}">${p.marker}${p.seriesName}: <b style="color:${t.primary}">${fmtTokens(p.value)}</b></div>`
         })
         return html
       },
@@ -60,14 +64,14 @@ const TokenTrend = memo(function TokenTrend() {
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLine: axisStyle.line,
-      axisLabel: axisStyle.label,
+      axisLine: getAxisForTheme(isDark).line,
+      axisLabel: getAxisForTheme(isDark).label,
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
-      splitLine: axisStyle.splitLine,
-      axisLabel: { ...axisStyle.label, formatter: fmtK },
+      splitLine: getAxisForTheme(isDark).splitLine,
+      axisLabel: { ...getAxisForTheme(isDark).label, formatter: fmtK },
       axisLine: { show: false },
       axisTick: { show: false },
     },

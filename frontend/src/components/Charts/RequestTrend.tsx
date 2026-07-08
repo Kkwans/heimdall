@@ -5,10 +5,13 @@ import { fetchDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, tooltipStyle, axisStyle, legendStyle } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, legendStyle } from './chartTheme'
+import { useTheme } from '../../context/ThemeContext'
 
 const RequestTrend = memo(function RequestTrend() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [data, setData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
@@ -44,7 +47,7 @@ const RequestTrend = memo(function RequestTrend() {
     ...chartBaseOption,
     tooltip: {
       trigger: 'axis',
-      ...tooltipStyle,
+      ...getTooltipForTheme(isDark),
     },
     legend: {
       data: ['总请求', '成功', '失败'],
@@ -53,14 +56,14 @@ const RequestTrend = memo(function RequestTrend() {
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLine: axisStyle.line,
-      axisLabel: axisStyle.label,
+      axisLine: getAxisForTheme(isDark).line,
+      axisLabel: getAxisForTheme(isDark).label,
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
-      splitLine: axisStyle.splitLine,
-      axisLabel: axisStyle.label,
+      splitLine: getAxisForTheme(isDark).splitLine,
+      axisLabel: getAxisForTheme(isDark).label,
       axisLine: { show: false },
       axisTick: { show: false },
     },
