@@ -129,14 +129,9 @@ def _archive_missed_log_days(log_file: str) -> None:
     archived_any = False
     for date_str, lines in sorted(date_buckets.items()):
         archive_path = os.path.join(config.LOG_DIR, f"{log_file}.{date_str}")
-        if os.path.isfile(archive_path):
-            # 已归档：将缺失的行追加（追加模式，避免重复）
-            # 简单策略：若归档文件已存在且大小 > 0，则跳过（认为已归档过）
-            existing_size = os.path.getsize(archive_path)
-            if existing_size > 0:
-                continue
         try:
-            with open(archive_path, "w", encoding="utf-8") as f:
+            # 追加模式：将旧行追加到归档文件末尾
+            with open(archive_path, "a", encoding="utf-8") as f:
                 f.writelines(lines)
             archived_any = True
         except Exception:
@@ -1127,17 +1122,9 @@ if __name__ == '__main__':
 
     if mode == '--proxy':
         # 纯代理模式（子进程）
-        # 从运行时配置文件读取最新端口（用户可能通过 API 修改了端口，config.py 只有默认值）
-        try:
-            import json as _json
-            _rt_cfg_path = config.RUNTIME_CONFIG_PATH
-            if os.path.isfile(_rt_cfg_path):
-                with open(_rt_cfg_path, 'r') as _f:
-                    _rt = _json.load(_f)
-                if 'proxy_port' in _rt:
-                    config.PROXY_PORT = int(_rt['proxy_port'])
-        except Exception:
-            pass
+        # 在 Docker 中，内部端口始终是 8888（由 Dockerfile 定义）
+        # 外部端口映射由 docker-compose.yml 控制
+        config.PROXY_PORT = 8888  # 强制使用容器内部端口
         system_logger.info(f"代理服务启动 → 宿主机端口 {getattr(config, 'PROXY_EXTERNAL_PORT', config.PROXY_PORT)}")
         app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
 

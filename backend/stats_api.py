@@ -246,10 +246,9 @@ def _auto_archive_if_needed():
             archived = False
             for date_str, lines in sorted(date_buckets.items()):
                 archive_path = os.path.join(config.LOG_DIR, f"{log_file}.{date_str}")
-                if os.path.isfile(archive_path) and os.path.getsize(archive_path) > 0:
-                    continue
                 try:
-                    with open(archive_path, "w", encoding="utf-8") as f:
+                    # 追加模式：将旧行追加到归档文件末尾
+                    with open(archive_path, "a", encoding="utf-8") as f:
                         f.writelines(lines)
                     archived = True
                 except Exception:
@@ -663,10 +662,17 @@ def proxy_stop():
         return resp
     
     try:
-        result = subprocess.run(
-            ["docker", "stop", "heimdall-proxy"],
-            capture_output=True, text=True, timeout=30
-        )
+        compose_path = "/app/project/docker-compose.yml"
+        if os.path.isfile(compose_path):
+            result = subprocess.run(
+                ["docker", "compose", "-f", compose_path, "stop", "proxy"],
+                capture_output=True, text=True, timeout=30
+            )
+        else:
+            result = subprocess.run(
+                ["docker", "stop", "heimdall-proxy"],
+                capture_output=True, text=True, timeout=30
+            )
         if result.returncode == 0:
             return _cors_response({"success": True, "message": "代理服务已停止"})
         else:
@@ -688,10 +694,17 @@ def proxy_start():
         return resp
     
     try:
-        result = subprocess.run(
-            ["docker", "start", "heimdall-proxy"],
-            capture_output=True, text=True, timeout=30
-        )
+        compose_path = "/app/project/docker-compose.yml"
+        if os.path.isfile(compose_path):
+            result = subprocess.run(
+                ["docker", "compose", "-f", compose_path, "up", "-d", "proxy"],
+                capture_output=True, text=True, timeout=30
+            )
+        else:
+            result = subprocess.run(
+                ["docker", "start", "heimdall-proxy"],
+                capture_output=True, text=True, timeout=30
+            )
         if result.returncode == 0:
             # 等待容器启动
             import time as _time
@@ -716,19 +729,30 @@ def proxy_restart():
         return resp
     
     try:
-        # 检查端口是否变更：对比 runtime config 和 docker-compose
+        # 检查端口是否变更：对比 runtime config 和当前容器端口
         cfg = _load_runtime_config()
         new_port = cfg.get("proxy_port")
         
-        # 如果有新端口，用 docker compose up 重建容器
-        compose_path = "/volume1/DockerProject/heimdall/docker-compose.yml"
+        compose_path = "/app/project/docker-compose.yml"
+        
+        # 如果有新端口且 compose 文件存在，用 docker compose 重建容器
         if new_port and os.path.isfile(compose_path):
-            # 先停止容器
-            subprocess.run(["docker", "stop", "heimdall-proxy"], capture_output=True, timeout=15)
-            subprocess.run(["docker", "rm", "heimdall-proxy"], capture_output=True, timeout=10)
-            # 用 docker compose 启动
+            # 更新 compose 文件中的端口映射
+            import re
+            with open(compose_path, 'r') as f:
+                content = f.read()
+            content = re.sub(
+                r'"\d+:8888"',
+                f'"{new_port}:8888"',
+                content,
+                count=1
+            )
+            with open(compose_path, 'w') as f:
+                f.write(content)
+            
+            # 用 docker compose 重建
             result = subprocess.run(
-                ["docker", "compose", "-f", compose_path, "up", "-d", "proxy"],
+                ["docker", "compose", "-f", compose_path, "up", "-d", "--force-recreate", "proxy"],
                 capture_output=True, text=True, timeout=30
             )
             if result.returncode == 0:
@@ -738,9 +762,9 @@ def proxy_restart():
             else:
                 return _cors_response({"success": False, "message": f"重启失败: {result.stderr}"}, 500)
         
-        # 普通重启
+        # 普通重启（无端口变更）
         result = subprocess.run(
-            ["docker", "restart", "heimdall-proxy"],
+            ["docker", "compose", "-f", compose_path, "restart", "proxy"],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
@@ -748,7 +772,17 @@ def proxy_restart():
             _time.sleep(3)
             return _cors_response({"success": True, "message": "代理服务已重启"})
         else:
-            return _cors_response({"success": False, "message": f"重启失败: {result.stderr}"}, 500)
+            # 降级：直接 docker restart
+            result2 = subprocess.run(
+                ["docker", "restart", "heimdall-proxy"],
+                capture_output=True, text=True, timeout=30
+            )
+            if result2.returncode == 0:
+                import time as _time
+                _time.sleep(3)
+                return _cors_response({"success": True, "message": "代理服务已重启"})
+            else:
+                return _cors_response({"success": False, "message": f"重启失败: {result2.stderr}"}, 500)
     except subprocess.TimeoutExpired:
         return _cors_response({"success": False, "message": "重启超时"}, 500)
     except Exception as e:
@@ -883,7 +917,7 @@ def proxy_config_put():
         # 端口变更：更新 docker-compose.yml 中的端口映射
         if new_port is not None:
             try:
-                compose_path = "/volume1/DockerProject/heimdall/docker-compose.yml"
+                compose_path = "/app/project/docker-compose.yml"
                 if os.path.isfile(compose_path):
                     import re
                     with open(compose_path, 'r') as f:

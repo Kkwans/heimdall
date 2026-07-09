@@ -983,23 +983,6 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       sorter: (a, b) => a.p90_latency_ms - b.p90_latency_ms,
       render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span>,
     },
-    {
-      title: '模型',
-      key: 'models',
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-      render: (_, r) => (
-        <Space size={4} wrap>
-          {r.models.slice(0, 3).map(m => {
-            return (
-              <VendorTag key={m} name={m.length > 15 ? m.slice(0, 15) + '…' : m} style={{ fontSize: 10 }} />
-            )
-          })}
-          {r.models.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{r.models.length - 3}</span>}
-        </Space>
-      ),
-    },
   ]
 
   return (

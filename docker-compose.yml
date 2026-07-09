@@ -56,6 +56,7 @@ services:
       - heimdall-data:/data
       - heimdall-logs:/logs
       - /var/run/docker.sock:/var/run/docker.sock:ro  # 挂载 Docker socket，允许管理容器
+      - /volume2/Project/Heimdall:/app/project:ro  # 挂载项目目录（compose 文件）
     environment:
       - HEIMDALL_DATA_DIR=/data
       - HEIMDALL_LOG_DIR=/logs

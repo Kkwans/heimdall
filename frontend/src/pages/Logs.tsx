@@ -368,7 +368,7 @@ export default function Logs() {
         return true
       })
 
-  const timeColor = 'var(--text-muted)'
+  const timeColor = isDark ? '#4f6272' : '#64748b'
 
   const disabledDate = (d: Dayjs) => {
     // 未来日期始终禁用
