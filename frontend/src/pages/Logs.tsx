@@ -22,13 +22,13 @@ export function fmtDuration(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}min`
 }
 
-// 速度分段规则（使用 CSS 变量）
-export function speedColor(ms: number, _isDark: boolean): string {
-  if (ms < 2_000) return 'var(--speed-fast)'
-  if (ms < 10_000) return 'var(--speed-normal)'
-  if (ms < 30_000) return 'var(--speed-default)'
-  if (ms < 60_000) return 'var(--speed-slow)'
-  return 'var(--speed-very-slow)'
+// 速度分段规则
+export function speedColor(ms: number, isDark: boolean): string {
+  if (ms < 2_000) return '#10b981'
+  if (ms < 10_000) return '#60a5fa'
+  if (ms < 30_000) return isDark ? '#c8c4bf' : '#374151'
+  if (ms < 60_000) return '#f59e0b'
+  return '#ef4444'
 }
 
 export function speedIcon(ms: number): string {
@@ -178,22 +178,39 @@ function mergeLogLines(lines: LogLine[]): LogLine[] {
   return result
 }
 
-// ── 颜色表（使用 CSS 变量，统一全局颜色方案）──
-const LEVEL_COLORS: Record<LogLine['level'], string> = {
-  success: 'var(--log-success)',
-  error:   'var(--log-error)',
-  warning: 'var(--log-warning)',
-  info:    'var(--log-info)',
-  muted:   'var(--log-muted)',
+// ── 颜色表 ────────────────────────────────────────────
+const DARK_COLORS: Record<LogLine['level'], string> = {
+  success: '#10b981',
+  error:   '#ff6b7a',
+  warning: '#f59e0b',
+  info:    '#c8c4bf',
+  muted:   '#3d3a38',
 }
 
-const LEVEL_TAG_COLORS: Record<string, string> = {
-  INFO:     'var(--log-tag-info)',
-  DEBUG:    'var(--log-tag-debug)',
-  WARNING:  'var(--log-tag-warning)',
-  WARN:     'var(--log-tag-warning)',
-  ERROR:    'var(--log-tag-error)',
-  CRITICAL: 'var(--log-tag-critical)',
+const LIGHT_COLORS: Record<LogLine['level'], string> = {
+  success: '#057a55',
+  error:   '#c81e1e',
+  warning: '#b45309',
+  info:    '#1c1917',
+  muted:   '#78716c',
+}
+
+const LEVEL_TAG_COLORS_DARK: Record<string, string> = {
+  INFO:     '#38bdf8',
+  DEBUG:    '#a78bfa',
+  WARNING:  '#fbbf24',
+  WARN:     '#fbbf24',
+  ERROR:    '#f87171',
+  CRITICAL: '#fb7185',
+}
+
+const LEVEL_TAG_COLORS_LIGHT: Record<string, string> = {
+  INFO:     '#0369a1',
+  DEBUG:    '#7c3aed',
+  WARNING:  '#b45309',
+  WARN:     '#b45309',
+  ERROR:    '#dc2626',
+  CRITICAL: '#be123c',
 }
 
 const DEFAULT_LINES = 200
@@ -594,16 +611,16 @@ export default function Logs() {
         }}
       >
         {filteredLines.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', textAlign: 'center', paddingTop: 48, fontSize: 13 }}>
+          <div style={{ color: isDark ? '#4a5568' : '#9ca3af', textAlign: 'center', paddingTop: 48, fontSize: 13 }}>
             {historyLoading
               ? '加载中...'
               : isToday
                 ? !connected
-                  ? <span style={{ color: 'var(--text-muted)' }}>正在连接日志流...</span>
+                  ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>正在连接日志流...</span>
                   : streamEmpty
                     ? <Empty description="暂无系统日志，系统运行正常" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
                     : logFile === 'system'
-                      ? <span style={{ color: 'var(--text-muted)' }}>系统日志较少，等待新日志...</span>
+                      ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>系统日志较少，等待新日志...</span>
                       : '暂无日志，等待新日志...'
                 : emptyFile
                   ? <Empty description="该日期的日志文件存在但暂无内容" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
@@ -637,8 +654,8 @@ interface LogRowProps {
 }
 
 function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
-  const COLORS       = LEVEL_COLORS
-  const TAG_COLORS   = LEVEL_TAG_COLORS
+  const COLORS       = isDark ? DARK_COLORS : LIGHT_COLORS
+  const LEVEL_COLORS = isDark ? LEVEL_TAG_COLORS_DARK : LEVEL_TAG_COLORS_LIGHT
 
   if (line.level === 'muted') {
     // 分隔线：全部为 '=' 字符且长度 >= 3 → 渲染为细灰线
@@ -655,7 +672,7 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
     }
     return (
       <div style={{
-        color: 'var(--text-disabled)',
+        color: isDark ? '#2a2825' : '#d1d5db',
         padding: '1px 0',
         userSelect: 'none',
         fontSize: 11,
@@ -666,9 +683,9 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
   }
 
   const bodyColor     = (isSystemFile && line.level === 'error') ? COLORS['info'] : COLORS[line.level]
-  const levelTagColor = TAG_COLORS[line.levelTag] ?? 'var(--text-muted)'
+  const levelTagColor = LEVEL_COLORS[line.levelTag] ?? (isDark ? '#6b7280' : '#6b7280')
   const hasExtra      = line.extra && line.extra.length > 0
-  const extraColor    = 'var(--text-secondary)'
+  const extraColor    = isDark ? '#9ca3af' : '#374151'
 
   // 格式化完整时间戳，去掉毫秒逗号改为点（2026-06-11 19:35:20,123 → 2026-06-11 19:35:20.123）
   // 若无毫秒部分，直接使用 YYYY-MM-DD HH:mm:ss 格式
@@ -736,7 +753,7 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
           borderLeft: `3px solid ${levelTagColor}`,
           padding: '2px 8px',
           fontSize: 12,
-          color: 'var(--text-muted)',
+          color: isDark ? '#9ca3af' : '#4b5563',
           fontFamily: 'var(--font-mono)',
           userSelect: 'none',
           marginBottom: 2,
@@ -784,7 +801,7 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
           <span style={{
             fontSize: 13,
-            color: 'var(--text-muted)',
+            color: isDark ? '#6b7280' : '#64748b',
             fontFamily: 'var(--font-mono)',
             whiteSpace: 'nowrap',
             background: 'rgba(14,165,233,0.06)',
@@ -862,64 +879,64 @@ function highlightBody(body: string, level: LogLine['level'], isDark: boolean): 
   return <>{result}</>
 }
 
-function renderHighlight(part: string, key: number, _isDark: boolean): React.ReactNode {
+function renderHighlight(part: string, key: number, isDark: boolean): React.ReactNode {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)' }
 
   // 毫秒耗时
   if (/^\d+(?:,\d{3})*ms$/.test(part)) {
     const ms = parseInt(part.replace(/,/g, ''), 10)
-    return <span key={key} style={{ ...mono, color: speedColor(ms, false), fontWeight: 600 }}>{part}</span>
+    return <span key={key} style={{ ...mono, color: speedColor(ms, isDark), fontWeight: 600 }}>{part}</span>
   }
   // 秒耗时
   if (/^\d+(?:\.\d+)?s$/.test(part)) {
     const ms = parseFloat(part) * 1000
-    return <span key={key} style={{ ...mono, color: speedColor(ms, false), fontWeight: 600 }}>{part}</span>
+    return <span key={key} style={{ ...mono, color: speedColor(ms, isDark), fontWeight: 600 }}>{part}</span>
   }
   // 分钟耗时
   if (/^\d+(?:\.\d+)?min$/.test(part)) {
     const ms = parseFloat(part) * 60_000
-    return <span key={key} style={{ ...mono, color: speedColor(ms, false), fontWeight: 600 }}>{part}</span>
+    return <span key={key} style={{ ...mono, color: speedColor(ms, isDark), fontWeight: 600 }}>{part}</span>
   }
   // Token 数量
   if (/^\d+(?:\.\d+)?[kK]$/.test(part)) {
-    return <span key={key} style={{ ...mono, color: 'var(--log-tag-info)' }}>{part}</span>
+    return <span key={key} style={{ ...mono, color: isDark ? '#38bdf8' : '#0369a1' }}>{part}</span>
   }
   // 百分比
   if (/^\d+%$/.test(part)) {
-    return <span key={key} style={{ ...mono, color: 'var(--log-tag-debug)' }}>{part}</span>
+    return <span key={key} style={{ ...mono, color: isDark ? '#a78bfa' : '#7c3aed' }}>{part}</span>
   }
   // 成功状态块
   if (part.startsWith('[✅')) {
-    return <span key={key} style={{ color: 'var(--color-success)', fontWeight: 600 }}>{part}</span>
+    return <span key={key} style={{ color: '#10b981', fontWeight: 600 }}>{part}</span>
   }
   if (part.startsWith('[💥')) {
-    return <span key={key} style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{part}</span>
+    return <span key={key} style={{ color: '#f43f5e', fontWeight: 600 }}>{part}</span>
   }
   // HTTP 状态码
   if (/^\bHTTP\s(\d{3})\b$/.test(part)) {
     const code = parseInt(part.replace('HTTP ', ''), 10)
-    const color = code >= 500 ? 'var(--color-danger)' : code >= 400 ? 'var(--color-warning)' : 'var(--color-success)'
+    const color = code >= 500 ? '#f43f5e' : code >= 400 ? '#f59e0b' : '#10b981'
     return <span key={key} style={{ ...mono, color, fontWeight: 600 }}>{part}</span>
   }
   // ERROR / Exception / Traceback
   if (/^(ERROR|Exception|Traceback)$/.test(part)) {
-    return <span key={key} style={{ color: 'var(--log-tag-error)', fontWeight: 700 }}>{part}</span>
+    return <span key={key} style={{ color: isDark ? '#f87171' : '#dc2626', fontWeight: 700 }}>{part}</span>
   }
   // WARNING / WARN
   if (/^(WARNING|WARN)$/.test(part)) {
-    return <span key={key} style={{ color: 'var(--log-tag-warning)', fontWeight: 700 }}>{part}</span>
+    return <span key={key} style={{ color: isDark ? '#fbbf24' : '#b45309', fontWeight: 700 }}>{part}</span>
   }
   // SUCCESS
   if (part === 'SUCCESS') {
-    return <span key={key} style={{ color: 'var(--color-success)', fontWeight: 700 }}>{part}</span>
+    return <span key={key} style={{ color: '#10b981', fontWeight: 700 }}>{part}</span>
   }
   // URL
   if (/^https?:\/\//.test(part)) {
     return (
       <span key={key} style={{
-        color: 'var(--log-tag-info)',
+        color: isDark ? '#38bdf8' : '#0369a1',
         textDecoration: 'underline',
-        textDecorationColor: 'rgba(56,189,248,0.4)',
+        textDecorationColor: isDark ? 'rgba(56,189,248,0.4)' : 'rgba(3,105,161,0.4)',
         cursor: 'default',
       }}>
         {part}

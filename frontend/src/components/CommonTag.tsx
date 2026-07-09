@@ -1,33 +1,29 @@
 /**
  * 公共标签组件
  *
- * 两套标签样式：
- * - VendorTag：厂商标签，描边式（浅色背景+主题色文字+主题色边框）
- * - ModelTag：模型标签，填充式（主题色背景+白色文字）
- *
- * 两套样式全局统一，通过颜色区分不同厂商
+ * 厂商标签和模型标签使用相同的组件样式，只通过颜色区分。
+ * 样式：浅色背景 + 主题色文字 + 无边框（与原始 ce35081 一致）
  */
 import React from 'react'
 import { Tag } from 'antd'
 import { getVendorColor } from './Charts/chartTheme'
 
 /**
- * 厂商标签 — 描边式样式
- * 浅色背景 + 主题色文字 + 主题色边框
+ * 厂商标签（使用厂商主题色）
  */
 export function VendorTag({ name, style }: { name: string; style?: React.CSSProperties }) {
   const vc = getVendorColor(name)
   return (
     <Tag
+      color=""
       style={{
         background: vc.bg,
         color: vc.color,
-        border: `1px solid ${vc.color}30`,
-        fontWeight: 600,
+        border: 'none',
         fontSize: 11,
-        borderRadius: 3,
+        borderRadius: 2,
         margin: 0,
-        lineHeight: '18px',
+        fontWeight: 600,
         ...style,
       }}
     >
@@ -37,22 +33,22 @@ export function VendorTag({ name, style }: { name: string; style?: React.CSSProp
 }
 
 /**
- * 模型标签 — 填充式样式
- * 主题色背景 + 白色文字
+ * 模型标签（使用所属厂商的主题色）
+ * 样式与 VendorTag 完全一致，通过 vendorName 区分颜色
  */
 export function ModelTag({ name, vendorName, style }: { name: string; vendorName?: string; style?: React.CSSProperties }) {
   const vc = getVendorColor(vendorName || name)
   return (
     <Tag
+      color=""
       style={{
-        background: vc.color,
-        color: '#fff',
+        background: vc.bg,
+        color: vc.color,
         border: 'none',
-        fontWeight: 500,
         fontSize: 11,
-        borderRadius: 3,
+        borderRadius: 2,
         margin: 0,
-        lineHeight: '18px',
+        fontWeight: 600,
         ...style,
       }}
     >
