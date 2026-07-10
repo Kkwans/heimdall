@@ -48,7 +48,7 @@ export function ModelTag({ name, vendorName, style }: { name: string; vendorName
   const isDark = theme === 'dark'
 
   // 深色模式：用主题色低透明度作为背景；浅色模式：用 vc.bg
-  const bg = isDark ? `${vc.color}33` : vc.bg
+  const bg = isDark ? `${vc.color}1f` : vc.bg
 
   return (
     <Tag

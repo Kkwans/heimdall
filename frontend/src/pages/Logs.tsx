@@ -71,7 +71,7 @@ function shortenTime(full: string): string {
 
 function parseLogLine(raw: string): LogLine {
   lineIdCounter++
-  const stdMatch = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) - (\w+) - (.*)$/)
+  const stdMatch = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)?) - (\w+) - (.*)$/)
 
   let timeShort = ''
   let fullTime = ''
