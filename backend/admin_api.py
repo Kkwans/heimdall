@@ -161,6 +161,62 @@ def delete_model(model_id):
 
 
 # ==========================================
+# 厂商 API Key 管理 API（多 Key 优先级轮询）
+# ==========================================
+
+@admin_bp.route('/api/providers/<int:provider_id>/api-keys', methods=['GET'])
+def list_provider_api_keys(provider_id):
+    """获取厂商的所有 API Key"""
+    provider = router.get_provider(provider_id)
+    if not provider:
+        return jsonify({"error": "Provider not found"}), 404
+    keys = router.get_provider_api_keys(provider_id)
+    # 脱敏处理
+    for key in keys:
+        if key.get("api_key"):
+            v = key["api_key"]
+            key["api_key_preview"] = v[:6] + "..." + v[-4:] if len(v) > 10 else v
+    return jsonify({"keys": keys})
+
+
+@admin_bp.route('/api/providers/<int:provider_id>/api-keys', methods=['POST'])
+def create_provider_api_key(provider_id):
+    """添加厂商 API Key"""
+    provider = router.get_provider(provider_id)
+    if not provider:
+        return jsonify({"error": "Provider not found"}), 404
+    data = request.get_json()
+    if not data or not data.get("api_key"):
+        return jsonify({"error": "api_key is required"}), 400
+    try:
+        key_id = router.create_provider_api_key(provider_id, data)
+        return jsonify({"id": key_id, "message": "API Key created"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/api/provider-api-keys/<int:key_id>', methods=['PUT'])
+def update_provider_api_key(key_id):
+    """更新厂商 API Key"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+    success = router.update_provider_api_key(key_id, data)
+    if not success:
+        return jsonify({"error": "Key not found or no changes"}), 404
+    return jsonify({"message": "API Key updated"})
+
+
+@admin_bp.route('/api/provider-api-keys/<int:key_id>', methods=['DELETE'])
+def delete_provider_api_key(key_id):
+    """删除厂商 API Key"""
+    success = router.delete_provider_api_key(key_id)
+    if not success:
+        return jsonify({"error": "Key not found"}), 404
+    return jsonify({"message": "API Key deleted"})
+
+
+# ==========================================
 # API Key 管理 API
 # ==========================================
 

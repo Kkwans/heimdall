@@ -22,12 +22,13 @@ from db import _get_conn
 
 class RouteResult:
     """路由查找成功的结果"""
-    __slots__ = ("base_url", "api_key", "model_name", "provider_key", "context_window")
+    __slots__ = ("base_url", "api_key", "api_keys", "model_name", "provider_key", "context_window")
 
     def __init__(self, base_url: str, api_key: str, model_name: str,
-                 provider_key: str, context_window: int = None):
+                 provider_key: str, context_window: int = None, api_keys: list = None):
         self.base_url = base_url
         self.api_key = api_key
+        self.api_keys = api_keys or [api_key]  # 所有可用 Key，按优先级排序
         self.model_name = model_name
         self.provider_key = provider_key
         self.context_window = context_window
@@ -81,6 +82,22 @@ def init_routing_tables():
                 cursor.execute(col_def)
             except Exception:
                 pass  # 列已存在时 SQLite 会抛错，直接忽略
+
+        # 厂商 API Key 表（支持多 Key 优先级轮询）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS provider_api_keys (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id INTEGER NOT NULL,
+                api_key     VARCHAR(512) NOT NULL,
+                priority    INTEGER DEFAULT 0,
+                enabled     BOOLEAN DEFAULT 1,
+                last_used_at DATETIME,
+                last_error_at DATETIME,
+                error_count INTEGER DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+            )
+        """)
 
         # 模型映射表
         cursor.execute("""
@@ -251,21 +268,29 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
             context_window = config.get_context_window(model_name)
 
         # 4. 使用厂商存储的 API Key（解密）
-        api_key = crypto.decrypt(provider_row["api_key"] or "")
-        if not api_key:
-            # 尝试从环境变量读取
-            env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"
-            api_key = os.environ.get(env_var, "")
+        # 优先从 provider_api_keys 表获取所有 Key，按优先级排序
+        api_keys = get_provider_api_keys_for_route(provider_id)
+        if not api_keys:
+            # 降级：使用 providers 表的单个 Key
+            api_key = crypto.decrypt(provider_row["api_key"] or "")
+            if not api_key:
+                env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"
+                api_key = os.environ.get(env_var, "")
+            api_keys = [api_key] if api_key else []
+        
+        if not api_keys:
+            return RouteError(403, f"厂商 {provider_key} 未配置 API Key")
 
         # 5. 确定上游模型名
         upstream_model = model_row["upstream_model"] or model_name
 
         return RouteResult(
             base_url=base_url,
-            api_key=api_key,
+            api_key=api_keys[0],
             model_name=upstream_model,
             provider_key=provider_key,
             context_window=context_window,
+            api_keys=api_keys,
         )
 
     except sqlite3.Error as e:
@@ -388,6 +413,107 @@ def delete_provider(provider_id: int) -> bool:
     cursor.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
     conn.commit()
     return cursor.rowcount > 0
+
+
+# CRUD 操作：厂商 API Keys（多 Key 优先级轮询）
+
+def get_provider_api_keys(provider_id: int) -> list:
+    """获取厂商的所有 API Key，按优先级降序排列"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM provider_api_keys WHERE provider_id = ? ORDER BY priority DESC, id",
+        (provider_id,)
+    )
+    rows = cursor.fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        result.append(d)
+    return result
+
+
+def get_provider_api_keys_for_route(provider_id: int) -> list:
+    """获取厂商所有启用的 API Key，按优先级降序（路由用）"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT api_key FROM provider_api_keys WHERE provider_id = ? AND enabled = 1 ORDER BY priority DESC",
+        (provider_id,)
+    )
+    return [crypto.decrypt(row["api_key"]) for row in cursor.fetchall()]
+
+
+def create_provider_api_key(provider_id: int, data: dict) -> int:
+    """添加厂商 API Key（加密存储）"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    encrypted_key = crypto.encrypt(data["api_key"])
+    cursor.execute("""
+        INSERT INTO provider_api_keys (provider_id, api_key, priority, enabled)
+        VALUES (?, ?, ?, ?)
+    """, (
+        provider_id,
+        encrypted_key,
+        data.get("priority", 0),
+        data.get("enabled", True),
+    ))
+    conn.commit()
+    return cursor.lastrowid
+
+
+def update_provider_api_key(key_id: int, data: dict) -> bool:
+    """更新厂商 API Key"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    fields = []
+    values = []
+    for key in ["api_key", "priority", "enabled"]:
+        if key in data:
+            if key == "api_key":
+                fields.append(f"{key} = ?")
+                values.append(crypto.encrypt(data[key]))
+            else:
+                fields.append(f"{key} = ?")
+                values.append(data[key])
+    if not fields:
+        return False
+    values.append(key_id)
+    cursor.execute(f"UPDATE provider_api_keys SET {', '.join(fields)} WHERE id = ?", values)
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_provider_api_key(key_id: int) -> bool:
+    """删除厂商 API Key"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM provider_api_keys WHERE id = ?", (key_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def mark_api_key_error(key_id: int):
+    """标记 API Key 使用出错"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE provider_api_keys SET last_error_at = CURRENT_TIMESTAMP, error_count = error_count + 1 WHERE id = ?",
+        (key_id,)
+    )
+    conn.commit()
+
+
+def mark_api_key_used(key_id: int):
+    """标记 API Key 最后使用时间"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE provider_api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (key_id,)
+    )
+    conn.commit()
 
 
 # CRUD 操作：模型

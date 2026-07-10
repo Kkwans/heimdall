@@ -463,6 +463,44 @@ def log_request(record: dict):
     proxy_logger.info(msg)
 
 
+def _try_send_request(upstream_url: str, data: dict, headers: dict, api_keys: list, timeout: int, stream: bool = False):
+    """
+    尝试发送请求，支持多 Key 失败重试。
+    返回 (response, used_key_index) 或 (None, -1) 如果所有 Key 都失败。
+    """
+    for idx, api_key in enumerate(api_keys):
+        try:
+            req_headers = dict(headers)
+            req_headers['Authorization'] = f'Bearer {api_key}'
+            resp = http_requests.post(
+                upstream_url,
+                json=data,
+                headers=req_headers,
+                stream=stream,
+                timeout=timeout
+            )
+            # 成功或客户端错误（4xx，非429）：直接返回
+            if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
+                return resp, idx
+            # 429 或 5xx：尝试下一个 Key
+            if resp.status_code == 429 or resp.status_code >= 500:
+                system_logger.warning(
+                    f"[PROXY] API Key #{idx+1} 返回 {resp.status_code}，"
+                    f"尝试下一个 Key（剩余 {len(api_keys) - idx - 1} 个）"
+                )
+                resp.close()
+                continue
+            return resp, idx
+        except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
+            # 连接错误：尝试下一个 Key
+            if idx < len(api_keys) - 1:
+                system_logger.warning(f"[PROXY] API Key #{idx+1} 连接失败，尝试下一个 Key")
+                continue
+            raise
+    # 所有 Key 都失败
+    return None, -1
+
+
 def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
     """处理非流式请求"""
     usage = {}
@@ -475,18 +513,27 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
     base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
-    # 如果路由有 API Key，使用路由的 Key
-    upstream_headers = dict(headers)
-    if route and route.api_key:
-        upstream_headers['Authorization'] = f"Bearer {route.api_key}"
+    # 获取所有可用 API Key
+    api_keys = route.api_keys if route and route.api_keys else [route.api_key] if route and route.api_key else []
 
     try:
-        resp = http_requests.post(
-            upstream_url,
-            json=data,
-            headers=upstream_headers,
-            timeout=config.REQUEST_TIMEOUT
+        resp, used_idx = _try_send_request(
+            upstream_url, data, headers, api_keys,
+            timeout=config.REQUEST_TIMEOUT, stream=False
         )
+        
+        if resp is None:
+            # 所有 Key 都失败
+            error_type = "all_keys_failed"
+            latency_ms = int((time.time() - start_time) * 1000)
+            record = build_record(data, 502, {}, latency_ms, is_stream=False,
+                                  error_type=error_type, client_ip=client_ip,
+                                  provider=provider_key)
+            db.insert_request(record)
+            log_request(record)
+            system_logger.error(f"[PROXY] 所有 API Key 均失败: model={data.get('model', 'unknown')}")
+            return Response('{"error": "All API Keys failed"}', status=502, content_type='application/json')
+
         status_code = resp.status_code
         trace_id = resp.headers.get("M-TraceId", "")
 
@@ -559,14 +606,12 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
 def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
     """处理流式请求（SSE）"""
 
-    # 确定上游 URL 和 headers
+    # 确定上游 URL
     base_url = route.base_url
     upstream_url = f"{base_url}/chat/completions"
 
-    # 如果路由有 API Key，使用路由的 Key
-    upstream_headers = dict(headers)
-    if route and route.api_key:
-        upstream_headers['Authorization'] = f"Bearer {route.api_key}"
+    # 获取所有可用 API Key
+    api_keys = route.api_keys if route and route.api_keys else [route.api_key] if route and route.api_key else []
 
     provider_key = route.provider_key if route else None
 
@@ -578,13 +623,24 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
     # 上游非 200 时直接返回带正确 HTTP 状态码的 JSON 错误响应，
     # 让客户端（如 Codex）能感知到具体错误原因，而不是静默失败
     try:
-        upstream_resp = http_requests.post(
-            upstream_url,
-            json=stream_data,
-            headers=upstream_headers,
-            stream=True,
-            timeout=config.REQUEST_TIMEOUT
+        upstream_resp, used_idx = _try_send_request(
+            upstream_url, stream_data, headers, api_keys,
+            timeout=config.REQUEST_TIMEOUT, stream=True
         )
+
+        if upstream_resp is None:
+            # 所有 Key 都失败
+            latency_ms = int((time.time() - start_time) * 1000)
+            record = build_record(data, 502, {}, latency_ms, is_stream=True,
+                                  error_type="all_keys_failed", client_ip=client_ip,
+                                  request_body=json.dumps(data, ensure_ascii=False),
+                                  provider=provider_key)
+            db.insert_request(record)
+            log_request(record)
+            system_logger.error(f"[PROXY] 流式请求所有 API Key 均失败: model={data.get('model', 'unknown')}")
+            return Response('{"error":{"message":"All API Keys failed","type":"proxy_error"}}',
+                            status=502, content_type='application/json')
+
     except http_requests.exceptions.Timeout:
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 504, {}, latency_ms, is_stream=True,
@@ -923,17 +979,46 @@ def proxy_anthropic_messages():
 
         # 转发到上游 Anthropic 端点
         upstream_url = f"{route.base_url}/messages"
-        headers = {
+        anthropic_headers = {
             'Content-Type': 'application/json',
-            'x-api-key': route.api_key,
             'anthropic-version': request.headers.get('anthropic-version', '2023-06-01'),
         }
 
         data['model'] = route.model_name
 
+        # 获取所有可用 API Key
+        api_keys = route.api_keys if route.api_keys else [route.api_key]
+
         is_stream = data.get('stream', False)
         start_time_req = time.time()
-        resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+
+        # 尝试所有 Key
+        resp = None
+        used_idx = -1
+        for idx, key in enumerate(api_keys):
+            try:
+                req_headers = dict(anthropic_headers)
+                req_headers['x-api-key'] = key
+                resp = http_requests.post(upstream_url, json=data, headers=req_headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+                if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
+                    used_idx = idx
+                    break
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    system_logger.warning(f"[PROXY] Anthropic Key #{idx+1} 返回 {resp.status_code}，尝试下一个")
+                    resp.close()
+                    resp = None
+                    continue
+                used_idx = idx
+                break
+            except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
+                if idx < len(api_keys) - 1:
+                    system_logger.warning(f"[PROXY] Anthropic Key #{idx+1} 连接失败，尝试下一个")
+                    continue
+                raise
+
+        if resp is None:
+            return Response('{"type":"error","error":{"type":"api_error","message":"All API Keys failed"}}',
+                            status=502, content_type='application/json')
 
         if is_stream:
             # 流式响应：yield 并记录
@@ -1025,16 +1110,42 @@ def proxy_openai_responses():
 
         # 转发到上游 Responses 端点
         upstream_url = f"{route.base_url}/responses"
-        headers = {
+        resp_headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {route.api_key}',
         }
 
         data['model'] = route.model_name
 
+        # 获取所有可用 API Key
+        api_keys = route.api_keys if route.api_keys else [route.api_key]
+
         is_stream = data.get('stream', False)
         start_time_req = time.time()
-        resp = http_requests.post(upstream_url, json=data, headers=headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+
+        # 尝试所有 Key
+        resp = None
+        for idx, key in enumerate(api_keys):
+            try:
+                req_headers = dict(resp_headers)
+                req_headers['Authorization'] = f'Bearer {key}'
+                resp = http_requests.post(upstream_url, json=data, headers=req_headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
+                if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
+                    break
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    system_logger.warning(f"[PROXY] Responses Key #{idx+1} 返回 {resp.status_code}，尝试下一个")
+                    resp.close()
+                    resp = None
+                    continue
+                break
+            except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
+                if idx < len(api_keys) - 1:
+                    system_logger.warning(f"[PROXY] Responses Key #{idx+1} 连接失败，尝试下一个")
+                    continue
+                raise
+
+        if resp is None:
+            return Response('{"error":{"message":"All API Keys failed","type":"proxy_error"}}',
+                            status=502, content_type='application/json')
 
         if is_stream:
             def generate():
