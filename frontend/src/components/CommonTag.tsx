@@ -43,11 +43,15 @@ export function VendorTag({ name, style }: { name: string; style?: React.CSSProp
  */
 export function ModelTag({ name, vendorName, style }: { name: string; vendorName?: string; style?: React.CSSProperties }) {
   const vc = getVendorColor(vendorName || name)
+  // 将 hex 背景色转为 rgba，添加透明度，深色模式下不刺眼
+  const bgWithOpacity = vc.bg.length === 7
+    ? `${vc.bg}cc`  // 80% 不透明度
+    : vc.bg
   return (
     <Tag
       color=""
       style={{
-        background: vc.bg,
+        background: bgWithOpacity,
         color: vc.color,
         border: 'none',
         fontSize: 11,
