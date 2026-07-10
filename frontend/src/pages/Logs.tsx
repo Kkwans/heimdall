@@ -691,8 +691,14 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
   // 若无毫秒部分，直接使用 YYYY-MM-DD HH:mm:ss 格式
   const formatFullTime = (full: string): string => {
     if (!full) return ''
-    // 替换毫秒分隔符（逗号改为点）并截断毫秒（只保留秒）
-    return full.replace(/,\d+$/, '').replace(',', '.')
+    // 保留毫秒（如果有），格式化为 YYYY-MM-DD HH:MM:SS.mmm
+    const parts = full.split(',')
+    if (parts.length === 2) {
+      // 有毫秒：2026-07-11 02:00:00,123 → 2026-07-11 02:00:00.123
+      return parts[0].replace(',', '.') + '.' + parts[1].padEnd(3, '0').slice(0, 3)
+    }
+    // 无毫秒：直接返回
+    return full
   }
 
   // 级别标签背景色转换（为对应的级别选择微透明背景）
@@ -745,39 +751,37 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
 
   return (
     <>
-      {/* 桌面端：两行格式 */}
-      {/* 第一行：时间戳行（背景色 + 左边框，辅助信息） */}
-      {line.fullTime && (
-        <div className="log-row-desktop" style={{
-          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
-          borderLeft: `3px solid ${levelTagColor}`,
-          padding: '2px 8px',
-          fontSize: 12,
-          color: isDark ? '#9ca3af' : '#4b5563',
-          fontFamily: 'var(--font-mono)',
-          userSelect: 'none',
-          marginBottom: 2,
-          whiteSpace: 'nowrap',
-          letterSpacing: '0.02em',
-        }}>
-          {formatFullTime(line.fullTime)}
-        </div>
-      )}
-      {/* 第二行：级别标签 + body 内容 */}
+      {/* 桌面端：单行格式（时间 + 级别标签 + body） */}
       <div className="log-row-desktop" style={{
         display: 'flex',
         alignItems: 'baseline',
         gap: 8,
-        padding: '2px 0',
-        paddingBottom: hasExtra ? 0 : '4px',
+        padding: '3px 0',
+        paddingBottom: hasExtra ? 0 : '5px',
         borderBottom: hasExtra ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)'),
         minWidth: 0,
+        userSelect: 'text',
       }}>
+        {line.fullTime && (
+          <span style={{
+            fontSize: 13,
+            color: isDark ? '#9ca3af' : '#4b5563',
+            fontFamily: 'var(--font-mono)',
+            whiteSpace: 'nowrap',
+            background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
+            borderLeft: `3px solid ${levelTagColor}`,
+            borderRadius: 2,
+            padding: '1px 6px',
+            letterSpacing: '0.02em',
+          }}>
+            {formatFullTime(line.fullTime)}
+          </span>
+        )}
         {tagEl}
         {bodyEl}
       </div>
 
-      {/* 桌面端：追加行（同时间戳 / 堆栈行） */}
+      {/* 桌面端：追加行（堆栈行） */}
       {hasExtra && (
         <div className="log-row-desktop" style={{
           paddingLeft: 42,
