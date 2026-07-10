@@ -913,10 +913,9 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
       render: (v: string) => {
-        const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <ModelTag name={v} />
+            <VendorTag name={v} />
           </div>
         )
       },

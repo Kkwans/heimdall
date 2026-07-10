@@ -912,7 +912,7 @@ function ApiKeyManager() {
       render: (models: string | null) => (
         models ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-            {models.split(',').map(m => <Tag key={m} style={{ margin: 0 }}>{m.trim()}</Tag>)}
+            {models.split(',').map(m => <ModelTag key={m} name={m.trim()} />)}
           </div>
         ) : <Tag color="blue" style={{ margin: 0 }}>全部</Tag>
       ),
