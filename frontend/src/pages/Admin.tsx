@@ -23,7 +23,8 @@ import {
   fetchProviders, createProvider, updateProvider, deleteProvider,
   fetchModels, createModel, updateModel, deleteModel,
   fetchApiKeys, createApiKey, updateApiKey, deleteApiKey,
-  type Provider, type Model, type ApiKey,
+  fetchProviderApiKeys, createProviderApiKey, updateProviderApiKey, deleteProviderApiKey,
+  type Provider, type Model, type ApiKey, type ProviderApiKey,
   type ProviderCreateData, type ModelCreateData, type ApiKeyCreateData,
 } from '../api/admin'
 
@@ -181,6 +182,71 @@ function ProviderManager() {
     }
   }
 
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
+  const [managingKeysProvider, setManagingKeysProvider] = useState<Provider | null>(null)
+  const [providerApiKeys, setProviderApiKeys] = useState<ProviderApiKey[]>([])
+  const [newApiKey, setNewApiKey] = useState('')
+  const [newApiPriority, setNewApiPriority] = useState(0)
+
+  const loadProviderApiKeys = async (providerId: number) => {
+    try {
+      const { keys } = await fetchProviderApiKeys(providerId)
+      setProviderApiKeys(keys)
+    } catch {
+      message.error('加载 API Key 列表失败')
+    }
+  }
+
+  const handleManageKeys = (provider: Provider) => {
+    setManagingKeysProvider(provider)
+    setApiKeyModalOpen(true)
+    loadProviderApiKeys(provider.id)
+  }
+
+  const handleAddApiKey = async () => {
+    if (!managingKeysProvider || !newApiKey) return
+    try {
+      await createProviderApiKey(managingKeysProvider.id, { api_key: newApiKey, priority: newApiPriority })
+      message.success('API Key 添加成功')
+      setNewApiKey('')
+      setNewApiPriority(0)
+      loadProviderApiKeys(managingKeysProvider.id)
+    } catch {
+      message.error('添加失败')
+    }
+  }
+
+  const handleDeleteApiKey = async (id: number) => {
+    if (!managingKeysProvider) return
+    try {
+      await deleteProviderApiKey(id)
+      message.success('删除成功')
+      loadProviderApiKeys(managingKeysProvider.id)
+    } catch {
+      message.error('删除失败')
+    }
+  }
+
+  const handleToggleApiKey = async (id: number, enabled: boolean) => {
+    if (!managingKeysProvider) return
+    try {
+      await updateProviderApiKey(id, { enabled })
+      loadProviderApiKeys(managingKeysProvider.id)
+    } catch {
+      message.error('操作失败')
+    }
+  }
+
+  const handleUpdateKeyPriority = async (id: number, priority: number) => {
+    if (!managingKeysProvider) return
+    try {
+      await updateProviderApiKey(id, { priority })
+      loadProviderApiKeys(managingKeysProvider.id)
+    } catch {
+      message.error('更新失败')
+    }
+  }
+
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
   const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
@@ -333,6 +399,19 @@ function ProviderManager() {
       ),
     },
     {
+      title: 'API Keys',
+      key: 'api_keys',
+      width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (_, record) => (
+        <Button type="link" size="small" onClick={() => handleManageKeys(record)}>
+          管理
+        </Button>
+      ),
+    },
+    {
       title: '操作',
       key: 'action',
       width: 80,
@@ -434,6 +513,95 @@ function ProviderManager() {
             <Input.Password placeholder="sk-..." />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* API Key 管理弹窗 */}
+      <Modal
+        title={`管理 API Keys - ${managingKeysProvider?.display_name || managingKeysProvider?.name || ''}`}
+        open={apiKeyModalOpen}
+        onCancel={() => setApiKeyModalOpen(false)}
+        width={600}
+        destroyOnClose
+        footer={null}
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <Input.Password
+              value={newApiKey}
+              onChange={(e) => setNewApiKey(e.target.value)}
+              placeholder="输入新的 API Key"
+              style={{ flex: 1 }}
+            />
+            <InputNumber
+              value={newApiPriority}
+              onChange={(v) => setNewApiPriority(v || 0)}
+              placeholder="优先级"
+              min={0}
+              max={100}
+              style={{ width: 80 }}
+            />
+            <Button type="primary" onClick={handleAddApiKey} disabled={!newApiKey}>
+              添加
+            </Button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            优先级越高越优先使用。429/5xx 错误时自动切换到下一个 Key。
+          </div>
+        </div>
+
+        <Table
+          size="small"
+          rowKey="id"
+          pagination={false}
+          dataSource={providerApiKeys}
+          columns={[
+            {
+              title: 'API Key',
+              dataIndex: 'api_key_preview',
+              key: 'api_key_preview',
+              render: (v: string) => <Text copyable style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{v}</Text>,
+            },
+            {
+              title: '优先级',
+              dataIndex: 'priority',
+              key: 'priority',
+              width: 80,
+              align: 'center' as const,
+              render: (v: number, record: ProviderApiKey) => (
+                <InputNumber
+                  size="small"
+                  value={v}
+                  min={0}
+                  max={100}
+                  style={{ width: 60 }}
+                  onChange={(val) => val !== null && handleUpdateKeyPriority(record.id, val)}
+                />
+              ),
+            },
+            {
+              title: '状态',
+              dataIndex: 'enabled',
+              key: 'enabled',
+              width: 80,
+              align: 'center' as const,
+              render: (enabled: boolean, record: ProviderApiKey) => (
+                <Switch size="small" checked={enabled} onChange={(c) => handleToggleApiKey(record.id, c)} />
+              ),
+            },
+            {
+              title: '操作',
+              key: 'action',
+              width: 60,
+              align: 'center' as const,
+              render: (_: unknown, record: ProviderApiKey) => (
+                <Popconfirm title="确定删除？" onConfirm={() => handleDeleteApiKey(record.id)}>
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </>
   )

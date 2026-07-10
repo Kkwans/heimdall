@@ -63,6 +63,43 @@ export async function deleteProvider(id: number): Promise<{ message: string }> {
 }
 
 // ==========================================
+// 厂商 API Key 管理 API（多 Key 优先级轮询）
+// ==========================================
+
+export interface ProviderApiKey {
+  id: number
+  provider_id: number
+  api_key: string
+  api_key_preview: string
+  priority: number
+  enabled: boolean
+  last_used_at: string | null
+  last_error_at: string | null
+  error_count: number
+  created_at: string
+}
+
+export async function fetchProviderApiKeys(providerId: number): Promise<{ keys: ProviderApiKey[] }> {
+  const { data } = await api.get(`/api/providers/${providerId}/api-keys`)
+  return data
+}
+
+export async function createProviderApiKey(providerId: number, keyData: { api_key: string; priority?: number }): Promise<{ id: number; message: string }> {
+  const { data } = await api.post(`/api/providers/${providerId}/api-keys`, keyData)
+  return data
+}
+
+export async function updateProviderApiKey(id: number, keyData: Partial<{ api_key: string; priority: number; enabled: boolean }>): Promise<{ message: string }> {
+  const { data } = await api.put(`/api/provider-api-keys/${id}`, keyData)
+  return data
+}
+
+export async function deleteProviderApiKey(id: number): Promise<{ message: string }> {
+  const { data } = await api.delete(`/api/provider-api-keys/${id}`)
+  return data
+}
+
+// ==========================================
 // 模型管理 API
 // ==========================================
 
