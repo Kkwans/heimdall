@@ -304,13 +304,14 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
 # CRUD 操作：厂商
 
 def get_all_providers() -> list:
-    """获取所有厂商（含模型数量，API Key 解密）"""
+    """获取所有厂商（含模型数量、API Key 数量，API Key 解密）"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.*, COUNT(m.id) as model_count
+        SELECT p.*, COUNT(DISTINCT m.id) as model_count, COUNT(DISTINCT k.id) as api_key_count
         FROM providers p
         LEFT JOIN models m ON m.provider_id = p.id
+        LEFT JOIN provider_api_keys k ON k.provider_id = p.id
         GROUP BY p.id
         ORDER BY p.priority DESC, p.name
     """)

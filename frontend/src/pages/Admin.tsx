@@ -316,56 +316,6 @@ function ProviderManager() {
       ) : '-',
     },
     {
-      title: 'API Key',
-      dataIndex: 'api_key',
-      key: 'api_key',
-      width: isMobile ? 100 : 150,
-      ellipsis: true,
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-      render: (key: string) => {
-        if (!key) return '—'
-        const masked = key.length > 8 ? key.substring(0, 4) + '...' + key.substring(key.length - 4) : key
-        return (
-          <MobileTooltip title="点击复制完整 Key">
-            <Tag
-              style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-              onClick={() => {
-                const text = key
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                  navigator.clipboard.writeText(text).then(() => message.success('已复制到剪贴板')).catch(() => {
-                    // 降级方案
-                    const ta = document.createElement('textarea')
-                    ta.value = text
-                    ta.style.position = 'fixed'
-                    ta.style.left = '-9999px'
-                    document.body.appendChild(ta)
-                    ta.select()
-                    document.execCommand('copy')
-                    document.body.removeChild(ta)
-                    message.success('已复制到剪贴板')
-                  })
-                } else {
-                  const ta = document.createElement('textarea')
-                  ta.value = text
-                  ta.style.position = 'fixed'
-                  ta.style.left = '-9999px'
-                  document.body.appendChild(ta)
-                  ta.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(ta)
-                  message.success('已复制到剪贴板')
-                }
-              }}
-            >
-              {masked}
-            </Tag>
-          </MobileTooltip>
-        )
-      },
-    },
-    {
       title: '模型',
       dataIndex: 'model_count',
       key: 'model_count',
@@ -381,11 +331,14 @@ function ProviderManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (_, record) => (
-        <Button type="link" size="small" onClick={() => handleManageKeys(record)}>
-          管理
-        </Button>
-      ),
+      render: (_, record) => {
+        const count = (record as Provider & { api_key_count?: number }).api_key_count || 0
+        return (
+          <Button type="link" size="small" onClick={() => handleManageKeys(record)}>
+            {count > 0 ? `${count} 个` : '添加'}
+          </Button>
+        )
+      },
     },
     {
       title: '状态',
@@ -523,26 +476,28 @@ function ProviderManager() {
         
       >
         <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 8, marginBottom: 12 }}>
             <Input.Password
               value={newApiKey}
               onChange={(e) => setNewApiKey(e.target.value)}
               placeholder="输入新的 API Key"
               style={{ flex: 1 }}
             />
-            <MobileTooltip title="数字越大优先级越高，优先使用高优先级 Key，失败时自动切换到下一个">
-              <InputNumber
-                value={newApiPriority}
-                onChange={(v) => setNewApiPriority(v || 0)}
-                placeholder="优先级"
-                min={0}
-                max={100}
-                style={{ width: 80 }}
-              />
-            </MobileTooltip>
-            <Button type="primary" onClick={handleAddApiKey} disabled={!newApiKey}>
-              添加
-            </Button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <MobileTooltip title="数字越大优先级越高，优先使用高优先级 Key，失败时自动切换到下一个">
+                <InputNumber
+                  value={newApiPriority}
+                  onChange={(v) => setNewApiPriority(v || 0)}
+                  placeholder="优先级"
+                  min={0}
+                  max={100}
+                  style={{ width: isMobile ? 'flex' : 80, flex: isMobile ? 1 : undefined }}
+                />
+              </MobileTooltip>
+              <Button type="primary" onClick={handleAddApiKey} disabled={!newApiKey}>
+                添加
+              </Button>
+            </div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             优先级越高越优先使用。429/5xx 错误时自动切换到下一个 Key。
@@ -578,7 +533,8 @@ function ProviderManager() {
                   value={v}
                   min={0}
                   max={100}
-                  style={{ width: 60, textAlign: 'center' }}
+                  className="priority-input"
+                  style={{ width: 60 }}
                   onChange={(val) => val !== null && handleUpdateKeyPriority(record.id, val)}
                 />
               ),
@@ -1268,7 +1224,7 @@ export default function Admin() {
       <Header pageName="系统配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
-          <div style={{ padding: isMobile ? '0 12px 4px' : '0 16px 8px' }}>
+          <div style={{ padding: isMobile ? '0 4px 4px' : '0 16px 8px' }}>
             <Tabs items={tabItems} defaultActiveKey="providers" />
           </div>
         </Card>

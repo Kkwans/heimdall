@@ -757,10 +757,10 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
         <div className="log-row-desktop" style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 10,
           background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
           borderLeft: `3px solid ${levelTagColor}`,
-          padding: '3px 10px',
+          padding: '4px 12px',
           fontSize: 13,
           color: isDark ? '#9ca3af' : '#4b5563',
           fontFamily: 'var(--font-mono)',
@@ -770,13 +770,11 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
           letterSpacing: '0.02em',
           borderRadius: 2,
         }}>
-          <span>{formatFullTime(line.fullTime)}</span>
+          <span style={{ opacity: 0.8 }}>{formatFullTime(line.fullTime)}</span>
+          <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
           {tagEl}
-          {isSystemFile && (
-            <span style={{ fontSize: 11, color: isDark ? '#6b7280' : '#9ca3af', marginLeft: 4 }}>[system]</span>
-          )}
         </div>
-      )}
+      )}}
       {/* 第二行：日志内容 */}
       <div className="log-row-desktop" style={{
         padding: '2px 0 5px 10px',
