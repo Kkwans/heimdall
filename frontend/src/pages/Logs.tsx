@@ -774,7 +774,7 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
           <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
           {tagEl}
         </div>
-      )}}
+      )}
       {/* 第二行：日志内容 */}
       <div className="log-row-desktop" style={{
         padding: '2px 0 5px 10px',
