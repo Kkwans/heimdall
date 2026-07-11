@@ -317,6 +317,11 @@ body {
 .ant-modal-header {
   margin-bottom: 0 !important;
   border-radius: 12px 12px 0 0 !important;
+  padding: 16px 20px !important;
+}
+/* body：与 header 对齐 */
+.ant-modal-body {
+  padding: 16px 20px !important;
 }
 
 /* 关闭按钮：垂直居中对齐（header 高度 48px，按钮 28px，top = (48 - 28) / 2 = 10px）*/

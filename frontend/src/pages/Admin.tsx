@@ -375,6 +375,19 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
     },
     {
+      title: 'API Keys',
+      key: 'api_keys',
+      width: 100,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (_, record) => (
+        <Button type="link" size="small" onClick={() => handleManageKeys(record)}>
+          管理
+        </Button>
+      ),
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       key: 'enabled',
@@ -396,19 +409,6 @@ function ProviderManager() {
             }
           }}
         />
-      ),
-    },
-    {
-      title: 'API Keys',
-      key: 'api_keys',
-      width: 100,
-      align: 'center',
-      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
-      onCell: () => ({ style: cellCenter }),
-      render: (_, record) => (
-        <Button type="link" size="small" onClick={() => handleManageKeys(record)}>
-          管理
-        </Button>
       ),
     },
     {
@@ -470,7 +470,7 @@ function ProviderManager() {
         onCancel={() => setModalOpen(false)}
         width={560}
         destroyOnClose
-        styles={{ body: { padding: '16px 24px' } }}
+        
       >
         <Form form={form} layout="vertical">
           <Form.Item label="选择厂商预设">
@@ -509,9 +509,6 @@ function ProviderManager() {
           <Form.Item name="anthropic_url" label="Anthropic 协议地址">
             <Input placeholder="https://api.anthropic.com/v1" />
           </Form.Item>
-          <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
-            <Input.Password placeholder="sk-..." />
-          </Form.Item>
         </Form>
       </Modal>
 
@@ -523,7 +520,7 @@ function ProviderManager() {
         width={600}
         destroyOnClose
         footer={null}
-        styles={{ body: { padding: '16px 24px' } }}
+        
       >
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -533,14 +530,16 @@ function ProviderManager() {
               placeholder="输入新的 API Key"
               style={{ flex: 1 }}
             />
-            <InputNumber
-              value={newApiPriority}
-              onChange={(v) => setNewApiPriority(v || 0)}
-              placeholder="优先级"
-              min={0}
-              max={100}
-              style={{ width: 80 }}
-            />
+            <MobileTooltip title="数字越大优先级越高，优先使用高优先级 Key，失败时自动切换到下一个">
+              <InputNumber
+                value={newApiPriority}
+                onChange={(v) => setNewApiPriority(v || 0)}
+                placeholder="优先级"
+                min={0}
+                max={100}
+                style={{ width: 80 }}
+              />
+            </MobileTooltip>
             <Button type="primary" onClick={handleAddApiKey} disabled={!newApiKey}>
               添加
             </Button>
@@ -560,6 +559,9 @@ function ProviderManager() {
               title: 'API Key',
               dataIndex: 'api_key_preview',
               key: 'api_key_preview',
+              align: 'center' as const,
+              onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+              onCell: () => ({ style: { textAlign: 'center', verticalAlign: 'middle' } }),
               render: (v: string) => <Text copyable style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{v}</Text>,
             },
             {
@@ -568,13 +570,15 @@ function ProviderManager() {
               key: 'priority',
               width: 80,
               align: 'center' as const,
+              onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+              onCell: () => ({ style: { textAlign: 'center', verticalAlign: 'middle' } }),
               render: (v: number, record: ProviderApiKey) => (
                 <InputNumber
                   size="small"
                   value={v}
                   min={0}
                   max={100}
-                  style={{ width: 60 }}
+                  style={{ width: 60, textAlign: 'center' }}
                   onChange={(val) => val !== null && handleUpdateKeyPriority(record.id, val)}
                 />
               ),
@@ -873,7 +877,7 @@ function ModelManager() {
         onCancel={() => setModalOpen(false)}
         width={560}
         destroyOnClose
-        styles={{ body: { padding: '16px 24px' } }}
+        
       >
         <Form form={form} layout="vertical">
           <Form.Item name="upstream_model" label="上游模型名" rules={[{ required: true, message: '请输入上游模型名' }]}
@@ -1174,7 +1178,7 @@ function ApiKeyManager() {
         onCancel={() => setModalOpen(false)}
         width={560}
         destroyOnClose
-        styles={{ body: { padding: '16px 24px' } }}
+        
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="名称">
@@ -1264,7 +1268,7 @@ export default function Admin() {
       <Header pageName="系统配置" hideDatePicker />
       <section className="section">
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
-          <div style={{ padding: isMobile ? '0 8px 4px' : '0 16px 8px' }}>
+          <div style={{ padding: isMobile ? '0 12px 4px' : '0 16px 8px' }}>
             <Tabs items={tabItems} defaultActiveKey="providers" />
           </div>
         </Card>

@@ -751,40 +751,47 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
 
   return (
     <>
-      {/* 桌面端：单行格式（时间 + 级别标签 + body） */}
+      {/* 桌面端：两行格式 */}
+      {/* 第一行：日期行（时间 + 级别标签），独立展示，支持框选复制 */}
+      {line.fullTime && (
+        <div className="log-row-desktop" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
+          borderLeft: `3px solid ${levelTagColor}`,
+          padding: '3px 10px',
+          fontSize: 13,
+          color: isDark ? '#9ca3af' : '#4b5563',
+          fontFamily: 'var(--font-mono)',
+          userSelect: 'text',
+          marginBottom: 2,
+          whiteSpace: 'nowrap',
+          letterSpacing: '0.02em',
+          borderRadius: 2,
+        }}>
+          <span>{formatFullTime(line.fullTime)}</span>
+          {tagEl}
+          {isSystemFile && (
+            <span style={{ fontSize: 11, color: isDark ? '#6b7280' : '#9ca3af', marginLeft: 4 }}>[system]</span>
+          )}
+        </div>
+      )}
+      {/* 第二行：日志内容 */}
       <div className="log-row-desktop" style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        padding: '3px 0',
+        padding: '2px 0 5px 10px',
         paddingBottom: hasExtra ? 0 : '5px',
         borderBottom: hasExtra ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)'),
         minWidth: 0,
         userSelect: 'text',
       }}>
-        {line.fullTime && (
-          <span style={{
-            fontSize: 13,
-            color: isDark ? '#9ca3af' : '#4b5563',
-            fontFamily: 'var(--font-mono)',
-            whiteSpace: 'nowrap',
-            background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
-            borderLeft: `3px solid ${levelTagColor}`,
-            borderRadius: 2,
-            padding: '1px 6px',
-            letterSpacing: '0.02em',
-          }}>
-            {formatFullTime(line.fullTime)}
-          </span>
-        )}
-        {tagEl}
         {bodyEl}
       </div>
 
       {/* 桌面端：追加行（堆栈行） */}
       {hasExtra && (
         <div className="log-row-desktop" style={{
-          paddingLeft: 42,
+          paddingLeft: 52,
           paddingBottom: '4px',
           borderBottom: isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)',
         }}>
