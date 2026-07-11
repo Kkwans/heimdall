@@ -285,34 +285,34 @@ function ProviderManager() {
       title: 'OpenAI URL',
       dataIndex: 'openai_url',
       key: 'openai_url',
-      width: isMobile ? 120 : 200,
+      width: isMobile ? 100 : 200,
       ellipsis: true,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
-        <Tooltip title={url} placement="top">
-          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} ellipsis>
+        <MobileTooltip title={url}>
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: isMobile ? 80 : undefined }} ellipsis>
             {url}
           </Text>
-        </Tooltip>
+        </MobileTooltip>
       ) : '-',
     },
     {
       title: 'Anthropic URL',
       dataIndex: 'anthropic_url',
       key: 'anthropic_url',
-      width: isMobile ? 120 : 200,
+      width: isMobile ? 100 : 200,
       ellipsis: true,
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
       render: (url: string) => url ? (
-        <Tooltip title={url} placement="top">
-          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} ellipsis>
+        <MobileTooltip title={url}>
+          <Text copyable={{ text: url }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: isMobile ? 80 : undefined }} ellipsis>
             {url}
           </Text>
-        </Tooltip>
+        </MobileTooltip>
       ) : '-',
     },
     {
@@ -388,7 +388,7 @@ function ProviderManager() {
 
   // 移动端隐藏次要列
   const filteredColumns = isMobile
-    ? columns.filter(c => c.key !== 'display_name' && c.key !== 'anthropic_url')
+    ? columns.filter(c => c.key !== 'display_name')
     : columns
 
   return (
@@ -1222,7 +1222,7 @@ export default function Admin() {
   return (
     <div className="page-content">
       <Header pageName="系统配置" hideDatePicker />
-      <section className="section">
+      <section className="section" style={{ marginBottom: 8 }}>
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
           <div style={{ padding: isMobile ? '0 4px 4px' : '0 16px 8px' }}>
             <Tabs items={tabItems} defaultActiveKey="providers" />

@@ -773,6 +773,10 @@ function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
           <span style={{ opacity: 0.8 }}>{formatFullTime(line.fullTime)}</span>
           <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
           {tagEl}
+          <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+          <span style={{ fontSize: 12, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>
+            {line.body.length > 80 ? line.body.slice(0, 80) + '…' : line.body}
+          </span>
         </div>
       )}
       {/* 第二行：日志内容 */}

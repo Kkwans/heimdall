@@ -318,9 +318,18 @@ body {
   margin-bottom: 0 !important;
   border-radius: 12px 12px 0 0 !important;
 }
-/* body：减小内边距，节省空间 */
+/* header：垂直居中标题和关闭按钮 */
+.ant-modal-header {
+  margin-bottom: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+  padding: 14px 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 48px !important;
+}
+/* body：与 header 对齐 */
 .ant-modal-body {
-  padding: 12px 24px !important;
+  padding: 14px 24px !important;
 }
 /* 优先级输入框数字居中 */
 .priority-input .ant-input-number-input {
@@ -1100,4 +1109,11 @@ body {
 /* 减少表格分页组件底部间距 */
 .ant-table-pagination.ant-pagination {
   margin: 12px 0 0 0 !important;
+}
+
+/* 移动端全局隐藏 Tooltip */
+@media (max-width: 768px) {
+  .ant-tooltip {
+    display: none !important;
+  }
 }
