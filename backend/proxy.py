@@ -293,6 +293,7 @@ def build_record(
     request_body: str = None,
     response_body: str = None,
     provider: str = None,
+    api_key_id: int = None,
 ) -> dict:
     """构建请求记录 dict，用于写入数据库和日志"""
     original_model = request_data.get("model", "unknown")
@@ -347,6 +348,7 @@ def build_record(
         "request_body": request_body,
         "response_body": response_body,
         "provider": provider,
+        "api_key_id": api_key_id,
     }
 
 
@@ -501,7 +503,7 @@ def _try_send_request(upstream_url: str, data: dict, headers: dict, api_keys: li
     return None, -1
 
 
-def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
+def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None, api_key_id: int = None) -> Response:
     """处理非流式请求"""
     usage = {}
     status_code = 500
@@ -528,7 +530,7 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
             latency_ms = int((time.time() - start_time) * 1000)
             record = build_record(data, 502, {}, latency_ms, is_stream=False,
                                   error_type=error_type, client_ip=client_ip,
-                                  provider=provider_key)
+                                  provider=provider_key, api_key_id=api_key_id)
             db.insert_request(record)
             log_request(record)
             system_logger.error(f"[PROXY] 所有 API Key 均失败: model={data.get('model', 'unknown')}")
@@ -562,7 +564,7 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
                               ttfb_ms=latency_ms,
                               trace_id=trace_id, client_ip=client_ip,
                               request_body=req_body_str, response_body=resp_body_str,
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
 
@@ -574,7 +576,7 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 504, {}, latency_ms, is_stream=False,
                               error_type=error_type, client_ip=client_ip,
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 请求超时: model={data.get('model', 'unknown')}")
@@ -585,7 +587,7 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 502, {}, latency_ms, is_stream=False,
                               error_type=error_type, client_ip=client_ip,
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 连接失败: model={data.get('model', 'unknown')}")
@@ -596,14 +598,14 @@ def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: s
         latency_ms = int((time.time() - start_time) * 1000)
         record = build_record(data, 500, {}, latency_ms, is_stream=False,
                               error_type=error_type, client_ip=client_ip,
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 未知错误: {e}", exc_info=True)
         return Response('{"error": "Internal Server Error"}', status=500, content_type='application/json')
 
 
-def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None) -> Response:
+def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None, api_key_id: int = None) -> Response:
     """处理流式请求（SSE）"""
 
     # 确定上游 URL
@@ -634,7 +636,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
             record = build_record(data, 502, {}, latency_ms, is_stream=True,
                                   error_type="all_keys_failed", client_ip=client_ip,
                                   request_body=json.dumps(data, ensure_ascii=False),
-                                  provider=provider_key)
+                                  provider=provider_key, api_key_id=api_key_id)
             db.insert_request(record)
             log_request(record)
             system_logger.error(f"[PROXY] 流式请求所有 API Key 均失败: model={data.get('model', 'unknown')}")
@@ -646,7 +648,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
         record = build_record(data, 504, {}, latency_ms, is_stream=True,
                               error_type="timeout", client_ip=client_ip,
                               request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求超时: model={data.get('model', 'unknown')}")
@@ -657,7 +659,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
         record = build_record(data, 502, {}, latency_ms, is_stream=True,
                               error_type="connection_error", client_ip=client_ip,
                               request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求连接失败: model={data.get('model', 'unknown')}")
@@ -668,7 +670,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
         record = build_record(data, 500, {}, latency_ms, is_stream=True,
                               error_type="unknown", client_ip=client_ip,
                               request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         system_logger.error(f"[PROXY] 流式请求未知错误: {e}", exc_info=True)
@@ -696,7 +698,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
                               trace_id=trace_id, client_ip=client_ip,
                               request_body=json.dumps(data, ensure_ascii=False),
                               response_body=err_text,
-                              provider=provider_key)
+                              provider=provider_key, api_key_id=api_key_id)
         db.insert_request(record)
         log_request(record)
         content_type = upstream_resp.headers.get('Content-Type', 'application/json')
@@ -912,9 +914,9 @@ def proxy_openai_chat():
         is_stream = data.get('stream', False)
 
         if is_stream:
-            return handle_stream(data, headers, start_time, client_ip, route=route)
+            return handle_stream(data, headers, start_time, client_ip, route=route, api_key_id=key_info.get("id"))
         else:
-            return handle_non_stream(data, headers, start_time, client_ip, route=route)
+            return handle_non_stream(data, headers, start_time, client_ip, route=route, api_key_id=key_info.get("id"))
 
     except Exception as e:
         # 兜底异常捕获：确保任何未预期的错误都返回 JSON 格式，而非 Flask 默认的 HTML 500 页面

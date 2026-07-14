@@ -64,7 +64,10 @@ def init_db():
 
                 -- 追踪信息
                 trace_id            TEXT,
-                client_ip           TEXT
+                client_ip           TEXT,
+
+                -- API Key 关联
+                api_key_id          INTEGER
             )
         """)
 
@@ -97,6 +100,7 @@ def init_db():
 
         # 索引优化
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_date ON requests(date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_api_key_id ON requests(api_key_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_success ON requests(success)")
@@ -445,13 +449,16 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
         rows = conn.execute(
             f"""
             SELECT
-                id, created_at, date, model, original_model, stream, messages_count,
-                prompt_tokens, completion_tokens, total_tokens,
-                cache_hit_tokens, cache_miss_tokens, reasoning_tokens,
-                latency_ms, ttfb_ms,
-                status_code, success, error_type,
-                trace_id, client_ip
-            FROM requests
+                r.id, r.created_at, r.date, r.model, r.original_model, r.stream, r.messages_count,
+                r.prompt_tokens, r.completion_tokens, r.total_tokens,
+                r.cache_hit_tokens, r.cache_miss_tokens, r.reasoning_tokens,
+                r.latency_ms, r.ttfb_ms,
+                r.status_code, r.success, r.error_type,
+                r.trace_id, r.client_ip,
+                r.api_key_id,
+                ak.name as api_key_name
+            FROM requests r
+            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
             {where_sql}
             {order_sql}
             LIMIT ? OFFSET ?
@@ -777,3 +784,99 @@ def query_request_detail(request_id: int):
     except Exception as e:
         _logger.error(f"[DB] query_request_detail 失败: {e}", exc_info=True)
         return None
+
+
+def query_api_key_stats(start_date: str, end_date: str) -> list:
+    """按 APIKey 分组统计 token 用量和请求次数"""
+    try:
+        conn = _get_conn()
+        rows = conn.execute("""
+            SELECT
+                COALESCE(ak.name, '未知') as api_key_name,
+                r.api_key_id,
+                COUNT(*) as total_requests,
+                SUM(CASE WHEN r.success = 1 THEN 1 ELSE 0 END) as success_requests,
+                SUM(CASE WHEN r.success = 0 THEN 1 ELSE 0 END) as error_requests,
+                SUM(r.prompt_tokens) as total_prompt_tokens,
+                SUM(r.completion_tokens) as total_completion_tokens,
+                SUM(r.total_tokens) as total_tokens,
+                SUM(r.cache_hit_tokens) as total_cache_hit_tokens,
+                SUM(r.reasoning_tokens) as total_reasoning_tokens,
+                ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
+            FROM requests r
+            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+            WHERE r.date >= ? AND r.date <= ?
+            GROUP BY r.api_key_id
+            ORDER BY total_tokens DESC
+        """, (start_date, end_date)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        _logger.error(f"[DB] query_api_key_stats 失败: {e}", exc_info=True)
+        return []
+
+
+def query_api_key_model_stats(start_date: str, end_date: str) -> list:
+    """按 APIKey + 模型分组统计"""
+    try:
+        conn = _get_conn()
+        rows = conn.execute("""
+            SELECT
+                COALESCE(ak.name, '未知') as api_key_name,
+                r.api_key_id,
+                r.model,
+                COUNT(*) as request_count,
+                SUM(r.total_tokens) as total_tokens,
+                ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
+            FROM requests r
+            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+            WHERE r.date >= ? AND r.date <= ?
+            GROUP BY r.api_key_id, r.model
+            ORDER BY total_tokens DESC
+        """, (start_date, end_date)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        _logger.error(f"[DB] query_api_key_model_stats 失败: {e}", exc_info=True)
+        return []
+
+
+def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) -> list:
+    """按日期分组的 APIKey 统计趋势"""
+    try:
+        conn = _get_conn()
+        if api_key_id:
+            rows = conn.execute("""
+                SELECT
+                    r.date,
+                    COALESCE(ak.name, '未知') as api_key_name,
+                    COUNT(*) as requests,
+                    SUM(r.total_tokens) as tokens,
+                    SUM(r.prompt_tokens) as prompt_tokens,
+                    SUM(r.completion_tokens) as completion_tokens,
+                    ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
+                FROM requests r
+                LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+                WHERE r.date >= ? AND r.date <= ? AND r.api_key_id = ?
+                GROUP BY r.date
+                ORDER BY r.date
+            """, (start_date, end_date, api_key_id)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT
+                    r.date,
+                    COALESCE(ak.name, '未知') as api_key_name,
+                    r.api_key_id,
+                    COUNT(*) as requests,
+                    SUM(r.total_tokens) as tokens,
+                    SUM(r.prompt_tokens) as prompt_tokens,
+                    SUM(r.completion_tokens) as completion_tokens,
+                    ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
+                FROM requests r
+                LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+                WHERE r.date >= ? AND r.date <= ?
+                GROUP BY r.date, r.api_key_id
+                ORDER BY r.date, tokens DESC
+            """, (start_date, end_date)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        _logger.error(f"[DB] query_api_key_daily 失败: {e}", exc_info=True)
+        return []

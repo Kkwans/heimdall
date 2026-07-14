@@ -608,6 +608,63 @@ def stats_request_detail(request_id):
 
 
 # ==========================================
+# APIKey 统计接口
+# ==========================================
+
+@stats_bp.route("/api/stats/api-keys", methods=["GET", "OPTIONS"])
+def api_key_stats():
+    """按 APIKey 分组的统计数据"""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+
+    try:
+        data = db.query_api_key_stats(start_date, end_date)
+        return _cors_response({"data": data})
+    except Exception as e:
+        return _cors_response({"error": str(e)}, 500)
+
+
+@stats_bp.route("/api/stats/api-keys/models", methods=["GET", "OPTIONS"])
+def api_key_model_stats():
+    """按 APIKey + 模型分组的统计数据"""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+
+    try:
+        data = db.query_api_key_model_stats(start_date, end_date)
+        return _cors_response({"data": data})
+    except Exception as e:
+        return _cors_response({"error": str(e)}, 500)
+
+
+@stats_bp.route("/api/stats/api-keys/daily", methods=["GET", "OPTIONS"])
+def api_key_daily():
+    """按日期分组的 APIKey 趋势数据"""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+
+    api_key_id = request.args.get("api_key_id", None, type=int)
+
+    try:
+        data = db.query_api_key_daily(start_date, end_date, api_key_id)
+        return _cors_response({"data": data})
+    except Exception as e:
+        return _cors_response({"error": str(e)}, 500)
+
+
+# ==========================================
 # v4 新增：代理状态控制接口
 # ==========================================
 
