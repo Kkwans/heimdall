@@ -828,17 +828,16 @@ def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
                     if len(text) > KEEP_CHARS:
                         part['text'] = text[:KEEP_CHARS] + TRUNCATE_NOTICE
 
-    # 第二轮：若仍超限，移除最早的 tool result
+    # 第二轮：若仍超限，移除最早的 tool result（从后往前遍历避免索引偏移）
     if _estimate_tokens(data) > token_limit:
-        tool_indices = [i for i, m in enumerate(msgs) if m.get('role') == 'tool']
-        for idx in tool_indices:
+        tool_msgs = [m for m in data['messages'] if m.get('role') == 'tool']
+        for tm in tool_msgs:
             if _estimate_tokens(data) <= token_limit:
                 break
-            # 找到并移除（索引已偏移，需重新查找）
-            for j, m in enumerate(data['messages']):
-                if m.get('role') == 'tool' and m is msgs[idx]:
-                    data['messages'].pop(j)
-                    break
+            try:
+                data['messages'].remove(tm)
+            except ValueError:
+                pass
 
     after = _estimate_tokens(data)
     system_logger.warning(
