@@ -724,6 +724,20 @@ export default function Requests() {
       },
     },
     {
+      title: 'APIKey',
+      dataIndex: 'api_key_name',
+      width: isMobile ? 70 : 90,
+      align: 'center' as const,
+      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
+      onCell: () => ({ style: cellStyle }),
+      render: (v: string | null) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: v ? 'var(--color-primary)' : 'var(--text-muted)' }}>
+          {v || '未知'}
+        </span>
+      ),
+    },
+
+    {
       title: '模式',
       dataIndex: 'stream',
       width: 56,

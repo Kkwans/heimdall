@@ -59,6 +59,9 @@ export interface RequestRecord {
   error_type: string | null
   trace_id: string | null
   client_ip: string | null
+  // v4: APIKey 关联
+  api_key_id?: number | null
+  api_key_name?: string | null
   // v3: 详情字段（从 /api/stats/request/:id/detail 获取）
   request_body?: object | null
   response_body?: object | null

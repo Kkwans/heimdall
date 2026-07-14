@@ -23,6 +23,8 @@ import {
   fetchErrorAnalysis,
   fetchHourly,
   fetchProviderStats,
+  fetchApiKeyStats,
+  fetchApiKeyModelStats,
 } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
@@ -1002,6 +1004,99 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
 // ──────────────────────────────────────────
 // 主页面
 // ──────────────────────────────────────────
+
+// ──────────────────────────────────────────
+// APIKey 统计组件
+// ──────────────────────────────────────────
+function ApiKeyTokenPieChart({ data, isMobile }: { data: any[]; isMobile: boolean }) {
+  const filtered = data.filter(d => d.api_key_id !== null)
+  if (filtered.length === 0) return <EmptyPlaceholder />
+  
+  const colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2']
+  const chartData = filtered.map((d, i) => ({
+    name: d.api_key_name,
+    value: d.total_tokens,
+    itemStyle: { color: colors[i % colors.length] },
+  }))
+  
+  const option = {
+    tooltip: { trigger: 'item', formatter: (p: any) => `${p.name}: ${fmtTokens(p.value)} (${p.percent}%)` },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: isMobile ? ['50%', '50%'] : ['40%', '50%'],
+      data: chartData,
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 12 } },
+    }],
+    legend: isMobile ? undefined : {
+      type: 'scroll',
+      orient: 'vertical',
+      right: '5%',
+      top: 'middle',
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: { fontSize: 11 },
+      formatter: (name: string) => {
+        const item = chartData.find(d => d.name === name)
+        return item ? `${name} (${fmtTokens(item.value)})` : name
+      },
+    },
+  }
+  return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
+}
+
+function ApiKeyStatsTable({ data }: { data: any[] }) {
+  const filtered = data.filter(d => d.api_key_id !== null)
+  if (filtered.length === 0) return <EmptyPlaceholder text="暂无 APIKey 数据" />
+  
+  const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
+  
+  const columns: ColumnsType<any> = [
+    { title: 'APIKey', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    { title: '请求数', dataIndex: 'total_requests', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
+    { title: '成功', dataIndex: 'success_requests', key: 'ok', align: 'center', render: (v: number) => <span style={{ ...mono, color: 'var(--color-success)' }}>{v}</span> },
+    { title: '失败', dataIndex: 'error_requests', key: 'err', align: 'center', render: (v: number) => <span style={{ ...mono, color: v > 0 ? 'var(--color-danger)' : 'var(--text-muted)' }}>{v}</span> },
+    { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
+    { title: '均延迟', dataIndex: 'avg_latency_ms', key: 'lat', align: 'center', render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span> },
+  ]
+  
+  return (
+    <Table
+      columns={columns}
+      dataSource={filtered}
+      rowKey={(r) => r.api_key_id || 'unknown'}
+      pagination={false}
+      size="small"
+    />
+  )
+}
+
+function ApiKeyModelStatsTable({ data }: { data: any[] }) {
+  const filtered = data.filter(d => d.api_key_id !== null)
+  if (filtered.length === 0) return <EmptyPlaceholder text="暂无数据" />
+  
+  const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
+  
+  const columns: ColumnsType<any> = [
+    { title: 'APIKey', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    { title: '模型', dataIndex: 'model', key: 'model', align: 'center', render: (v: string) => <ModelTag name={v} /> },
+    { title: '请求数', dataIndex: 'request_count', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
+    { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
+    { title: '均延迟', dataIndex: 'avg_latency_ms', key: 'lat', align: 'center', render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span> },
+  ]
+  
+  return (
+    <Table
+      columns={columns}
+      dataSource={filtered}
+      rowKey={(r) => `${r.api_key_id}-${r.model}`}
+      pagination={false}
+      size="small"
+    />
+  )
+}
+
 export default function Stats() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
   const { theme } = useTheme()
@@ -1021,6 +1116,8 @@ export default function Stats() {
   const [errorAnalysis, setErrorAnalysis] = useState<ErrorAnalysis[]>([])
   const [hourly, setHourly] = useState<HourlyStat[]>([])
   const [dailyData, setDailyData] = useState<DailyData[]>([])
+  const [apiKeyStats, setApiKeyStats] = useState<any[]>([])
+  const [apiKeyModelStats, setApiKeyModelStats] = useState<any[]>([])
   const [hourlyDate, setHourlyDate] = useState<string>(() => dayjs().format('YYYY-MM-DD'))
 
   // 汇总摘要指标
@@ -1041,18 +1138,22 @@ export default function Stats() {
         ...(dateRange.start ? { start_date: dateRange.start } : {}),
         ...(dateRange.end ? { end_date: dateRange.end } : {}),
       }
-      const [ms, ps, ea, hd, dd] = await Promise.all([
+      const [ms, ps, ea, hd, dd, aks, akms] = await Promise.all([
         fetchModelStats(params),
         fetchProviderStats(params),
         fetchErrorAnalysis(params),
         fetchHourly(hourlyDate),
         fetchDaily(params),
+        fetchApiKeyStats(params),
+        fetchApiKeyModelStats(params),
       ])
       setModelStats(ms.data)
       setProviderStats(ps.data)
       setErrorAnalysis(ea.data)
       setHourly(hd.data)
       setDailyData(dd.data)
+      setApiKeyStats(aks.data)
+      setApiKeyModelStats(akms.data)
     } catch (e) {
       console.error(e)
     } finally {
@@ -1236,6 +1337,33 @@ export default function Stats() {
           </Card>
         </Col>
       </Row>
+
+      {/* APIKey 统计 */}
+      {apiKeyStats.length > 0 && (
+        <>
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={12}>
+              <Card title={sectionTitle('APIKey Token 占比', '按 APIKey 分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
+                <ApiKeyTokenPieChart data={apiKeyStats} isMobile={isMobile} />
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title={sectionTitle('APIKey 统计', 'Token 用量 / 请求数')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
+                <ApiKeyStatsTable data={apiKeyStats} />
+              </Card>
+            </Col>
+          </Row>
+          {apiKeyModelStats.length > 0 && (
+            <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+              <Col xs={24}>
+                <Card title={sectionTitle('APIKey + 模型统计', '各 APIKey 使用的模型分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
+                  <ApiKeyModelStatsTable data={apiKeyModelStats} />
+                </Card>
+              </Col>
+            </Row>
+          )}
+        </>
+      )}
     </div>
   )
 }

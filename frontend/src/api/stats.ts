@@ -175,3 +175,40 @@ export async function fetchProviderStats(params: {
   const { data } = await api.get('/api/stats/by-provider', { params })
   return data
 }
+
+// ==========================================
+// v4 新增：APIKey 统计 API
+// ==========================================
+
+export interface ApiKeyStat {
+  api_key_id: number | null
+  api_key_name: string
+  total_requests: number
+  success_requests: number
+  error_requests: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_tokens: number
+  total_cache_hit_tokens: number
+  total_reasoning_tokens: number
+  avg_latency_ms: number
+}
+
+export interface ApiKeyModelStat {
+  api_key_id: number | null
+  api_key_name: string
+  model: string
+  request_count: number
+  total_tokens: number
+  avg_latency_ms: number
+}
+
+export async function fetchApiKeyStats(params: DateParams): Promise<{ data: ApiKeyStat[] }> {
+  const { data } = await api.get('/api/stats/api-keys', { params })
+  return data
+}
+
+export async function fetchApiKeyModelStats(params: DateParams): Promise<{ data: ApiKeyModelStat[] }> {
+  const { data } = await api.get('/api/stats/api-keys/models', { params })
+  return data
+}
