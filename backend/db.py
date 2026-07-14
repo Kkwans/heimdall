@@ -143,7 +143,8 @@ def _do_insert(record: dict):
                 status_code, success, error_type,
                 trace_id, client_ip,
                 request_body, response_body,
-                provider
+                provider,
+                api_key_id
             ) VALUES (
                 :created_at, :date, :model, :original_model, :stream, :messages_count,
                 :prompt_tokens, :completion_tokens, :total_tokens,
@@ -152,7 +153,8 @@ def _do_insert(record: dict):
                 :status_code, :success, :error_type,
                 :trace_id, :client_ip,
                 :request_body, :response_body,
-                :provider
+                :provider,
+                :api_key_id
             )
         """, record)
         conn.commit()
