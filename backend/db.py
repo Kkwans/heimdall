@@ -388,7 +388,7 @@ SORTABLE_FIELDS = {
 
 # output_ms 是计算字段，特殊处理
 _SORT_FIELD_MAP = {
-    'output_ms': '(latency_ms - ttfb_ms)',
+    'output_ms': '(r.latency_ms - r.ttfb_ms)',
 }
 
 
@@ -401,26 +401,26 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
         params = []
 
         if filters.get("model") and filters["model"] != "all":
-            where_clauses.append("model = ?")
+            where_clauses.append("r.model = ?")
             params.append(filters["model"])
 
         if filters.get("date"):
-            where_clauses.append("date = ?")
+            where_clauses.append("r.date = ?")
             params.append(filters["date"])
 
         if filters.get("start_date"):
-            where_clauses.append("date >= ?")
+            where_clauses.append("r.date >= ?")
             params.append(filters["start_date"])
 
         if filters.get("end_date"):
-            where_clauses.append("date <= ?")
+            where_clauses.append("r.date <= ?")
             params.append(filters["end_date"])
 
         status = filters.get("status", "all")
         if status == "success":
-            where_clauses.append("success = 1")
+            where_clauses.append("r.success = 1")
         elif status == "error":
-            where_clauses.append("success = 0")
+            where_clauses.append("r.success = 0")
 
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -434,15 +434,15 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
         if sort_by in _SORT_FIELD_MAP:
             order_expr = _SORT_FIELD_MAP[sort_by]
         elif sort_by in SORTABLE_FIELDS:
-            order_expr = sort_by
+            order_expr = f"r.{sort_by}"
         else:
-            order_expr = "created_at"
+            order_expr = "r.created_at"
 
         order_sql = f"ORDER BY {order_expr} {sort_order.upper()}"
 
         # 查询总数
         total = conn.execute(
-            f"SELECT COUNT(*) FROM requests {where_sql}",
+            f"SELECT COUNT(*) FROM requests r {where_sql}",
             params
         ).fetchone()[0]
 
