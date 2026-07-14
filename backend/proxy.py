@@ -764,7 +764,7 @@ def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, 
                 is_stream=True, ttfb_ms=ttfb_ms,
                 trace_id=trace_id, error_type=error_type, client_ip=client_ip,
                 request_body=req_body_str, response_body=resp_body_str,
-                provider=provider_key
+                provider=provider_key, api_key_id=api_key_id
             )
             db.insert_request(record)
             log_request(record)
