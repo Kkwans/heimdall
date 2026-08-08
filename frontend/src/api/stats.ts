@@ -54,6 +54,57 @@ export async function fetchRequests(params: {
   return data
 }
 
+export interface RequestRetentionConfig {
+  enabled: boolean
+  retention_days: number
+  updated_at: string | null
+  last_run_at: string | null
+  last_deleted_count: number
+  last_deleted_body_bytes: number
+  last_error: string | null
+  min_days?: number
+  max_days?: number
+  schedule?: string
+  vacuum_enabled?: boolean
+  success?: boolean
+  cleanup_started?: boolean
+  message?: string
+}
+
+export interface RequestRetentionPreview {
+  retention_days: number
+  cutoff_date: string
+  request_count: number
+  request_body_bytes: number
+  response_body_bytes: number
+  total_body_bytes: number
+  affected_dates: number
+  daily_stats_count: number
+  confirmation_token: string
+  confirmation_expires_in: number
+}
+
+export async function fetchRequestRetention(): Promise<RequestRetentionConfig> {
+  const { data } = await api.get('/api/requests/retention')
+  return data
+}
+
+export async function previewRequestRetention(
+  retention_days: number,
+): Promise<RequestRetentionPreview> {
+  const { data } = await api.post('/api/requests/retention/preview', { retention_days })
+  return data
+}
+
+export async function updateRequestRetention(values: {
+  enabled: boolean
+  retention_days: number
+  confirmation_token?: string
+}): Promise<RequestRetentionConfig> {
+  const { data } = await api.put('/api/requests/retention', values)
+  return data
+}
+
 export async function fetchLatencyDistribution(params: {
   start_date?: string
   end_date?: string

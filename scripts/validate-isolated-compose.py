@@ -75,12 +75,27 @@ def validate(config: dict[str, Any]) -> None:
             raise IsolationError(f"{service_name} 网络连接异常: {sorted(attached_networks)}")
 
         for mount in service.get("volumes", []):
+            if mount.get("type") == "bind":
+                allowed_socket = (
+                    service_name == "dashboard"
+                    and mount.get("source") == "/var/run/docker.sock"
+                    and mount.get("target") == "/var/run/docker.sock"
+                    and mount.get("read_only") is True
+                )
+                if allowed_socket:
+                    continue
+                raise IsolationError(f"{service_name} 不允许该 bind mount: {mount}")
             if mount.get("type") != "volume":
-                raise IsolationError(f"{service_name} 不允许 bind mount: {mount}")
+                raise IsolationError(f"{service_name} 挂载类型异常: {mount}")
             source = mount.get("source")
             resolved = config.get("volumes", {}).get(source, {}).get("name")
             if resolved not in EXPECTED_VOLUMES:
                 raise IsolationError(f"{service_name} 使用了非隔离卷: {resolved!r}")
+
+        if service_name == "dashboard":
+            environment = service.get("environment", {})
+            if environment.get("HEIMDALL_PROXY_CONTAINER_NAME") != "heimdall-refinement-proxy":
+                raise IsolationError("隔离 Dashboard 必须只控制 heimdall-refinement-proxy")
 
         published_ports = {str(item.get("published")) for item in service.get("ports", [])}
         if published_ports & FORBIDDEN_PRODUCTION_PORTS:
@@ -105,7 +120,7 @@ def main() -> int:
     args = parser.parse_args()
     compose_file = args.compose_file.expanduser().resolve()
     validate(_render_compose(compose_file))
-    print("isolated_compose=ok services=5 ports=19888,18889 production_mounts=0")
+    print("isolated_compose=ok services=5 ports=19888,18889 production_data_mounts=0 docker_socket=dashboard-only")
     return 0
 
 

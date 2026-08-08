@@ -10,15 +10,16 @@
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  Card, Button, Modal, Form, Input, InputNumber,
-  message, Divider,
+  Card, Button, Modal, Form, InputNumber,
+  message, Divider, Tooltip,
 } from 'antd'
 import {
   PlayCircleOutlined, StopOutlined, EditOutlined,
-  ReloadOutlined, SettingOutlined,
+  ReloadOutlined, SettingOutlined, CopyOutlined, CheckOutlined,
 } from '@ant-design/icons'
 import axios from 'axios'
 import { useFilter } from '../../context/FilterContext'
+import { buildProxyBaseUrls } from '../../utils/proxyUrl'
 import styles from './ProxyStatus.module.css'
 
 // ─────────────────────────────────────────────
@@ -26,6 +27,9 @@ import styles from './ProxyStatus.module.css'
 // ─────────────────────────────────────────────
 interface ProxyStatus {
   running: boolean
+  ready?: boolean
+  status?: string
+  health?: string | null
   port: number
   pid: number | null
 }
@@ -37,6 +41,9 @@ interface ProxyConfig {
   upstream_url: string
   request_timeout: number
   autostart_enabled: boolean
+  public_base_url?: string
+  deployment_readonly?: string[]
+  editable_fields?: string[]
 }
 
 const POLL_MS = 10_000
@@ -65,6 +72,49 @@ function VSep() {
   return <div className={styles.vsep} />
 }
 
+function CopyValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = value
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        const copied = document.execCommand('copy')
+        textarea.remove()
+        if (!copied) throw new Error('copy failed')
+      }
+      setCopied(true)
+      message.success('地址已复制')
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
+  return (
+    <span className={styles.copyValue}>
+      <span>{value}</span>
+      <Tooltip title={copied ? '已复制' : '复制地址'}>
+        <button
+          type="button"
+          className={styles.copyButton}
+          onClick={copy}
+          aria-label={copied ? '地址已复制' : '复制地址'}
+        >
+          {copied ? <CheckOutlined /> : <CopyOutlined />}
+        </button>
+      </Tooltip>
+    </span>
+  )
+}
+
 // ─────────────────────────────────────────────
 // 主组件
 // ─────────────────────────────────────────────
@@ -91,7 +141,7 @@ export default function ProxyStatusCard() {
       setStatus(data)
       return data
     } catch {
-      const fallback = { running: false, port: 8888, pid: null }
+      const fallback = { running: false, port: 9888, pid: null }
       setStatus(fallback)
       return fallback
     } finally {
@@ -143,8 +193,9 @@ export default function ProxyStatusCard() {
           } else {
             message.error(data.message || '停止失败')
           }
-        } catch {
-          message.error('停止失败')
+        } catch (err: unknown) {
+          const errMsg = (err as {response?: {data?: {message?: string}}})?.response?.data?.message
+          message.error(errMsg || '停止失败')
         } finally {
           setOperating(false)
         }
@@ -175,8 +226,7 @@ export default function ProxyStatusCard() {
   }
 
   // ── 重启代理 ──────────────────────────────────────────
-  // oldPort: 端口变更场景传入旧端口，先停旧端口进程再启新端口
-  const handleRestart = async (oldPort?: number) => {
+  const handleRestart = async () => {
     setRestarting(true)
     try {
       const { data } = await axios.post('/api/proxy/restart')
@@ -218,7 +268,6 @@ export default function ProxyStatusCard() {
   // ── 编辑弹窗 ──────────────────────────────
   const openEdit = () => {
     editForm.setFieldsValue({
-      proxy_port: cfg?.proxy_port ?? 8888,
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)
@@ -232,86 +281,6 @@ export default function ProxyStatusCard() {
       return // 表单校验失败，不继续
     }
 
-    const portChanged = cfg?.proxy_port !== values.proxy_port
-    const pathChanged = cfg?.proxy_path !== values.proxy_path
-    const oldPort = cfg?.proxy_port
-
-    // ── 端口变更：先弹风险确认弹窗，用户取消则不保存配置 ──
-    if (portChanged) {
-      Modal.confirm({
-        centered: true,
-        title: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: 'var(--color-warning-bg, #fff7e6)',
-              border: '1.5px solid var(--color-warning, #fa8c16)',
-              color: 'var(--color-warning, #fa8c16)',
-              fontSize: 13,
-              fontWeight: 700,
-              flexShrink: 0,
-            }}>!</span>
-            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
-              确认修改代理端口？
-            </span>
-          </div>
-        ),
-        icon: null,
-        width: 420,
-        content: (
-          <div style={{ lineHeight: 1.75, fontSize: 13, paddingTop: 4 }}>
-            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
-              你正在将代理端口从{' '}
-              <strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{oldPort}</strong>{' '}
-              修改为{' '}
-              <strong style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{values.proxy_port as number}</strong>。
-            </p>
-            <div style={{
-              background: 'var(--color-danger-bg, rgba(244,63,94,0.06))',
-              border: '1px solid rgba(244,63,94,0.2)',
-              borderRadius: 8,
-              padding: '10px 12px',
-              color: 'var(--color-danger)',
-              fontSize: 13,
-              lineHeight: 1.7,
-            }}>
-              原端口 <strong style={{ fontWeight: 700 }}>{oldPort}</strong> 将停止服务，所有配置了旧端口的调用方（如 AI 客户端、脚本等）均需更新端口配置，否则请求将失败。
-            </div>
-          </div>
-        ),
-        okText: '立即重启',
-        cancelText: '取消',
-        okButtonProps: { danger: true },
-        // 用户点取消：不保存，弹窗关闭，编辑框保持打开
-        onCancel: () => { /* 什么都不做，保持 editOpen=true */ },
-        onOk: async () => {
-          // 用户确认：才保存配置，再重启
-          setEditSaving(true)
-          try {
-            const { data } = await axios.put('/api/proxy/config', values)
-            if (!data.success) {
-              message.error(data.message || '保存失败')
-              return
-            }
-            await fetchConfig()
-            setEditOpen(false)
-            await handleRestart(oldPort) // 传旧端口，先停旧端口再启新端口
-          } catch {
-            message.error('保存或重启失败，请重试')
-          } finally {
-            setEditSaving(false)
-          }
-        },
-      })
-      return // 弹窗处理，handleEditSave 直接返回
-    }
-
-    // ── 非端口变更：直接保存 ──
     setEditSaving(true)
     try {
       const { data } = await axios.put('/api/proxy/config', values)
@@ -322,22 +291,23 @@ export default function ProxyStatusCard() {
       await fetchConfig()
       setEditOpen(false)
 
-      if (pathChanged && isRunning) {
+      if (data.restart_required && isRunning) {
         Modal.confirm({
           centered: true,
           title: '需要重启代理',
-          content: '代理路径已修改，需重启代理才能生效。是否立即重启？',
+          content: '超时时间已保存，需重启代理才能生效。是否立即重启？',
           okText: '立即重启',
           cancelText: '稍后手动重启',
           onOk: () => handleRestart(),
         })
-      } else if (pathChanged) {
+      } else if (data.restart_required) {
         message.info('配置已保存，下次启动代理时生效')
       } else {
-        message.success('配置已保存，立即生效')
+        message.success(data.message || '配置未变化')
       }
-    } catch {
-      message.error('保存失败，请重试')
+    } catch (err: unknown) {
+      const errMsg = (err as {response?: {data?: {message?: string}}})?.response?.data?.message
+      message.error(errMsg || '保存失败，请重试')
     } finally {
       setEditSaving(false)
     }
@@ -345,8 +315,13 @@ export default function ProxyStatusCard() {
 
   const isRunning = status?.running ?? false
   const autostart = cfg?.autostart_enabled ?? false
-  const proxyAddrOpenAI = cfg ? `localhost:${cfg.proxy_port}/openai` : `localhost:${status?.port ?? 8888}/openai`
-  const proxyAddrAnthropic = cfg ? `localhost:${cfg.proxy_port}/anthropic` : `localhost:${status?.port ?? 8888}/anthropic`
+  const proxyUrls = buildProxyBaseUrls(
+    {
+      proxy_port: cfg?.proxy_port ?? status?.port ?? 9888,
+      public_base_url: cfg?.public_base_url,
+    },
+    window.location,
+  )
 
   const borderColor = isRunning ? 'rgba(16,185,129,0.35)' : 'rgba(244,63,94,0.35)'
   const bgGrad = isRunning ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)'
@@ -467,9 +442,9 @@ export default function ProxyStatusCard() {
 
         {/* ══ 信息行 ═══════════════════════════════════════════ */}
         <div className={styles.infoRow}>
-          <InfoCell label="BaseURL-OpenAI" value={proxyAddrOpenAI} className={styles.infoCellFull} />
+          <InfoCell label="BaseURL-OpenAI" value={<CopyValue value={proxyUrls.openai} />} className={styles.infoCellFull} />
           <VSep />
-          <InfoCell label="BaseURL-Anthropic" value={proxyAddrAnthropic} className={styles.infoCellFull} />
+          <InfoCell label="BaseURL-Anthropic" value={<CopyValue value={proxyUrls.anthropic} />} className={styles.infoCellFull} />
           <VSep />
           {/* 端口三项：超时时间 / 代理端口 / 系统端口 */}
           <div className={styles.portRow}>
@@ -520,43 +495,21 @@ export default function ProxyStatusCard() {
           requiredMark={false}
           style={{ marginTop: 4 }}
         >
-          {/* 代理端口 + 超时时间（同行等宽两列） */}
-          <div style={{ display: 'flex', gap: 12 }}>
-            <Form.Item
-              label="代理端口"
-              name="proxy_port"
-              rules={[
-                { required: true, message: '请输入端口' },
-                { type: 'number', min: 1024, max: 65535, message: '端口范围 1024–65535' },
-              ]}
-              style={{ flex: 1 }}
-            >
-              <InputNumber
-                min={1024}
-                max={65535}
-                style={{ width: '100%' }}
-                placeholder="8888"
-                suffix={<span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>重启生效</span>}
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="超时时间"
-              name="request_timeout"
-              rules={[
-                { required: true, message: '请输入超时时间' },
-                { type: 'number', min: 10, max: 600, message: '范围 10–600 秒' },
-              ]}
-              style={{ flex: 1 }}
-            >
-              <InputNumber
-                min={10}
-                max={600}
-                addonAfter="秒"
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          </div>
+          <Form.Item
+            label="超时时间"
+            name="request_timeout"
+            rules={[
+              { required: true, message: '请输入超时时间' },
+              { type: 'number', min: 10, max: 600, message: '范围 10–600 秒' },
+            ]}
+          >
+            <InputNumber
+              min={10}
+              max={600}
+              addonAfter="秒"
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
 
           {/* 提示信息 */}
           <div style={{
@@ -570,7 +523,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: 'var(--color-info)', fontWeight: 500 }}>💡</span>
-            {' '}超时时间<strong style={{ color: 'var(--text-secondary)' }}>立即生效</strong>；代理端口需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>后生效。
+            {' '}超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；代理端口和系统端口由部署配置管理，此处只读。
           </div>
         </Form>
       </Modal>

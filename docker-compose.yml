@@ -31,10 +31,14 @@ services:
       - HEIMDALL_TIMEOUT=${HEIMDALL_TIMEOUT:-120}
       - TZ=Asia/Shanghai
       - HEIMDALL_PROXY_EXTERNAL_PORT=${PROXY_PORT:-9888}
+      - HEIMDALL_PROXY_HOST=heimdall-proxy
+      - HEIMDALL_PROXY_CONTAINER_NAME=heimdall-proxy
+      - HEIMDALL_PUBLIC_BASE_URL=${HEIMDALL_PUBLIC_BASE_URL:-}
+      - HEIMDALL_RETENTION_WORKER_ENABLED=false
     networks:
       - heimdall-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8888/api/proxy/status', timeout=2); assert r.status == 200"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -56,7 +60,6 @@ services:
       - heimdall-data:/data
       - heimdall-logs:/logs
       - /var/run/docker.sock:/var/run/docker.sock:ro  # 挂载 Docker socket，允许管理容器
-      - /volume2/Project/Heimdall:/app/project:ro  # 挂载项目目录（compose 文件）
     environment:
       - HEIMDALL_DATA_DIR=/data
       - HEIMDALL_LOG_DIR=/logs
@@ -65,10 +68,17 @@ services:
       - HEIMDALL_LOG_BACKUP_DAYS=${HEIMDALL_LOG_BACKUP_DAYS:-30}
       - DOCKER_HOST=unix:///var/run/docker.sock  # Docker API 地址
       - TZ=Asia/Shanghai
+      - HEIMDALL_PROXY_HOST=heimdall-proxy
+      - HEIMDALL_PROXY_CONTAINER_NAME=heimdall-proxy
+      - HEIMDALL_PROXY_EXTERNAL_PORT=${PROXY_PORT:-9888}
+      - HEIMDALL_DASHBOARD_EXTERNAL_PORT=${DASHBOARD_PORT:-8889}
+      - HEIMDALL_PUBLIC_BASE_URL=${HEIMDALL_PUBLIC_BASE_URL:-}
+      - HEIMDALL_RETENTION_WORKER_ENABLED=true
+      - HEIMDALL_RETENTION_BATCH_SIZE=${HEIMDALL_RETENTION_BATCH_SIZE:-500}
     networks:
       - heimdall-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8889)); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8889/api/proxy/status', timeout=2); assert r.status == 200"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -280,6 +280,40 @@
   line-height: 1.4;
 }
 
+.copyValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.copyValue > span:first-child {
+  overflow-wrap: anywhere;
+}
+
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.copyButton:hover,
+.copyButton:focus-visible {
+  color: var(--accent-blue);
+  background: rgba(14, 165, 233, 0.08);
+  outline: none;
+}
+
 .portCell {
   flex: 0 0 auto;
   min-width: 120px;

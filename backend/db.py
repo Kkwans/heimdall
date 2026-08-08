@@ -136,6 +136,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_provider_id ON requests(provider_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_provider_api_key_id ON requests(provider_api_key_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_stat_date ON requests(stat_eligible, date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_retention_date_id ON requests(date, id)")
 
         conn.commit()
     except Exception as e:

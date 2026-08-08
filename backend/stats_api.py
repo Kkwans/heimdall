@@ -2,16 +2,55 @@ import os
 import sys
 import signal
 import subprocess
+import tempfile
+import threading
 from datetime import date, timedelta
 from typing import Optional
 from flask import Blueprint, request, jsonify, send_from_directory, send_file, Response, stream_with_context
 
 import db
 import config
+from services.docker_service import (
+    DockerControlError,
+    DockerControlTimeout,
+    DockerService,
+)
+from services.request_retention import (
+    RequestRetentionService,
+    RetentionConfirmationError,
+    RetentionError,
+    RetentionValidationError,
+)
 
 stats_bp = Blueprint('stats', __name__)
 # dashboard_bp：仅在 Dashboard 进程（8889）上注册，代理进程（8888）不服务静态文件
 dashboard_bp = Blueprint('dashboard', __name__)
+
+_retention_service_lock = threading.Lock()
+_retention_service: Optional[RequestRetentionService] = None
+_retention_service_path = ""
+
+
+def get_request_retention_service() -> RequestRetentionService:
+    """Return one token-preserving service instance for the active DB path."""
+    global _retention_service, _retention_service_path
+    database_path = os.path.abspath(config.DB_PATH)
+    with _retention_service_lock:
+        if _retention_service is None or _retention_service_path != database_path:
+            _retention_service = RequestRetentionService(
+                database_path,
+                batch_size=getattr(config, "RETENTION_BATCH_SIZE", 500),
+            )
+            _retention_service_path = database_path
+        return _retention_service
+
+
+def get_docker_service() -> DockerService:
+    return DockerService(
+        container_name=getattr(config, "PROXY_CONTAINER_NAME", "heimdall-proxy"),
+        proxy_host=getattr(config, "PROXY_HOST", "heimdall-proxy"),
+        proxy_port=8888,
+    )
 
 
 # ==========================================
@@ -139,6 +178,71 @@ def requests_list():
         return _cors_response(data)
     except Exception as e:
         return _cors_response({"error": str(e)}, 500)
+
+
+@stats_bp.route("/api/requests/retention", methods=["GET", "OPTIONS"])
+def request_retention_get():
+    """Return disabled-by-default request retention settings and last run state."""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    try:
+        data = get_request_retention_service().get_config()
+        data.update({
+            "min_days": 1,
+            "max_days": 3650,
+            "schedule": "每日 00:15（Asia/Shanghai）",
+            "vacuum_enabled": False,
+        })
+        return _cors_response(data)
+    except RetentionError as exc:
+        return _cors_response({"error": str(exc)}, 503)
+
+
+@stats_bp.route("/api/requests/retention/preview", methods=["POST", "OPTIONS"])
+def request_retention_preview():
+    """Preview expired rows/body bytes and issue a short-lived confirmation."""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return _cors_response({"error": "请求体必须为 JSON 对象"}, 400)
+    try:
+        result = get_request_retention_service().preview(body.get("retention_days"))
+        return _cors_response(result)
+    except RetentionValidationError as exc:
+        return _cors_response({"error": str(exc)}, 400)
+    except RetentionError as exc:
+        return _cors_response({"error": str(exc)}, 503)
+
+
+@stats_bp.route("/api/requests/retention", methods=["PUT", "OPTIONS"])
+def request_retention_put():
+    """Save retention settings without deleting rows immediately."""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return _cors_response({"success": False, "error": "请求体必须为 JSON 对象"}, 400)
+    try:
+        result = get_request_retention_service().update_config(
+            enabled=body.get("enabled"),
+            retention_days=body.get("retention_days"),
+            confirmation_token=body.get("confirmation_token"),
+        )
+        result.update({
+            "success": True,
+            "cleanup_started": False,
+            "message": (
+                "请求记录自动清理已启用，将从下一次每日任务开始执行"
+                if result["enabled"]
+                else "请求记录自动清理已关闭"
+            ),
+        })
+        return _cors_response(result)
+    except (RetentionValidationError, RetentionConfirmationError) as exc:
+        return _cors_response({"success": False, "error": str(exc)}, 400)
+    except RetentionError as exc:
+        return _cors_response({"success": False, "error": str(exc)}, 503)
 
 
 @stats_bp.route("/api/stats/latency_distribution", methods=["GET", "OPTIONS"])
@@ -665,185 +769,87 @@ def api_key_daily():
 
 
 # ==========================================
-# v4 新增：代理状态控制接口
+# 代理状态与固定容器控制接口
 # ==========================================
 
-def _get_port_pid(port: int):
-    """检测指定端口是否被监听，返回 PID 或 None。"""
+def _proxy_socket_ready() -> bool:
+    """Protocol-process fallback when Docker CLI is intentionally unavailable."""
     import socket as _socket
+    proxy_host = getattr(config, "PROXY_HOST", "heimdall-proxy")
     try:
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            if s.connect_ex(('127.0.0.1', port)) == 0:
-                return 1
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as sock:
+            sock.settimeout(2)
+            return sock.connect_ex((proxy_host, 8888)) == 0
     except Exception:
-        pass
-    return None
+        return False
 
 
 @stats_bp.route("/api/proxy/status", methods=["GET", "OPTIONS"])
 def proxy_status():
-    """检测代理服务运行状态（通过 Docker 网络连接代理容器）"""
+    """Return Docker state plus HTTP readiness when Dashboard can inspect it."""
     if request.method == "OPTIONS":
         return _cors_response({})
-    
-    # 在 Docker 环境中，通过容器名连接代理服务
-    import socket as _socket
-    proxy_host = getattr(config, 'PROXY_HOST', 'heimdall-proxy')
-    proxy_port = 8888  # 代理容器内部端口固定为 8888
-    
-    running = False
+
     try:
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-            s.settimeout(2)
-            if s.connect_ex((proxy_host, proxy_port)) == 0:
-                running = True
-    except Exception:
-        pass
-    
-    return _cors_response({
-        "running": running,
-        "port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
+        status = get_docker_service().get_status()
+        status["control_available"] = True
+    except DockerControlError:
+        running = _proxy_socket_ready()
+        status = {
+            "running": running,
+            "ready": running,
+            "status": "running" if running else "unknown",
+            "health": None,
+            "control_available": False,
+        }
+    status.update({
+        "port": getattr(config, "PROXY_EXTERNAL_PORT", 9888),
         "pid": None,
     })
+    return _cors_response(status)
+
+
+def _control_proxy(action: str):
+    messages = {
+        "start": "代理服务已启动并通过健康检查",
+        "stop": "代理服务已停止",
+        "restart": "代理服务已重启并通过健康检查",
+    }
+    try:
+        result = get_docker_service().control(action)
+        return _cors_response({
+            "success": True,
+            "message": messages[action],
+            "state": result,
+        })
+    except DockerControlTimeout as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 504)
+    except DockerControlError as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 500)
 
 
 @stats_bp.route("/api/proxy/stop", methods=["POST", "OPTIONS"])
 def proxy_stop():
-    """停止代理服务（通过 Docker API）"""
+    """Stop only the fixed allowlisted Heimdall Proxy container."""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-    
-    try:
-        compose_path = "/app/project/docker-compose.yml"
-        if os.path.isfile(compose_path):
-            result = subprocess.run(
-                ["docker", "compose", "-f", compose_path, "stop", "proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-        else:
-            result = subprocess.run(
-                ["docker", "stop", "heimdall-proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-        if result.returncode == 0:
-            return _cors_response({"success": True, "message": "代理服务已停止"})
-        else:
-            return _cors_response({"success": False, "message": f"停止失败: {result.stderr}"}, 500)
-    except subprocess.TimeoutExpired:
-        return _cors_response({"success": False, "message": "停止超时"}, 500)
-    except Exception as e:
-        return _cors_response({"success": False, "message": f"停止失败: {str(e)}"}, 500)
+        return _cors_response({})
+    return _control_proxy("stop")
 
 
 @stats_bp.route("/api/proxy/start", methods=["POST", "OPTIONS"])
 def proxy_start():
-    """启动代理服务（通过 Docker API）"""
+    """Start only the fixed allowlisted Heimdall Proxy container."""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-    
-    try:
-        compose_path = "/app/project/docker-compose.yml"
-        if os.path.isfile(compose_path):
-            result = subprocess.run(
-                ["docker", "compose", "-f", compose_path, "up", "-d", "proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-        else:
-            result = subprocess.run(
-                ["docker", "start", "heimdall-proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-        if result.returncode == 0:
-            # 等待容器启动
-            import time as _time
-            _time.sleep(2)
-            return _cors_response({"success": True, "message": "代理服务已启动"})
-        else:
-            return _cors_response({"success": False, "message": f"启动失败: {result.stderr}"}, 500)
-    except subprocess.TimeoutExpired:
-        return _cors_response({"success": False, "message": "启动超时"}, 500)
-    except Exception as e:
-        return _cors_response({"success": False, "message": f"启动失败: {str(e)}"}, 500)
+        return _cors_response({})
+    return _control_proxy("start")
 
 
 @stats_bp.route("/api/proxy/restart", methods=["POST", "OPTIONS"])
 def proxy_restart():
-    """重启代理服务（通过 Docker API）"""
+    """Restart only the fixed allowlisted Heimdall Proxy container."""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-    
-    try:
-        # 检查端口是否变更：对比 runtime config 和当前容器端口
-        cfg = _load_runtime_config()
-        new_port = cfg.get("proxy_port")
-        
-        compose_path = "/app/project/docker-compose.yml"
-        
-        # 如果有新端口且 compose 文件存在，用 docker compose 重建容器
-        if new_port and os.path.isfile(compose_path):
-            # 更新 compose 文件中的端口映射
-            import re
-            with open(compose_path, 'r') as f:
-                content = f.read()
-            content = re.sub(
-                r'"\d+:8888"',
-                f'"{new_port}:8888"',
-                content,
-                count=1
-            )
-            with open(compose_path, 'w') as f:
-                f.write(content)
-            
-            # 用 docker compose 重建
-            result = subprocess.run(
-                ["docker", "compose", "-f", compose_path, "up", "-d", "--force-recreate", "proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-            if result.returncode == 0:
-                import time as _time
-                _time.sleep(3)
-                return _cors_response({"success": True, "message": f"代理服务已重启（端口 {new_port}）"})
-            else:
-                return _cors_response({"success": False, "message": f"重启失败: {result.stderr}"}, 500)
-        
-        # 普通重启（无端口变更）
-        result = subprocess.run(
-            ["docker", "compose", "-f", compose_path, "restart", "proxy"],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0:
-            import time as _time
-            _time.sleep(3)
-            return _cors_response({"success": True, "message": "代理服务已重启"})
-        else:
-            # 降级：直接 docker restart
-            result2 = subprocess.run(
-                ["docker", "restart", "heimdall-proxy"],
-                capture_output=True, text=True, timeout=30
-            )
-            if result2.returncode == 0:
-                import time as _time
-                _time.sleep(3)
-                return _cors_response({"success": True, "message": "代理服务已重启"})
-            else:
-                return _cors_response({"success": False, "message": f"重启失败: {result2.stderr}"}, 500)
-    except subprocess.TimeoutExpired:
-        return _cors_response({"success": False, "message": "重启超时"}, 500)
-    except Exception as e:
-        return _cors_response({"success": False, "message": f"重启失败: {str(e)}"}, 500)
+        return _cors_response({})
+    return _control_proxy("restart")
 
 
 # ==========================================
@@ -880,8 +886,6 @@ def _load_runtime_config() -> dict:
     cfg_path = _get_config_path()
     defaults = {
         "upstream_url": getattr(config, 'TARGET_BASE_URL', ''),
-        "proxy_port": config.PROXY_PORT,
-        "dashboard_port": getattr(config, 'DASHBOARD_PORT', 8889),
         "proxy_path": getattr(config, 'PROXY_PATH', '/v1/openai/native'),
         "request_timeout": config.REQUEST_TIMEOUT,
     }
@@ -890,157 +894,161 @@ def _load_runtime_config() -> dict:
             import json
             with open(cfg_path, 'r') as f:
                 saved = json.load(f)
-            defaults.update(saved)
+            for field in ("upstream_url", "proxy_path", "request_timeout", "log_retention_days"):
+                if field in saved:
+                    defaults[field] = saved[field]
         except Exception:
             pass
     return defaults
 
 
 def _save_runtime_config(data: dict):
-    """保存运行时可编辑配置"""
+    """Atomically save runtime config without exposing a partial JSON file."""
     import json
     cfg_path = _get_config_path()
     existing = _load_runtime_config()
     existing.update(data)
-    with open(cfg_path, 'w') as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(cfg_path)
+    os.makedirs(directory, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=directory,
+            prefix=".runtime-config-",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = temporary.name
+            json.dump(existing, temporary, indent=2, ensure_ascii=False)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, cfg_path)
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
 
 @stats_bp.route("/api/proxy/config", methods=["GET", "OPTIONS"])
 def proxy_config_get():
-    """查询代理完整配置：代理端口、路径、上游地址、超时、自启状态"""
+    """Return runtime settings and deployment-only port/public URL metadata."""
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
-    
-    # 获取 Docker restart policy
+
     autostart_enabled = False
     try:
-        result = subprocess.run(
-            ["docker", "inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}", "heimdall-proxy"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            policy = result.stdout.strip()
-            autostart_enabled = policy in ("unless-stopped", "always", "on-failure")
-    except Exception:
+        policy = get_docker_service().restart_policy()
+        autostart_enabled = policy in ("unless-stopped", "always", "on-failure")
+    except DockerControlError:
         pass
-    
+
     return _cors_response({
         "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
-        "dashboard_port": 8889,
+        "dashboard_port": getattr(config, 'DASHBOARD_EXTERNAL_PORT', 8889),
         "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/chat/completions')),
         "upstream_url": cfg.get("upstream_url", ""),
-        "request_timeout": cfg.get("request_timeout", config.REQUEST_TIMEOUT),
+        "request_timeout": int(cfg.get("request_timeout", config.REQUEST_TIMEOUT)),
         "autostart_enabled": autostart_enabled,
+        "public_base_url": getattr(config, "PUBLIC_BASE_URL", ""),
+        "deployment_readonly": ["proxy_port", "dashboard_port", "public_base_url"],
+        "editable_fields": ["request_timeout"],
     })
 
 
 @stats_bp.route("/api/proxy/config", methods=["PUT", "OPTIONS"])
 def proxy_config_put():
-    """更新代理配置（upstream_url / proxy_path / proxy_port / request_timeout）"""
+    """Save runtime-safe fields and state restart semantics explicitly."""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "PUT, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
+        return _cors_response({})
     try:
         body = request.get_json(silent=True) or {}
-        allowed = {"upstream_url", "proxy_path", "request_timeout"}
-        to_save = {k: v for k, v in body.items() if k in allowed}
+        if not isinstance(body, dict):
+            return _cors_response({"success": False, "message": "请求体必须为 JSON 对象"}, 400)
+        deployment_only = {
+            "proxy_port", "dashboard_port", "public_base_url",
+        }
+        attempted = sorted(deployment_only.intersection(body))
+        if attempted:
+            return _cors_response({
+                "success": False,
+                "message": "部署端口和公共地址为只读，请通过 Compose 或部署配置修改",
+                "readonly_fields": attempted,
+            }, 400)
 
-        # 端口变更需要特殊处理：更新 docker-compose.yml 并重建容器
-        new_port = body.get("proxy_port")
-        if new_port is not None:
-            new_port = int(new_port)
-            if new_port < 1024 or new_port > 65535:
-                return _cors_response({"success": False, "message": "端口范围 1024-65535"}, 400)
-            # 保存到 runtime config
-            to_save["proxy_port"] = new_port
+        allowed = {"request_timeout", "upstream_url", "proxy_path"}
+        unknown = sorted(set(body) - allowed)
+        if unknown:
+            return _cors_response({
+                "success": False,
+                "message": "包含不支持的配置字段",
+                "unsupported_fields": unknown,
+            }, 400)
+
+        current = _load_runtime_config()
+        to_save = {}
+        if "request_timeout" in body:
+            try:
+                timeout = int(body["request_timeout"])
+            except (TypeError, ValueError):
+                return _cors_response({"success": False, "message": "超时时间必须为整数"}, 400)
+            if not 10 <= timeout <= 600:
+                return _cors_response({"success": False, "message": "超时时间范围 10-600 秒"}, 400)
+            to_save["request_timeout"] = timeout
+        for field in ("upstream_url", "proxy_path"):
+            if field in body:
+                value = body[field]
+                if not isinstance(value, str):
+                    return _cors_response({"success": False, "message": f"{field} 必须为字符串"}, 400)
+                to_save[field] = value.strip()
 
         if not to_save:
             return _cors_response({"success": False, "message": "无有效字段"}, 400)
 
-        _save_runtime_config(to_save)
-        # 同步到 config 模块内存
-        if "upstream_url" in to_save:
-            config.TARGET_BASE_URL = to_save["upstream_url"]
-        if "proxy_path" in to_save:
-            config.PROXY_PATH = to_save["proxy_path"]
-        if "request_timeout" in to_save:
-            config.REQUEST_TIMEOUT = int(to_save["request_timeout"])
-
-        # 端口变更：更新 docker-compose.yml 中的端口映射
-        if new_port is not None:
-            try:
-                compose_path = "/app/project/docker-compose.yml"
-                if os.path.isfile(compose_path):
-                    import re
-                    with open(compose_path, 'r') as f:
-                        content = f.read()
-                    # 替换 proxy 端口映射
-                    content = re.sub(
-                        r'"\d+:8888"',
-                        f'"{new_port}:8888"',
-                        content,
-                        count=1
-                    )
-                    with open(compose_path, 'w') as f:
-                        f.write(content)
-            except Exception as e:
-                return _cors_response({"success": False, "message": f"更新 compose 失败: {str(e)}"}, 500)
-
-        return _cors_response({"success": True, "message": "配置已更新，重启代理后完全生效"})
-    except Exception as e:
-        return _cors_response({"success": False, "message": str(e)}, 500)
+        changed_fields = sorted(
+            field for field, value in to_save.items() if current.get(field) != value
+        )
+        if changed_fields:
+            _save_runtime_config(to_save)
+        restart_required = bool(changed_fields)
+        return _cors_response({
+            "success": True,
+            "changed_fields": changed_fields,
+            "restart_required": restart_required,
+            "message": (
+                "配置已保存，重启代理后生效"
+                if restart_required
+                else "配置未变化"
+            ),
+        })
+    except (OSError, ValueError) as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 500)
 
 
 @stats_bp.route("/api/proxy/autostart/install", methods=["POST", "OPTIONS"])
 def proxy_autostart_install():
     """开启开机自启（设置 Docker restart policy 为 unless-stopped）"""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-    
+        return _cors_response({})
     try:
-        # 使用 docker update 修改 restart policy
-        result = subprocess.run(
-            ["docker", "update", "--restart=unless-stopped", "heimdall-proxy"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return _cors_response({"success": True, "message": "开机自启已开启（restart: unless-stopped）"})
-        else:
-            return _cors_response({"success": False, "message": f"设置失败: {result.stderr}"}, 500)
-    except Exception as e:
-        return _cors_response({"success": False, "message": f"设置失败: {str(e)}"}, 500)
+        get_docker_service().set_restart_policy(True)
+        return _cors_response({"success": True, "message": "开机自启已开启（restart: unless-stopped）"})
+    except DockerControlError as exc:
+        return _cors_response({"success": False, "message": f"设置失败: {exc}"}, 500)
 
 
 @stats_bp.route("/api/proxy/autostart/uninstall", methods=["POST", "OPTIONS"])
 def proxy_autostart_uninstall():
     """关闭开机自启（设置 Docker restart policy 为 no）"""
     if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-    
+        return _cors_response({})
     try:
-        result = subprocess.run(
-            ["docker", "update", "--restart=no", "heimdall-proxy"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return _cors_response({"success": True, "message": "开机自启已关闭"})
-        else:
-            return _cors_response({"success": False, "message": f"设置失败: {result.stderr}"}, 500)
-    except Exception as e:
-        return _cors_response({"success": False, "message": f"设置失败: {str(e)}"}, 500)
+        get_docker_service().set_restart_policy(False)
+        return _cors_response({"success": True, "message": "开机自启已关闭"})
+    except DockerControlError as exc:
+        return _cors_response({"success": False, "message": f"设置失败: {exc}"}, 500)
 
 
 # ==========================================

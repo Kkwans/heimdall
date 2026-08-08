@@ -153,11 +153,6 @@ proxy_logger = setup_logger("proxy", "proxy-business.log")
 system_logger = setup_logger("system", "proxy-system.log", level=logging.DEBUG)
 # 让 system_logger 同时能记录 ERROR 级别（默认 DEBUG 已覆盖，此处明确）
 
-# 启动时补充归档：修复跨天未归档的历史日志
-_archive_missed_log_days("proxy-business.log")
-_archive_missed_log_days("proxy-system.log")
-
-
 def _start_midnight_archiver():
     """
     后台线程：每天零点自动触发日志归档。
@@ -185,7 +180,19 @@ def _start_midnight_archiver():
     t.start()
 
 
-_start_midnight_archiver()
+_proxy_background_started = False
+
+
+def _start_proxy_background_tasks() -> bool:
+    """Start log maintenance only from the explicit Proxy process."""
+    global _proxy_background_started
+    if _proxy_background_started:
+        return False
+    _proxy_background_started = True
+    _archive_missed_log_days("proxy-business.log")
+    _archive_missed_log_days("proxy-system.log")
+    _start_midnight_archiver()
+    return True
 
 
 # 将控制台输出重定向到日志记录器
@@ -265,6 +272,8 @@ if os.path.isfile(_rt_cfg_path):
             config.TARGET_BASE_URL = _rt["upstream_url"]
         if "request_timeout" in _rt:
             config.REQUEST_TIMEOUT = int(_rt["request_timeout"])
+        if "proxy_path" in _rt:
+            config.PROXY_PATH = str(_rt["proxy_path"])
         if "log_retention_days" in _rt:
             config.LOG_BACKUP_DAYS = int(_rt["log_retention_days"])
     except Exception:
@@ -962,6 +971,7 @@ if __name__ == '__main__':
         # 在 Docker 中，内部端口始终是 8888（由 Dockerfile 定义）
         # 外部端口映射由 docker-compose.yml 控制
         config.PROXY_PORT = 8888  # 强制使用容器内部端口
+        _start_proxy_background_tasks()
         system_logger.info(f"代理服务启动 → 宿主机端口 {getattr(config, 'PROXY_EXTERNAL_PORT', config.PROXY_PORT)}")
         app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
 
@@ -986,6 +996,13 @@ if __name__ == '__main__':
         dashboard_app.register_blueprint(_stats_bp)
         dashboard_app.register_blueprint(_dashboard_bp)
         dashboard_app.register_blueprint(_admin_bp)
+        if getattr(config, "RETENTION_WORKER_ENABLED", False):
+            from services.request_retention import start_retention_worker
+            from stats_api import get_request_retention_service
+            start_retention_worker(
+                get_request_retention_service(),
+                logger=system_logger,
+            )
         system_logger.info(f"Dashboard 服务启动 → 宿主机端口 {getattr(config, 'DASHBOARD_EXTERNAL_PORT', config.DASHBOARD_PORT)}")
         dashboard_app.run(host='0.0.0.0', port=config.DASHBOARD_PORT, threaded=True, use_reloader=False)
 
@@ -1010,6 +1027,7 @@ if __name__ == '__main__':
             proxy_logger.info(f"Dashboard 进程已在运行（端口 {config.DASHBOARD_PORT}）")
 
         # 主进程运行代理
+        _start_proxy_background_tasks()
         proxy_logger.info(f"代理进程启动 (PID {os.getpid()})")
         app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
         proxy_logger.info("代理进程退出，Dashboard 继续运行中...")

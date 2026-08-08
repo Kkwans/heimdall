@@ -1,12 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Descriptions, Divider, Spin, Empty, Collapse } from 'antd'
+import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Descriptions, Divider, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
 import { SpinRing, TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import type { SorterResult } from 'antd/es/table/interface'
-import { EyeOutlined } from '@ant-design/icons'
+import { EyeOutlined, SettingOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { fetchRequests, fetchModelList, fetchRequestDetail } from '../api/stats'
+import {
+  fetchRequests,
+  fetchModelList,
+  fetchRequestDetail,
+  fetchRequestRetention,
+  previewRequestRetention,
+  updateRequestRetention,
+} from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useStableData } from '../hooks/useStableData'
 import { useTheme } from '../context/ThemeContext'
@@ -603,6 +610,13 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
 // ──────────────────────────────────────────
 // 主页面
 // ──────────────────────────────────────────
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GiB`
+}
+
 export default function Requests() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
 
@@ -617,7 +631,91 @@ export default function Requests() {
   const [detailId, setDetailId] = useState<number | null>(null)
   const [sortBy, setSortBy] = useState<string>('created_at')
   const [sortOrder, setSortOrder] = useState<string>('desc')
+  const [retentionOpen, setRetentionOpen] = useState(false)
+  const [retentionLoading, setRetentionLoading] = useState(false)
+  const [retentionSaving, setRetentionSaving] = useState(false)
+  const [retentionLastRun, setRetentionLastRun] = useState<string | null>(null)
+  const [retentionLastError, setRetentionLastError] = useState<string | null>(null)
+  const [retentionForm] = Form.useForm()
+  const retentionEnabled = Form.useWatch<boolean>('enabled', retentionForm)
   const { setIfChanged } = useStableData()
+
+  const openRetentionSettings = async () => {
+    setRetentionOpen(true)
+    setRetentionLoading(true)
+    try {
+      const config = await fetchRequestRetention()
+      retentionForm.setFieldsValue({
+        enabled: config.enabled,
+        retention_days: config.retention_days,
+      })
+      setRetentionLastRun(config.last_run_at)
+      setRetentionLastError(config.last_error)
+    } catch (err: unknown) {
+      const error = (err as {response?: {data?: {error?: string}}})?.response?.data?.error
+      message.error(error || '读取请求保留设置失败')
+      setRetentionOpen(false)
+    } finally {
+      setRetentionLoading(false)
+    }
+  }
+
+  const saveRetentionSettings = async () => {
+    let values: { enabled: boolean; retention_days: number }
+    try {
+      values = await retentionForm.validateFields()
+    } catch {
+      return
+    }
+
+    const persist = async (confirmationToken?: string) => {
+      setRetentionSaving(true)
+      try {
+        const result = await updateRequestRetention({
+          ...values,
+          confirmation_token: confirmationToken,
+        })
+        message.success(result.message || '请求保留设置已保存')
+        setRetentionOpen(false)
+      } catch (err: unknown) {
+        const error = (err as {response?: {data?: {error?: string}}})?.response?.data?.error
+        message.error(error || '保存请求保留设置失败')
+      } finally {
+        setRetentionSaving(false)
+      }
+    }
+
+    if (!values.enabled) {
+      await persist()
+      return
+    }
+
+    setRetentionSaving(true)
+    try {
+      const preview = await previewRequestRetention(values.retention_days)
+      Modal.confirm({
+        centered: true,
+        title: '确认启用请求自动清理？',
+        width: 460,
+        content: (
+          <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+            <p>将保留最近 <strong>{preview.retention_days}</strong> 天的请求记录。</p>
+            <p>下次每日任务预计删除 <strong>{preview.request_count.toLocaleString()}</strong> 条记录，正文约 <strong>{formatBytes(preview.total_body_bytes)}</strong>。</p>
+            <p style={{ color: 'var(--text-muted)' }}>截止日期：{preview.cutoff_date} 之前；保存后不会立即删除，也不会自动执行 VACUUM。</p>
+          </div>
+        ),
+        okText: '确认启用',
+        okButtonProps: { danger: preview.request_count > 0 },
+        cancelText: '取消',
+        onOk: () => persist(preview.confirmation_token),
+      })
+    } catch (err: unknown) {
+      const error = (err as {response?: {data?: {error?: string}}})?.response?.data?.error
+      message.error(error || '生成清理预览失败')
+    } finally {
+      setRetentionSaving(false)
+    }
+  }
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -915,6 +1013,14 @@ export default function Requests() {
             extra={
               !isMobile ? (
                 <div style={{ display: 'flex', gap: 8 }}>
+                  <Tooltip title="请求保留设置">
+                    <Button
+                      size="small"
+                      icon={<SettingOutlined />}
+                      onClick={openRetentionSettings}
+                      aria-label="请求保留设置"
+                    />
+                  </Tooltip>
                   <Select
                     size="small"
                     value={modelFilter}
@@ -945,6 +1051,18 @@ export default function Requests() {
             className="hd-card"
             style={{ borderRadius: 6, overflow: 'hidden' }}
           >
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <Tooltip title="请求保留设置">
+                  <Button
+                    size="small"
+                    icon={<SettingOutlined />}
+                    onClick={openRetentionSettings}
+                    aria-label="请求保留设置"
+                  />
+                </Tooltip>
+              </div>
+            )}
             {/* 筛选组件：独立一行，解决标题被遮挡问题 */}
             {/* 移动端：筛选框独立一行，各占约 50% 宽度 */}
             {isMobile && (
@@ -1024,6 +1142,59 @@ export default function Requests() {
           </Card>
         </section>
       </div>
+
+      <Modal
+        title="请求记录保留"
+        open={retentionOpen}
+        onOk={saveRetentionSettings}
+        onCancel={() => setRetentionOpen(false)}
+        okText={retentionEnabled ? '预览并保存' : '保存设置'}
+        cancelText="取消"
+        confirmLoading={retentionSaving}
+        width={480}
+        destroyOnClose={false}
+      >
+        <Spin spinning={retentionLoading}>
+          <Form
+            form={retentionForm}
+            layout="vertical"
+            requiredMark={false}
+            initialValues={{ enabled: false, retention_days: 30 }}
+          >
+            <Form.Item
+              label="自动清理"
+              name="enabled"
+              valuePropName="checked"
+              tooltip="默认关闭；启用后由每日任务分批处理"
+            >
+              <Switch checkedChildren="已启用" unCheckedChildren="已关闭" />
+            </Form.Item>
+            <Form.Item
+              label="保留天数"
+              name="retention_days"
+              rules={[
+                { required: true, message: '请输入保留天数' },
+                { type: 'number', min: 1, max: 3650, message: '范围 1–3650 天' },
+              ]}
+            >
+              <InputNumber min={1} max={3650} addonAfter="天" style={{ width: '100%' }} />
+            </Form.Item>
+          </Form>
+
+          <Alert
+            type="warning"
+            showIcon
+            message="请求和响应正文会完整保存，可能包含敏感数据并持续占用数据库空间。"
+            description="启用前会预览预计删除条数和正文大小，并再次确认；保存设置不会立即删除，也不会自动执行 VACUUM。"
+          />
+
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+            <div>执行时间：每日 00:15（Asia/Shanghai）</div>
+            {retentionLastRun && <div>上次执行：{retentionLastRun}</div>}
+            {retentionLastError && <div style={{ color: 'var(--color-danger)' }}>上次错误：{retentionLastError}</div>}
+          </div>
+        </Spin>
+      </Modal>
 
       <RequestDetailModal recordId={detailId} onClose={() => {
         setDetailId(null)

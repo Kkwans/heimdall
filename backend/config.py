@@ -67,11 +67,27 @@ PROXY_HOST = os.getenv("HEIMDALL_PROXY_HOST", "heimdall-proxy")
 # 代理服务外部端口（Docker 映射的宿主机端口）
 PROXY_EXTERNAL_PORT = int(os.getenv("HEIMDALL_PROXY_EXTERNAL_PORT", "9888"))
 
+# Dashboard 通过 Docker CLI 只控制这一固定名称；服务层还会执行硬编码 allowlist 校验。
+PROXY_CONTAINER_NAME = os.getenv("HEIMDALL_PROXY_CONTAINER_NAME", "heimdall-proxy")
+
+# 可选的显式公共代理地址，例如 https://gateway.example.com:9888。
+# 为空时由浏览器基于当前 hostname、scheme 和部署端口生成。
+PUBLIC_BASE_URL = os.getenv("HEIMDALL_PUBLIC_BASE_URL", "").strip().rstrip("/")
+
 # ==========================================
 # Dashboard 配置
 # ==========================================
 # 前端构建产物目录（相对于 BASE_DIR）
 DASHBOARD_DIST_DIR = os.path.join(BASE_DIR, "frontend", "dist")
+
+# Dashboard 对外端口只作为部署信息展示，不允许通过应用修改。
+DASHBOARD_EXTERNAL_PORT = int(os.getenv("HEIMDALL_DASHBOARD_EXTERNAL_PORT", "8889"))
+
+# 请求保留任务只由明确的 Dashboard 进程启动。
+RETENTION_WORKER_ENABLED = os.getenv(
+    "HEIMDALL_RETENTION_WORKER_ENABLED", "false"
+).lower() == "true"
+RETENTION_BATCH_SIZE = int(os.getenv("HEIMDALL_RETENTION_BATCH_SIZE", "500"))
 
 # ==========================================
 # 运行时配置文件路径

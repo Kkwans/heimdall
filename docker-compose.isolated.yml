@@ -78,9 +78,12 @@ services:
       HEIMDALL_PROXY_PATH: /v1/chat/completions
       HEIMDALL_TIMEOUT: 10
       HEIMDALL_PROXY_EXTERNAL_PORT: ${HEIMDALL_REFINEMENT_PROXY_PORT:-19888}
+      HEIMDALL_PROXY_HOST: proxy
+      HEIMDALL_PROXY_CONTAINER_NAME: heimdall-refinement-proxy
+      HEIMDALL_RETENTION_WORKER_ENABLED: "false"
       TZ: Asia/Shanghai
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8888/api/proxy/status', timeout=2); assert r.status == 200"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -105,19 +108,25 @@ services:
     volumes:
       - refinement-data:/data
       - refinement-logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       HEIMDALL_DATA_DIR: /data
       HEIMDALL_LOG_DIR: /logs
       HEIMDALL_DASHBOARD_PORT: 8889
       HEIMDALL_PROXY_HOST: proxy
+      HEIMDALL_PROXY_CONTAINER_NAME: heimdall-refinement-proxy
       HEIMDALL_PROXY_EXTERNAL_PORT: ${HEIMDALL_REFINEMENT_PROXY_PORT:-19888}
+      HEIMDALL_DASHBOARD_EXTERNAL_PORT: ${HEIMDALL_REFINEMENT_DASHBOARD_PORT:-18889}
+      HEIMDALL_PUBLIC_BASE_URL: ""
+      HEIMDALL_RETENTION_WORKER_ENABLED: "true"
+      HEIMDALL_RETENTION_BATCH_SIZE: 100
       HEIMDALL_DETAIL_LOG: "false"
       HEIMDALL_LOG_BACKUP_DAYS: 30
       TZ: Asia/Shanghai
     networks:
       - refinement-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8889)); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8889/api/proxy/status', timeout=2); assert r.status == 200"]
       interval: 5s
       timeout: 3s
       retries: 10

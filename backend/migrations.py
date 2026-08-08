@@ -221,10 +221,52 @@ def _migrate_routing_and_request_records(connection: sqlite3.Connection) -> None
     )
 
 
+def _migrate_request_retention(connection: sqlite3.Connection) -> None:
+    """Add disabled-by-default request retention and maintenance locking."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS request_retention_settings (
+            id                       INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled                  BOOLEAN NOT NULL DEFAULT 0
+                                     CHECK (enabled IN (0, 1)),
+            retention_days           INTEGER NOT NULL DEFAULT 30
+                                     CHECK (retention_days BETWEEN 1 AND 3650),
+            updated_at               TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_run_at              TEXT,
+            last_deleted_count       INTEGER NOT NULL DEFAULT 0,
+            last_deleted_body_bytes  INTEGER NOT NULL DEFAULT 0,
+            last_error               TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO request_retention_settings
+            (id, enabled, retention_days)
+        VALUES (1, 0, 30)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS maintenance_locks (
+            name        TEXT PRIMARY KEY,
+            owner       TEXT NOT NULL,
+            expires_at  REAL NOT NULL
+        )
+        """
+    )
+    if _table_exists(connection, "requests"):
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_requests_retention_date_id "
+            "ON requests(date, id)"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
     Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
     Migration(3, "routing_and_request_records", _migrate_routing_and_request_records),
+    Migration(4, "request_retention", _migrate_request_retention),
 )
 
 

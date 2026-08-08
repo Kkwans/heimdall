@@ -48,9 +48,9 @@ ENV PYTHONUNBUFFERED=1
 # 暴露面板端口
 EXPOSE 8889
 
-# 健康检查：检测面板端口是否可连接
+# 健康检查：验证 Dashboard API 协议可用
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8889)); s.close()" || exit 1
+    CMD python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8889/api/proxy/status', timeout=2); assert r.status == 200" || exit 1
 
 # 启动面板服务
 CMD ["python", "proxy.py", "--dashboard"]

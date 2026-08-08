@@ -32,9 +32,9 @@ ENV PYTHONUNBUFFERED=1
 # 暴露代理端口
 EXPOSE 8888
 
-# 健康检查：检测代理端口是否可连接
+# 健康检查：验证代理 HTTP 协议可用
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()" || exit 1
+    CMD python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8888/api/proxy/status', timeout=2); assert r.status == 200" || exit 1
 
 # 启动代理服务
 CMD ["python", "proxy.py", "--proxy"]
