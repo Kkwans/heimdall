@@ -71,6 +71,7 @@ const navItems = [
 export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
   const { theme, toggleTheme } = useTheme()
   const drawerRef = useRef<HTMLElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const drawer = drawerRef.current
@@ -102,7 +103,9 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
 
-    drawer.querySelector<HTMLElement>(focusableSelector)?.focus()
+    const focusTimer = window.setTimeout(() => {
+      closeButtonRef.current?.focus({ preventScroll: true })
+    }, 0)
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -133,6 +136,7 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
+      window.clearTimeout(focusTimer)
       document.body.style.overflow = previousOverflow
       previousBackgroundState.forEach(({ element, ariaHidden, inert }) => {
         element.inert = inert
@@ -212,6 +216,7 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
             </span>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="关闭导航菜单"
