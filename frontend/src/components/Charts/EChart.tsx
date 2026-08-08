@@ -1,6 +1,6 @@
 import React from 'react'
-import ReactEChartsCore from 'echarts-for-react/lib/core'
-import type { EChartsReactProps } from 'echarts-for-react/lib/types'
+import ReactEChartsCore from 'echarts-for-react/esm/core'
+import type { EChartsReactProps } from 'echarts-for-react/esm/types'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import {
