@@ -8,7 +8,7 @@ import { useRef, useCallback } from 'react'
  * 同一组件如果有多个数据源需要稳定化，应分别调用多次 useStableData()，
  * 或者传入 key 来隔离各自的缓存。
  */
-export function useStableData<T = unknown>() {
+export function useStableData() {
   // Map 存储多个 key 的上一次 JSON 快照
   const cacheRef = useRef<Map<string, string>>(new Map())
 

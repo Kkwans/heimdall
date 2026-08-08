@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Descriptions, Divider, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
+import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
 import { SpinRing, TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import type { SorterResult } from 'antd/es/table/interface'
@@ -159,9 +159,6 @@ function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
 }
 
 function JsonViewer({ data }: { data: unknown }) {
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
-
   if (data == null) {
     return (
       <Empty description="暂无数据（该请求发生时尚未启用详情记录）" style={{ padding: '32px 0' }} />
@@ -356,6 +353,32 @@ function ResponseViewer({ data, isStream, isDark }: { data: unknown; isStream: b
 // ──────────────────────────────────────────
 // 请求详情 Modal 弹窗
 // ──────────────────────────────────────────
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, minHeight: 24 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 12, width: 60, minWidth: 60, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, flex: 1, minWidth: 0 }}>{children}</span>
+    </div>
+  )
+}
+
+function GridCell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: isMobileCheck() ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
+    </div>
+  )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{children}</div>
+}
+
+function DetailDivider() {
+  return <div style={{ height: 1, background: 'var(--border-subtle)', margin: '12px 0' }} />
+}
+
 function RequestDetailModal({ recordId, onClose }: { recordId: number | null; onClose: () => void }) {
   const [detail, setDetail] = useState<RequestRecord | null>(null)
   const [loading, setLoading] = useState(false)
@@ -413,27 +436,6 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
     : n > 1024
     ? `${(n / 1024).toFixed(1)} KB`
     : `${n} B`
-
-  // ── 单行组件：label固定宽 + value（用于基本信息/追踪信息） ──
-  const InfoRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, minHeight: 24 }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 12, width: 60, minWidth: 60, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, flex: 1, minWidth: 0 }}>{children}</span>
-    </div>
-  )
-
-  // ── 网格单元格：label上、value下（用于耗时/Token/概要模块） ──
-  const GridCell = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: mobile ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
-    </div>
-  )
-
-  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{children}</div>
-  )
-  const Divider = () => <div style={{ height: 1, background: 'var(--border-subtle)', margin: '12px 0' }} />
 
   // 移动端：3列；PC端：6列
   const gridCols = mobile ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)'
@@ -525,7 +527,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   </InfoRow>
                 )}
 
-                <Divider />
+                <DetailDivider />
 
                 {/* ── 请求概要：状态码/消息条数/工具数/请求体/响应体/深度思考 ── */}
                 <SectionTitle>请求概要</SectionTitle>
@@ -556,7 +558,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   </GridCell>
                 </div>
 
-                <Divider />
+                <DetailDivider />
 
                 <SectionTitle>成本估算</SectionTitle>
                 <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: gridGap }}>
@@ -583,7 +585,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   </GridCell>
                 </div>
 
-                <Divider />
+                <DetailDivider />
 
                 {/* ── 耗时：移动端3列，PC端3列 ── */}
                 <SectionTitle>耗时</SectionTitle>
@@ -605,7 +607,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   </GridCell>
                 </div>
 
-                <Divider />
+                <DetailDivider />
 
                 {/* ── Token 统计：移动端3列×2行，PC端6列×1行 ── */}
                 <SectionTitle>Token 统计</SectionTitle>
@@ -613,9 +615,9 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   <GridCell label="输入">{rec.prompt_tokens.toLocaleString()}</GridCell>
                   <GridCell label="输出">{rec.completion_tokens.toLocaleString()}</GridCell>
                   <GridCell label="总计">{rec.total_tokens.toLocaleString()}</GridCell>
-                  {(rec as any).cache_write_tokens > 0 && (
+                  {(rec.cache_write_tokens ?? 0) > 0 && (
                     <GridCell label="缓存写入">
-                      <span style={{ color: 'var(--color-warning)' }}>{((rec as any).cache_write_tokens as number).toLocaleString()}</span>
+                      <span style={{ color: 'var(--color-warning)' }}>{rec.cache_write_tokens?.toLocaleString()}</span>
                     </GridCell>
                   )}
                   <GridCell label="缓存命中">
@@ -630,7 +632,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   </GridCell>
                 </div>
 
-                <Divider />
+                <DetailDivider />
 
                 {/* ── 追踪信息 ── */}
                 <SectionTitle>追踪信息</SectionTitle>
@@ -807,10 +809,10 @@ export default function Requests() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [page, pageSize, modelFilter, statusFilter, dateRange.start, dateRange.end, sortBy, sortOrder])
+  }, [page, pageSize, modelFilter, statusFilter, dateRange.start, dateRange.end, sortBy, sortOrder, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
   useEffect(() => { setPage(1) }, [modelFilter, statusFilter, dateRange.start, dateRange.end])
 
   // 只处理排序变化，不处理分页（分页由 pagination.onChange 单独处理）
@@ -873,7 +875,7 @@ export default function Requests() {
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
-      render: (v: string, record) => {
+      render: (v: string) => {
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Tooltip title={v}>

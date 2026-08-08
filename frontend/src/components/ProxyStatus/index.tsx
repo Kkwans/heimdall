@@ -161,7 +161,7 @@ export default function ProxyStatusCard() {
   // 响应页面级刷新（Header 手动刷新按钮）
   useEffect(() => {
     if (refreshTick > 0) refresh()
-  }, [refreshTick])
+  }, [refreshTick, refresh])
 
   // ── 停止代理 ──────────────────────────────
   const handleStop = () => {

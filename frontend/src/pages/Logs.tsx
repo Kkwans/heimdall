@@ -992,13 +992,13 @@ function highlightBody(body: string, level: LogLine['level'], isDark: boolean): 
       // URL
       String.raw`https?://[^\s)\]>"']+`,
     ].join('|'),
-    'g'
+    'gu'
   )
 
   const parts = body.split(SPLIT_REGEX)
   const matches: string[] = []
   let m: RegExpExecArray | null
-  const re = new RegExp(SPLIT_REGEX.source, 'g')
+  const re = new RegExp(SPLIT_REGEX.source, 'gu')
   while ((m = re.exec(body)) !== null) {
     matches.push(m[0])
   }

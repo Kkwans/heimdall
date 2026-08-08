@@ -64,14 +64,13 @@ export function useRefreshInterval({ onTick }: UseRefreshIntervalOptions): UseRe
   const [countdown, setCountdown] = useState<number>(readFromStorage)
 
   const onTickRef = useRef(onTick)
-  onTickRef.current = onTick
+  useEffect(() => {
+    onTickRef.current = onTick
+  }, [onTick])
 
   const resetCountdown = useCallback(() => {
-    setIntervalSecState(prev => {
-      setCountdown(prev)
-      return prev
-    })
-  }, [])
+    setCountdown(intervalSec)
+  }, [intervalSec])
 
   const setIntervalSec = useCallback((v: number) => {
     writeToStorage(v)
@@ -82,11 +81,8 @@ export function useRefreshInterval({ onTick }: UseRefreshIntervalOptions): UseRe
   // 每秒递减倒计时
   useEffect(() => {
     if (intervalSec === 0) {
-      setCountdown(0)
       return
     }
-
-    setCountdown(intervalSec)
 
     const timer = setInterval(() => {
       setCountdown(prev => {

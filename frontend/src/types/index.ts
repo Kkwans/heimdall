@@ -55,6 +55,7 @@ export interface RequestRecord {
   completion_tokens: number
   total_tokens: number
   cache_hit_tokens: number
+  cache_write_tokens?: number
   cache_miss_tokens: number
   reasoning_tokens: number
   latency_ms: number

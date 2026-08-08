@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback } from 'react'
 import dayjs from 'dayjs'
 import type { DatePreset, DateRange } from '../types'
 
@@ -44,15 +44,6 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [selectedModel, setSelectedModel] = useState<string>('all')
   const [refreshTick, setRefreshTick] = useState(0)
   const [backgroundTick, setBackgroundTick] = useState(0)
-
-  // 已移除内置定时器：刷新间隔由 useRefreshInterval hook 管理
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [])
 
   const setDatePreset = useCallback((preset: DatePreset) => {
     if (preset !== 'custom') {

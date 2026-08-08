@@ -34,7 +34,7 @@ export default function Overview() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   // 前台刷新（参数变化 or 手动刷新）
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
@@ -42,7 +42,7 @@ export default function Overview() {
   // 后台静默刷新（不显示 loading，数据无变化不重渲染）
   useEffect(() => {
     if (backgroundTick > 0) fetchData(true)
-  }, [backgroundTick])
+  }, [backgroundTick, fetchData])
 
   const successRate = data
     ? data.total_requests > 0

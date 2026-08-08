@@ -84,14 +84,13 @@ export default function RequestTable() {
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
 
   // 后台静默刷新
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   // 切换筛选条件时重置到第一页
   useEffect(() => {
     setPage(1)
   }, [modelFilter, statusFilter, dateRange.start, dateRange.end])
 
-  const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
   const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
 
   const columns: ColumnsType<RequestRecord> = [
@@ -110,7 +109,7 @@ export default function RequestTable() {
       title: '模型',
       dataIndex: 'model',
       width: 160,
-      render: (v: string, record) => {
+      render: (v: string) => {
         const vc = getVendorColor(v)
         return (
           <Tooltip title={v}>
