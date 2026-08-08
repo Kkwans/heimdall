@@ -113,7 +113,7 @@ export default function RequestTable() {
       render: (v: string, record) => {
         const vc = getVendorColor(v)
         return (
-          <Tooltip title={record.original_model !== v ? `原始: ${record.original_model}` : undefined}>
+          <Tooltip title={v}>
             <Tag color={vc.color} style={{ fontSize: 11, background: vc.bg, border: `1px solid ${vc.color}30` }} className={styles.modelTag}>{v}</Tag>
           </Tooltip>
         )

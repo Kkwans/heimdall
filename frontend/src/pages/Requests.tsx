@@ -23,7 +23,7 @@ import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, latencyColor } from '../uti
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
 // 移动端检测
-const isMobileCheck = () => window.innerWidth < 768
+const isMobileCheck = () => window.innerWidth <= 768
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -359,17 +359,33 @@ function ResponseViewer({ data, isStream, isDark }: { data: unknown; isStream: b
 function RequestDetailModal({ recordId, onClose }: { recordId: number | null; onClose: () => void }) {
   const [detail, setDetail] = useState<RequestRecord | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 
-  useEffect(() => {
-    if (recordId == null) { setDetail(null); return }
+  const loadDetail = useCallback((id: number) => {
     setLoading(true)
-    fetchRequestDetail(recordId)
-      .then(setDetail)
-      .catch(() => setDetail(null))
+    setLoadError(false)
+    fetchRequestDetail(id)
+      .then(value => {
+        setDetail(value)
+        setLoadError(false)
+      })
+      .catch(() => {
+        setDetail(null)
+        setLoadError(true)
+      })
       .finally(() => setLoading(false))
-  }, [recordId])
+  }, [])
+
+  useEffect(() => {
+    if (recordId == null) {
+      setDetail(null)
+      setLoadError(false)
+      return
+    }
+    loadDetail(recordId)
+  }, [recordId, loadDetail])
 
   const rec = detail
   const cacheRate = rec && rec.prompt_tokens > 0
@@ -478,6 +494,15 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
       }}
     >
       {loading && <div style={{ textAlign: 'center', padding: '40px 0' }}><SpinRing size={28} /></div>}
+      {!loading && loadError && recordId != null && (
+        <Alert
+          type="error"
+          showIcon
+          message="请求详情加载失败"
+          description="记录可能已被清理，或服务暂时不可用。"
+          action={<Button size="small" onClick={() => loadDetail(recordId)}>重试</Button>}
+        />
+      )}
       {!loading && rec && (
         <Tabs defaultActiveKey="overview" size="small" items={[
           {
@@ -489,9 +514,6 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                 <InfoRow label="请求时间">{rec.created_at}</InfoRow>
                 <InfoRow label="请求模型">
                   <ModelTag name={rec.model} style={{ fontSize: 11, borderRadius: 3 }} />
-                  {rec.original_model !== rec.model && (
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→ {rec.original_model}</span>
-                  )}
                   <span style={{ color: 'var(--text-disabled)', fontSize: 11 }}>/</span>
                   <Tag color={rec.stream ? 'purple' : 'default'} style={{ fontSize: 11, borderRadius: 3, margin: 0 }}>
                     {rec.stream ? 'SSE 流式' : 'JSON 非流式'}
@@ -659,6 +681,7 @@ export default function Requests() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [modelFilter, setModelFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [models, setModels] = useState<string[]>([])
@@ -775,8 +798,12 @@ export default function Requests() {
         setTotal(reqRes.total)
       }
       setModels(modelRes.data)
+      if (!silent) setLoadError(false)
     } catch (e) {
-      if (!silent) console.error(e)
+      if (!silent) {
+        console.error(e)
+        setLoadError(true)
+      }
     } finally {
       if (!silent) setLoading(false)
     }
@@ -841,6 +868,7 @@ export default function Requests() {
     {
       title: '模型',
       dataIndex: 'model',
+      key: 'model',
       width: isMobile ? 100 : 140,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
@@ -848,7 +876,7 @@ export default function Requests() {
       render: (v: string, record) => {
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <Tooltip title={record.original_model !== v ? `原始模型: ${record.original_model}` : undefined}>
+            <Tooltip title={v}>
               <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
             </Tooltip>
           </div>
@@ -856,7 +884,7 @@ export default function Requests() {
       },
     },
     {
-      title: 'APIKey',
+      title: 'API Key',
       dataIndex: 'api_key_name',
       width: isMobile ? 70 : 90,
       align: 'center' as const,
@@ -871,6 +899,7 @@ export default function Requests() {
     {
       title: '厂商',
       dataIndex: 'provider',
+      key: 'provider',
       width: isMobile ? 80 : 100,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
@@ -916,6 +945,7 @@ export default function Requests() {
     {
       title: '总 Token',
       dataIndex: 'total_tokens',
+      key: 'total_tokens',
       width: 88,
       align: 'center' as const,
       sorter: true,
@@ -1022,6 +1052,7 @@ export default function Requests() {
     {
       title: '状态',
       dataIndex: 'success',
+      key: 'success',
       width: 68,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
@@ -1064,6 +1095,19 @@ export default function Requests() {
     },
   ]
 
+  const mobileColumnKeys = new Set([
+    'created_at',
+    'model',
+    'provider',
+    'total_tokens',
+    'estimated_cost',
+    'success',
+    'action',
+  ])
+  const visibleColumns = isMobile
+    ? columns.filter(column => mobileColumnKeys.has(String(column.key)))
+    : columns
+
   return (
     <>
       <div className="page-content">
@@ -1071,6 +1115,15 @@ export default function Requests() {
         <Header pageName="请求明细" />
 
         <section className="section">
+          {loadError && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 10 }}
+              message="请求明细加载失败"
+              action={<Button size="small" onClick={() => fetchData(false)}>重试</Button>}
+            />
+          )}
           <Card
             title={
               isMobile ? null : (
@@ -1094,6 +1147,7 @@ export default function Requests() {
                     />
                   </Tooltip>
                   <Select
+                    aria-label="模型筛选"
                     size="small"
                     value={modelFilter}
                     onChange={(v) => { setModelFilter(v); setPage(1) }}
@@ -1106,6 +1160,7 @@ export default function Requests() {
                     optionFilterProp="label"
                   />
                   <Select
+                    aria-label="状态筛选"
                     size="small"
                     value={statusFilter}
                     onChange={(v) => { setStatusFilter(v); setPage(1) }}
@@ -1140,6 +1195,7 @@ export default function Requests() {
             {isMobile && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Select
+                  aria-label="模型筛选"
                   size="small"
                   value={modelFilter}
                   onChange={(v) => { setModelFilter(v); setPage(1) }}
@@ -1152,6 +1208,7 @@ export default function Requests() {
                   optionFilterProp="label"
                 />
                 <Select
+                  aria-label="状态筛选"
                   size="small"
                   value={statusFilter}
                   onChange={(v) => { setStatusFilter(v); setPage(1) }}
@@ -1164,8 +1221,13 @@ export default function Requests() {
                 />
               </div>
             )}
+            {isMobile && (
+              <div className="mobile-table-hint" role="note">
+                <span aria-hidden="true">↔</span> 左右滑动查看更多信息，点击行查看详情
+              </div>
+            )}
             <Table<RequestRecord>
-              columns={columns}
+              columns={visibleColumns}
               dataSource={data}
               rowKey="id"
               loading={loading ? TABLE_SPIN_INDICATOR : false}

@@ -18,9 +18,9 @@ const ModelTokenBar = memo(function ModelTokenBar() {
   const { setIfChanged } = useStableData()
 
   // 移动端检测（< 768px）
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])

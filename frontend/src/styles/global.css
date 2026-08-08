@@ -271,6 +271,29 @@ body {
   background: var(--accent-blue-hover);
 }
 
+.page-error__actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.page-error__button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.page-error__secondary {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.page-error__secondary:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
 @media (max-width: 768px) {
   .route-skeleton {
     padding: 16px;
@@ -286,6 +309,22 @@ body {
   font-family: var(--font-mono);
   font-size: 13px;
   letter-spacing: -0.01em;
+}
+
+.mobile-table-hint {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-table-hint {
+    display: flex;
+    margin: 0 0 7px;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
 }
 
 /* ── 滚动条美化：默认透明，悬浮时才显现 ── */

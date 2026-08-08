@@ -8,6 +8,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import NotFound from './pages/NotFound'
 import RouteFallback from './components/RouteFallback'
+import PageErrorBoundary from './components/PageErrorBoundary'
 import './styles/global.css'
 
 // 懒加载非首屏页面（提升首屏速度）
@@ -81,16 +82,18 @@ export default function App() {
         <FilterProvider>
           <HashRouter>
             <Layout>
-              <React.Suspense fallback={<RouteFallback />}>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/requests" element={<Requests />} />
-                  <Route path="/stats" element={<Stats />} />
-                  <Route path="/logs" element={<Logs />} />
-                  <Route path="/admin" element={<Admin />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </React.Suspense>
+              <PageErrorBoundary>
+                <React.Suspense fallback={<RouteFallback />}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/requests" element={<Requests />} />
+                    <Route path="/stats" element={<Stats />} />
+                    <Route path="/logs" element={<Logs />} />
+                    <Route path="/admin" element={<Admin />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </React.Suspense>
+              </PageErrorBoundary>
             </Layout>
           </HashRouter>
         </FilterProvider>
