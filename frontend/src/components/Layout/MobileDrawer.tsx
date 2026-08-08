@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTheme } from '../../context/ThemeContext'
 
@@ -70,15 +70,95 @@ const navItems = [
 
 export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
   const { theme, toggleTheme } = useTheme()
+  const drawerRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const drawer = drawerRef.current
+    if (!open || !drawer) return
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const background = Array.from(document.querySelectorAll<HTMLElement>('.layout-sidebar, .layout-content'))
+    const previousBackgroundState = background.map(element => ({
+      element,
+      ariaHidden: element.getAttribute('aria-hidden'),
+      inert: element.inert,
+    }))
+    const previousOverflow = document.body.style.overflow
+
+    background.forEach(element => {
+      element.inert = true
+      element.setAttribute('aria-hidden', 'true')
+    })
+    document.body.style.overflow = 'hidden'
+
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+
+    const focusFirstControl = window.requestAnimationFrame(() => {
+      drawer.querySelector<HTMLElement>(focusableSelector)?.focus()
+    })
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(focusableSelector))
+        .filter(element => element.offsetParent !== null)
+      if (focusable.length === 0) {
+        event.preventDefault()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFirstControl)
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      previousBackgroundState.forEach(({ element, ariaHidden, inert }) => {
+        element.inert = inert
+        if (ariaHidden === null) element.removeAttribute('aria-hidden')
+        else element.setAttribute('aria-hidden', ariaHidden)
+      })
+      previouslyFocused?.focus()
+    }
+  }, [open, onClose])
 
   return (
     <>
       {/* 遮罩层 */}
       {open && (
-        <div
+        <button
+          type="button"
+          aria-label="关闭导航菜单"
+          tabIndex={-1}
           style={{
             position: 'fixed',
             inset: 0,
+            width: '100%',
+            border: 'none',
             background: 'rgba(0,0,0,0.4)',
             zIndex: 200,
             backdropFilter: 'blur(2px)',
@@ -89,6 +169,11 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
 
       {/* 抽屉 */}
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-drawer-title"
+        aria-hidden={!open}
         style={{
           position: 'fixed',
           top: 0,
@@ -101,7 +186,9 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
           display: 'flex',
           flexDirection: 'column',
           transform: open ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
+          visibility: open ? 'visible' : 'hidden',
+          pointerEvents: open ? 'auto' : 'none',
+          transition: `transform 0.25s cubic-bezier(0.4,0,0.2,1), visibility 0s linear ${open ? '0s' : '0.25s'}`,
           boxShadow: open ? '4px 0 24px rgba(0,0,0,0.12)' : 'none',
         }}
       >
@@ -123,12 +210,14 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </div>
-            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+            <span id="mobile-drawer-title" style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               Heimdall
             </span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="关闭导航菜单"
             style={{
               width: 28, height: 28, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -149,6 +238,7 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              onClick={onClose}
               style={({ isActive }) => ({
                 display: 'flex',
                 alignItems: 'center',
@@ -172,7 +262,9 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
         {/* 主题切换 */}
         <div style={{ padding: '12px 10px', borderTop: '1px solid var(--border-subtle)' }}>
           <button
+            type="button"
             onClick={toggleTheme}
+            aria-label={theme === 'light' ? '切换深色模式' : '切换浅色模式'}
             style={{
               display: 'flex',
               alignItems: 'center',

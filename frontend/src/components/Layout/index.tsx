@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import MobileDrawer from './MobileDrawer'
@@ -63,11 +63,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const location = useLocation()
-
-  // 路由变化时自动关闭抽屉
-  useEffect(() => {
-    setDrawerOpen(false)
-  }, [location.pathname])
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   const pageName = PAGE_NAMES[location.pathname] ?? 'Heimdall'
   const pageIcon = PAGE_ICONS[location.pathname] ?? PAGE_ICONS['/']
@@ -84,6 +80,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* 移动端顶部导航栏 */}
         <div className="mobile-topbar">
           <button
+            type="button"
             className="mobile-menu-btn"
             onClick={() => setDrawerOpen(true)}
             aria-label="打开菜单"
@@ -106,7 +103,7 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       {/* 移动端抽屉式侧边栏 */}
-      <MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <MobileDrawer open={drawerOpen} onClose={closeDrawer} />
     </div>
   )
 }

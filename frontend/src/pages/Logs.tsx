@@ -670,7 +670,7 @@ export default function Logs() {
             title={<span style={{ fontSize: 12 }}>日志保留设置（当前 {retentionDays} 天）</span>}
           >
             <Tooltip title="日志保留设置">
-              <Button size="small" icon={<SettingOutlined />} />
+              <Button size="small" icon={<SettingOutlined />} aria-label="日志保留设置" />
             </Tooltip>
           </Popover>
         </Space>

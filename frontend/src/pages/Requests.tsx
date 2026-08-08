@@ -444,7 +444,9 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
             {rec ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 13, marginLeft: 6 }}>#{rec.id}</span> : ''}
           </span>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="关闭请求详情"
             style={{
               width: 28, height: 28, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1044,7 +1046,9 @@ export default function Requests() {
       render: (_: unknown, record) => (
         <Tooltip title="查看详情">
           <button
+            type="button"
             onClick={() => setDetailId(record.id)}
+            aria-label={`查看请求 ${record.id} 详情`}
             style={{
               width: 28, height: 28, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

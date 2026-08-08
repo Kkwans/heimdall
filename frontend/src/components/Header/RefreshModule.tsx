@@ -46,6 +46,7 @@ export default function RefreshModule({ compact = false }: RefreshModuleProps) {
           }}
           onClick={triggerRefresh}
           type="button"
+          aria-label={isCountingDown ? `${countdownLabel} 后自动刷新，点击立即刷新` : '手动刷新'}
         >
           <span className={`${styles.countdownText} ${isCountingDown ? styles.countdownTextActive : ''}`}>
             {countdownLabel}
@@ -64,6 +65,7 @@ export default function RefreshModule({ compact = false }: RefreshModuleProps) {
     >
       {/* 左侧：自动刷新间隔选择，使用 borderless 去掉自身边框 */}
       <Select
+        aria-label="自动刷新间隔"
         size="small"
         value={intervalSec}
         onChange={setIntervalSec}
@@ -82,6 +84,7 @@ export default function RefreshModule({ compact = false }: RefreshModuleProps) {
           className={`${styles.countdownRefreshBtn} ${isCountingDown ? styles.countdownRefreshBtnActive : ''}`}
           onClick={triggerRefresh}
           type="button"
+          aria-label={isCountingDown ? `${countdownLabel} 后自动刷新，点击立即刷新` : '手动刷新'}
         >
           <span className={`${styles.countdownText} ${isCountingDown ? styles.countdownTextActive : ''}`}>
             {countdownLabel}

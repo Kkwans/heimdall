@@ -360,6 +360,7 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean, record) => (
         <Switch
+          aria-label={`${record.display_name || record.name} ${enabled ? '已启用' : '已禁用'}`}
           size="small"
           checked={enabled}
           onChange={async (checked) => {
@@ -384,11 +385,11 @@ function ProviderManager() {
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+            <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑厂商 ${record.display_name || record.name}`} onClick={() => handleEdit(record)} />
           </Tooltip>
           <Popconfirm title="确定删除该厂商？" onConfirm={() => handleDelete(record.id)}>
             <Tooltip title="删除">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除厂商 ${record.display_name || record.name}`} />
             </Tooltip>
           </Popconfirm>
         </Space>
@@ -566,7 +567,7 @@ function ProviderManager() {
               width: 80,
               align: 'center' as const,
               render: (enabled: boolean, record: ProviderApiKey) => (
-                <Switch size="small" checked={enabled} onChange={(c) => handleToggleApiKey(record.id, c)} />
+                <Switch aria-label={`厂商 API Key ${record.api_key_preview} ${enabled ? '已启用' : '已禁用'}`} size="small" checked={enabled} onChange={(c) => handleToggleApiKey(record.id, c)} />
               ),
             },
             {
@@ -581,12 +582,13 @@ function ProviderManager() {
                       type="text"
                       size="small"
                       icon={<SaveOutlined />}
+                      aria-label={`保存厂商 API Key ${record.api_key_preview} 的优先级`}
                       disabled={(priorityDrafts[record.id] ?? record.priority) === record.priority}
                       onClick={() => handleSaveKeyPriority(record.id)}
                     />
                   </Tooltip>
                   <Popconfirm title="确定删除？" onConfirm={() => handleDeleteApiKey(record.id)}>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除厂商 API Key ${record.api_key_preview}`} />
                   </Popconfirm>
                 </Space>
               ),
@@ -797,6 +799,7 @@ function ModelManager() {
       onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean, record) => (
         <Switch
+          aria-label={`模型 ${record.model_name} ${enabled ? '已启用' : '已禁用'}`}
           size="small"
           checked={enabled}
           onChange={async (checked) => {
@@ -822,11 +825,11 @@ function ModelManager() {
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+            <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑模型 ${record.model_name}`} onClick={() => handleEdit(record)} />
           </Tooltip>
           <Popconfirm title="确定删除该模型？" onConfirm={() => handleDelete(record.id)}>
             <Tooltip title="删除">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除模型 ${record.model_name}`} />
             </Tooltip>
           </Popconfirm>
         </Space>
@@ -1126,6 +1129,7 @@ function ApiKeyManager() {
       onCell: () => ({ style: cellCenter }),
       render: (enabled: boolean, record) => (
         <Switch
+          aria-label={`客户端 API Key ${record.name} ${enabled ? '已启用' : '已禁用'}`}
           size="small"
           checked={enabled}
           onChange={async (checked) => {
@@ -1151,11 +1155,11 @@ function ApiKeyManager() {
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+            <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑客户端 API Key ${record.name}`} onClick={() => handleEdit(record)} />
           </Tooltip>
           <Popconfirm title="确定删除该 API Key？" onConfirm={() => handleDelete(record.id)}>
             <Tooltip title="删除">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除客户端 API Key ${record.name}`} />
             </Tooltip>
           </Popconfirm>
         </Space>

@@ -357,10 +357,12 @@ export default function ProxyStatusCard() {
               </span>
               <div className={styles.statusModuleDivider} />
               <button
+                type="button"
                 className={`${styles.autostartBtn} ${autostart ? styles.autostartOn : styles.autostartOff}`}
                 onClick={() => !autostartBusy && toggleAutostart(!autostart)}
                 disabled={autostartBusy}
                 title={autostart ? '已开机自启，点击关闭' : '未开机自启，点击开启'}
+                aria-label={autostart ? '关闭代理服务开机自启' : '开启代理服务开机自启'}
               >
                 <span className={styles.autostartBtnInner}>
                   <span>开机自启</span>
