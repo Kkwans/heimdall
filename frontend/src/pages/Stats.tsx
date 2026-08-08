@@ -1050,12 +1050,12 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: any[]; isMobile: boolea
 
 function ApiKeyStatsTable({ data }: { data: any[] }) {
   const filtered = data.filter(d => d.api_key_id !== null)
-  if (filtered.length === 0) return <EmptyPlaceholder text="暂无 APIKey 数据" />
+  if (filtered.length === 0) return <EmptyPlaceholder text="暂无 API Key 数据" />
   
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
   const columns: ColumnsType<any> = [
-    { title: 'APIKey', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
     { title: '请求数', dataIndex: 'total_requests', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '成功', dataIndex: 'success_requests', key: 'ok', align: 'center', render: (v: number) => <span style={{ ...mono, color: 'var(--color-success)' }}>{v}</span> },
     { title: '失败', dataIndex: 'error_requests', key: 'err', align: 'center', render: (v: number) => <span style={{ ...mono, color: v > 0 ? 'var(--color-danger)' : 'var(--text-muted)' }}>{v}</span> },
@@ -1081,7 +1081,7 @@ function ApiKeyModelStatsTable({ data }: { data: any[] }) {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
   const columns: ColumnsType<any> = [
-    { title: 'APIKey', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
     { title: '模型', dataIndex: 'model', key: 'model', align: 'center', render: (v: string) => <ModelTag name={v} /> },
     { title: '请求数', dataIndex: 'request_count', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
@@ -1102,7 +1102,7 @@ function ApiKeyModelStatsTable({ data }: { data: any[] }) {
 function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'key' | 'model' }) {
   const columns: ColumnsType<CostGroup> = [
     {
-      title: dimension === 'key' ? 'Client Access Key' : '模型',
+      title: dimension === 'key' ? '客户端 API Key' : '模型',
       dataIndex: 'name',
       ellipsis: true,
       render: (value: string) => dimension === 'model'
@@ -1157,9 +1157,9 @@ export default function Stats() {
   const isDark = theme === 'dark'
 
   // 移动端检测（用于饼图图例切换）
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -1447,7 +1447,7 @@ export default function Stats() {
                 )}
                 <Row gutter={[12, 12]}>
                   <Col xs={24} xl={12}>
-                    <Card size="small" type="inner" title="按 Client Access Key">
+                    <Card size="small" type="inner" title="按客户端 API Key">
                       <CostGroupTable data={costStats.by_client_key} dimension="key" />
                     </Card>
                   </Col>
@@ -1468,12 +1468,12 @@ export default function Stats() {
         <>
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={12}>
-              <Card title={sectionTitle('APIKey Token 占比', '按 APIKey 分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
+              <Card title={sectionTitle('API Key Token 占比', '按 API Key 分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
                 <ApiKeyTokenPieChart data={apiKeyStats} isMobile={isMobile} />
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title={sectionTitle('APIKey 统计', 'Token 用量 / 请求数')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
+              <Card title={sectionTitle('API Key 统计', 'Token 用量 / 请求数')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
                 <ApiKeyStatsTable data={apiKeyStats} />
               </Card>
             </Col>
@@ -1481,7 +1481,7 @@ export default function Stats() {
           {apiKeyModelStats.length > 0 && (
             <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
               <Col xs={24}>
-                <Card title={sectionTitle('APIKey + 模型统计', '各 APIKey 使用的模型分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
+                <Card title={sectionTitle('API Key + 模型统计', '各 API Key 使用的模型分布')} bordered={false} className="hd-card" style={cardStyle} size="small">
                   <ApiKeyModelStatsTable data={apiKeyModelStats} />
                 </Card>
               </Col>

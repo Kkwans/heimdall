@@ -335,7 +335,7 @@ function ProviderManager() {
       onCell: () => ({ style: cellCenter }),
     },
     {
-      title: 'API Keys',
+      title: '厂商 API Key',
       key: 'api_keys',
       width: 100,
       align: 'center',
@@ -476,9 +476,9 @@ function ProviderManager() {
           {!editingProvider && (
             <Form.Item
               name="api_key"
-              label="首个 Provider API Key"
-              rules={[{ required: true, whitespace: true, message: '请输入首个 Provider API Key' }]}
-              extra="创建成功后只显示掩码，可在 API Keys 管理中继续添加或停用。"
+              label="首个厂商 API Key"
+              rules={[{ required: true, whitespace: true, message: '请输入首个厂商 API Key' }]}
+              extra="创建成功后只显示掩码，可在厂商 API Key 管理中继续添加或停用。"
             >
               <Input.Password placeholder="请输入厂商提供的 API Key" autoComplete="new-password" />
             </Form.Item>
@@ -488,7 +488,7 @@ function ProviderManager() {
 
       {/* API Key 管理弹窗 */}
       <Modal
-        title={`管理 API Keys - ${managingKeysProvider?.display_name || managingKeysProvider?.name || ''}`}
+        title={`管理厂商 API Key · ${managingKeysProvider?.display_name || managingKeysProvider?.name || ''}`}
         open={apiKeyModalOpen}
         onCancel={() => setApiKeyModalOpen(false)}
         width={600}
