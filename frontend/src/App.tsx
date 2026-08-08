@@ -6,6 +6,8 @@ import { ThemeProvider, useTheme } from './context/ThemeContext'
 import { FilterProvider } from './context/FilterContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import NotFound from './pages/NotFound'
+import RouteFallback from './components/RouteFallback'
 import './styles/global.css'
 
 // 懒加载非首屏页面（提升首屏速度）
@@ -36,7 +38,7 @@ function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
           colorTextPlaceholder: theme === 'dark' ? '#78716c' : '#a8a29e',
           borderRadius: 4,
           borderRadiusLG: 6,
-          fontFamily: "'Noto Sans SC', 'PingFang SC', -apple-system, system-ui, sans-serif",
+          fontFamily: "'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Source Han Sans SC', system-ui, -apple-system, sans-serif",
         },
         components: {
           Card: {
@@ -79,13 +81,14 @@ export default function App() {
         <FilterProvider>
           <HashRouter>
             <Layout>
-              <React.Suspense fallback={<div style={{ padding: 24, color: 'var(--text-muted)' }}>加载中...</div>}>
+              <React.Suspense fallback={<RouteFallback />}>
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/requests" element={<Requests />} />
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/logs" element={<Logs />} />
                   <Route path="/admin" element={<Admin />} />
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </React.Suspense>
             </Layout>

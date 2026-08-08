@@ -3,9 +3,6 @@
    设计风格：现代简约 / Instagram Editorial
    ============================================================ */
 
-/* ── Google Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 /* ── CSS 变量 · 浅色主题（默认） ── */
 :root {
   /* 背景层级 */
@@ -65,8 +62,8 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
 
   /* 字体 */
-  --font-sans: 'Noto Sans SC', 'PingFang SC', -apple-system, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  --font-sans: 'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Source Han Sans SC', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
 
   /* 尺寸 */
   --radius-xs: 2px;
@@ -163,6 +160,125 @@ body {
   background: var(--bg-base);
   transition: background var(--duration-slow) var(--ease-default),
               color var(--duration-slow) var(--ease-default);
+}
+
+/* 键盘焦点保持清晰；鼠标点击不额外显示轮廓。 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* 路由懒加载保持现有页面骨架，避免只出现一行文字造成布局跳动。 */
+.route-skeleton {
+  padding: 20px 24px 32px;
+}
+
+.route-skeleton__header,
+.route-skeleton__line,
+.route-skeleton__card {
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-surface) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: hd-shimmer 1.4s var(--ease-default) infinite;
+}
+
+.route-skeleton__header {
+  width: 132px;
+  height: 22px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-sm);
+}
+
+.route-skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.route-skeleton__card {
+  height: 112px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.route-skeleton__line {
+  width: 72%;
+  height: 14px;
+  margin-top: 18px;
+  border-radius: var(--radius-sm);
+}
+
+.not-found {
+  display: flex;
+  min-height: calc(100vh - 56px);
+  padding: 48px 24px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.not-found__panel {
+  width: min(520px, 100%);
+  padding: 28px;
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.not-found__code {
+  margin-bottom: 6px;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.not-found__title {
+  margin-bottom: 8px;
+  font-size: 17px;
+}
+
+.not-found__description {
+  margin-bottom: 20px;
+  color: var(--text-secondary);
+}
+
+.not-found__link {
+  display: inline-flex;
+  min-height: 32px;
+  padding: 5px 14px;
+  align-items: center;
+  color: #fff;
+  background: var(--accent-blue);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.not-found__link:hover {
+  color: #fff;
+  background: var(--accent-blue-hover);
+}
+
+@media (max-width: 768px) {
+  .route-skeleton {
+    padding: 16px;
+  }
+
+  .route-skeleton__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── 等宽数字文本 ── */
@@ -1115,5 +1231,25 @@ body {
 @media (max-width: 768px) {
   .ant-tooltip {
     display: none !important;
+  }
+}
+
+/* 尊重系统减少动态效果设置；保留必要的加载旋转，其余变化近即时完成。 */
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  .hd-spin-ring {
+    animation-duration: 0.9s !important;
+    animation-iteration-count: infinite !important;
   }
 }
