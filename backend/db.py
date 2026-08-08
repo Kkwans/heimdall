@@ -68,7 +68,16 @@ def init_db():
                 client_ip           TEXT,
 
                 -- API Key 关联
-                api_key_id          INTEGER
+                api_key_id          INTEGER,
+
+                -- vNext 路由与统计语义
+                provider_id         INTEGER,
+                provider_api_key_id INTEGER,
+                client_api_key_id   INTEGER,
+                protocol            TEXT,
+                endpoint            TEXT,
+                route_attempts       TEXT,
+                stat_eligible        BOOLEAN NOT NULL DEFAULT 1
             )
         """)
 
@@ -111,11 +120,22 @@ def init_db():
             "ALTER TABLE requests ADD COLUMN request_body  TEXT DEFAULT NULL",
             "ALTER TABLE requests ADD COLUMN response_body TEXT DEFAULT NULL",
             "ALTER TABLE requests ADD COLUMN provider TEXT DEFAULT NULL",
+            "ALTER TABLE requests ADD COLUMN provider_id INTEGER",
+            "ALTER TABLE requests ADD COLUMN provider_api_key_id INTEGER",
+            "ALTER TABLE requests ADD COLUMN client_api_key_id INTEGER",
+            "ALTER TABLE requests ADD COLUMN protocol TEXT",
+            "ALTER TABLE requests ADD COLUMN endpoint TEXT",
+            "ALTER TABLE requests ADD COLUMN route_attempts TEXT",
+            "ALTER TABLE requests ADD COLUMN stat_eligible BOOLEAN NOT NULL DEFAULT 1",
         ]:
             try:
                 cursor.execute(col_def)
             except Exception:
                 pass  # 列已存在时 SQLite 会抛错，直接忽略
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_provider_id ON requests(provider_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_provider_api_key_id ON requests(provider_api_key_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_stat_date ON requests(stat_eligible, date)")
 
         conn.commit()
     except Exception as e:
@@ -145,7 +165,9 @@ def _do_insert(record: dict):
                 trace_id, client_ip,
                 request_body, response_body,
                 provider,
-                api_key_id
+                api_key_id,
+                provider_id, provider_api_key_id, client_api_key_id,
+                protocol, endpoint, route_attempts, stat_eligible
             ) VALUES (
                 :created_at, :date, :model, :original_model, :stream, :messages_count,
                 :prompt_tokens, :completion_tokens, :total_tokens,
@@ -155,12 +177,15 @@ def _do_insert(record: dict):
                 :trace_id, :client_ip,
                 :request_body, :response_body,
                 :provider,
-                :api_key_id
+                :api_key_id,
+                :provider_id, :provider_api_key_id, :client_api_key_id,
+                :protocol, :endpoint, :route_attempts, :stat_eligible
             )
         """, record)
         conn.commit()
         # 更新当天的聚合统计
-        _update_daily_stats(record.get("date", str(date.today())))
+        if record.get("stat_eligible", 1):
+            _update_daily_stats(record.get("date", str(date.today())))
     except Exception as e:
         _logger.error(f"[DB] insert_request 失败: {e}", exc_info=True)
 
@@ -183,7 +208,7 @@ def _update_daily_stats(target_date: str):
                 SUM(cache_hit_tokens) as total_cache_hit_tokens,
                 AVG(latency_ms) as avg_latency_ms
             FROM requests
-            WHERE date = ?
+            WHERE date = ? AND COALESCE(stat_eligible, 1) = 1
         """, (target_date,)).fetchone()
 
         if not row or row["total_requests"] == 0:
@@ -191,7 +216,7 @@ def _update_daily_stats(target_date: str):
 
         # 计算延迟百分位
         latencies = [r[0] for r in conn.execute(
-            "SELECT latency_ms FROM requests WHERE date = ? AND latency_ms > 0 ORDER BY latency_ms",
+            "SELECT latency_ms FROM requests WHERE date = ? AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
             (target_date,)
         ).fetchall()]
 
@@ -265,7 +290,7 @@ def query_overview(start_date: str, end_date: str) -> dict:
                 SUM(cache_hit_tokens) as total_cache_hit_tokens,
                 AVG(latency_ms) as avg_latency_ms
             FROM requests
-            WHERE date BETWEEN ? AND ?
+            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
         """, (start_date, end_date)).fetchone()
 
         if not row:
@@ -278,7 +303,7 @@ def query_overview(start_date: str, end_date: str) -> dict:
 
         # 计算 p99 延迟
         latencies = [r[0] for r in conn.execute(
-            "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND latency_ms > 0 ORDER BY latency_ms",
+            "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
             (start_date, end_date)
         ).fetchall()]
 
@@ -338,7 +363,7 @@ def query_daily(start_date: str, end_date: str) -> list:
                     ELSE 0
                 END as cache_hit_rate
             FROM requests
-            WHERE date BETWEEN ? AND ?
+            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
             GROUP BY date
             ORDER BY date ASC
         """, (start_date, end_date)).fetchall()
@@ -369,7 +394,7 @@ def query_models(start_date: str, end_date: str) -> list:
                 END as cache_hit_rate,
                 ROUND(CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) as success_rate
             FROM requests
-            WHERE date BETWEEN ? AND ?
+            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
             GROUP BY model
             ORDER BY total_requests DESC
         """, (start_date, end_date)).fetchall()
@@ -458,7 +483,9 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
                 r.latency_ms, r.ttfb_ms,
                 r.status_code, r.success, r.error_type,
                 r.trace_id, r.client_ip,
-                r.api_key_id,
+                r.api_key_id, r.client_api_key_id,
+                r.provider, r.provider_id, r.provider_api_key_id,
+                r.protocol, r.endpoint, r.route_attempts, r.stat_eligible,
                 ak.name as api_key_name
             FROM requests r
             LEFT JOIN api_keys ak ON r.api_key_id = ak.id
@@ -469,11 +496,21 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
             params + [page_size, offset]
         ).fetchall()
 
+        items = []
+        for row in rows:
+            item = dict(row)
+            try:
+                import json as _json
+                item["route_attempts"] = _json.loads(item.get("route_attempts") or "[]")
+            except (TypeError, ValueError):
+                item["route_attempts"] = []
+            items.append(item)
+
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [dict(r) for r in rows],
+            "items": items,
         }
     except Exception as e:
         _logger.error(f"[DB] query_requests 失败: {e}", exc_info=True)
@@ -493,7 +530,8 @@ def query_latency_distribution(start_date: str, end_date: str, model: str = "all
 
         rows = conn.execute(f"""
             SELECT latency_ms FROM requests
-            WHERE date BETWEEN ? AND ? {model_clause} AND latency_ms > 0
+            WHERE date BETWEEN ? AND ? {model_clause}
+              AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0
         """, params).fetchall()
 
         # LLM 适配分桶：< 1s / 1-3s / 3-10s / 10-30s / > 30s
@@ -527,7 +565,8 @@ def query_available_models() -> list:
     try:
         conn = _get_conn()
         rows = conn.execute(
-            "SELECT DISTINCT model FROM requests ORDER BY model"
+            "SELECT DISTINCT model FROM requests "
+            "WHERE COALESCE(stat_eligible, 1) = 1 ORDER BY model"
         ).fetchall()
         return [r[0] for r in rows]
     except Exception as e:
@@ -577,7 +616,7 @@ def query_model_stats(start_date: str, end_date: str) -> list:
                 ROUND(CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) AS success_rate
 
             FROM requests
-            WHERE date BETWEEN ? AND ?
+            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
             GROUP BY model
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -587,7 +626,8 @@ def query_model_stats(start_date: str, end_date: str) -> list:
             row = dict(r)
             # 计算 P50/P90/P99（单独查询该模型的延迟分布）
             latencies = [x[0] for x in conn.execute(
-                "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND model = ? AND latency_ms > 0 ORDER BY latency_ms",
+                "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND model = ? "
+                "AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
                 (start_date, end_date, row["model"])
             ).fetchall()]
 
@@ -618,7 +658,8 @@ def query_error_analysis(start_date: str, end_date: str) -> list:
     try:
         conn = _get_conn()
         total_errors = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE date BETWEEN ? AND ? AND success = 0",
+            "SELECT COUNT(*) FROM requests WHERE date BETWEEN ? AND ? AND success = 0 "
+            "AND COALESCE(stat_eligible, 1) = 1",
             (start_date, end_date)
         ).fetchone()[0] or 1  # 避免除零
 
@@ -629,6 +670,7 @@ def query_error_analysis(start_date: str, end_date: str) -> list:
                 GROUP_CONCAT(DISTINCT model)                AS models
             FROM requests
             WHERE date BETWEEN ? AND ? AND success = 0
+              AND COALESCE(stat_eligible, 1) = 1
             GROUP BY status_code
             ORDER BY count DESC
         """, (start_date, end_date)).fetchall()
@@ -658,7 +700,7 @@ def query_hourly(target_date: str) -> list:
                 SUM(total_tokens)                             AS total_tokens,
                 AVG(latency_ms)                               AS avg_latency_ms
             FROM requests
-            WHERE date = ?
+            WHERE date = ? AND COALESCE(stat_eligible, 1) = 1
             GROUP BY hour
             ORDER BY hour ASC
         """, (target_date,)).fetchall()
@@ -725,7 +767,7 @@ def query_provider_stats(start_date: str, end_date: str) -> list:
                 GROUP_CONCAT(DISTINCT model)                                     AS models
 
             FROM requests
-            WHERE date BETWEEN ? AND ?
+            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
             GROUP BY provider
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -736,7 +778,8 @@ def query_provider_stats(start_date: str, end_date: str) -> list:
             # 计算 P50/P90/P99 延迟
             latencies = [x[0] for x in conn.execute(
                 "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? "
-                "AND COALESCE(NULLIF(provider, ''), 'default') = ? AND latency_ms > 0 "
+                "AND COALESCE(NULLIF(provider, ''), 'default') = ? "
+                "AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 "
                 "ORDER BY latency_ms",
                 (start_date, end_date, row["provider"])
             ).fetchall()]
@@ -776,7 +819,7 @@ def query_request_detail(request_id: int):
             return None
         r = dict(row)
         # 尝试将 request_body / response_body 字符串解析为 JSON 对象
-        for key in ("request_body", "response_body"):
+        for key in ("request_body", "response_body", "route_attempts"):
             val = r.get(key)
             if val:
                 try:
@@ -808,7 +851,7 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
             LEFT JOIN api_keys ak ON r.api_key_id = ak.id
-            WHERE r.date >= ? AND r.date <= ?
+            WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
             GROUP BY r.api_key_id
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -832,7 +875,7 @@ def query_api_key_model_stats(start_date: str, end_date: str) -> list:
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
             LEFT JOIN api_keys ak ON r.api_key_id = ak.id
-            WHERE r.date >= ? AND r.date <= ?
+            WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
             GROUP BY r.api_key_id, r.model
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -859,6 +902,7 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
                 FROM requests r
                 LEFT JOIN api_keys ak ON r.api_key_id = ak.id
                 WHERE r.date >= ? AND r.date <= ? AND r.api_key_id = ?
+                  AND COALESCE(r.stat_eligible, 1) = 1
                 GROUP BY r.date
                 ORDER BY r.date
             """, (start_date, end_date, api_key_id)).fetchall()
@@ -875,7 +919,7 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
                     ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
                 FROM requests r
                 LEFT JOIN api_keys ak ON r.api_key_id = ak.id
-                WHERE r.date >= ? AND r.date <= ?
+                WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
                 GROUP BY r.date, r.api_key_id
                 ORDER BY r.date, tokens DESC
             """, (start_date, end_date)).fetchall()

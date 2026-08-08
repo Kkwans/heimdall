@@ -169,9 +169,62 @@ def _migrate_admin_secrets_and_pricing(connection: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_routing_and_request_records(connection: sqlite3.Connection) -> None:
+    """Add Key health state and the unified request-recording contract."""
+    if _table_exists(connection, "provider_api_keys"):
+        for column, definition in (
+            ("cooldown_until", "DATETIME"),
+            ("last_error_summary", "TEXT"),
+        ):
+            if not _column_exists(connection, "provider_api_keys", column):
+                connection.execute(
+                    f"ALTER TABLE provider_api_keys ADD COLUMN {column} {definition}"
+                )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_provider_api_keys_route "
+            "ON provider_api_keys(provider_id, enabled, priority DESC, id ASC)"
+        )
+
+    if not _table_exists(connection, "requests"):
+        return
+
+    request_columns = (
+        ("provider_id", "INTEGER"),
+        ("provider_api_key_id", "INTEGER"),
+        ("client_api_key_id", "INTEGER"),
+        ("protocol", "TEXT"),
+        ("endpoint", "TEXT"),
+        ("route_attempts", "TEXT"),
+        ("stat_eligible", "BOOLEAN NOT NULL DEFAULT 1"),
+    )
+    for column, definition in request_columns:
+        if not _column_exists(connection, "requests", column):
+            connection.execute(
+                f"ALTER TABLE requests ADD COLUMN {column} {definition}"
+            )
+
+    if _column_exists(connection, "requests", "api_key_id"):
+        connection.execute(
+            "UPDATE requests SET client_api_key_id = api_key_id "
+            "WHERE client_api_key_id IS NULL AND api_key_id IS NOT NULL"
+        )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_provider_id ON requests(provider_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_provider_api_key_id "
+        "ON requests(provider_api_key_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_stat_date "
+        "ON requests(stat_eligible, date)"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
     Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
+    Migration(3, "routing_and_request_records", _migrate_routing_and_request_records),
 )
 
 

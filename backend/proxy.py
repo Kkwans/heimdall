@@ -6,7 +6,7 @@ import json
 import threading
 import subprocess
 from logging.handlers import WatchedFileHandler
-from datetime import datetime, date as date_type, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 
 # 中国时区 (UTC+8)
 CST = timezone(timedelta(hours=8))
@@ -245,6 +245,8 @@ db.init_db()
 
 import router
 import auth
+from services.request_recorder import RequestRecorder
+from services.usage_normalizer import merge_usage, normalize_usage, usage_from_stream_event
 from admin_api import admin_bp
 
 # 初始化路由表和认证表
@@ -278,78 +280,6 @@ app = Flask(__name__)
 from stats_api import stats_bp
 app.register_blueprint(stats_bp)
 app.register_blueprint(admin_bp)
-
-
-def build_record(
-    request_data: dict,
-    status_code: int,
-    usage: dict,
-    latency_ms: int,
-    is_stream: bool,
-    ttfb_ms: int = 0,
-    trace_id: str = "",
-    error_type: str = None,
-    client_ip: str = "",
-    request_body: str = None,
-    response_body: str = None,
-    provider: str = None,
-    api_key_id: int = None,
-) -> dict:
-    """构建请求记录 dict，用于写入数据库和日志"""
-    original_model = request_data.get("model", "unknown")
-
-    # 处理模型名（与代理逻辑一致：取 '/' 后的部分）
-    model = original_model.split('/')[-1] if '/' in original_model else original_model
-
-    messages = request_data.get("messages", [])
-    messages_count = len(messages) if isinstance(messages, list) else 0
-
-    # 从 usage 中提取 token 数据（兼容不同模型的字段名差异）
-    prompt_tokens = usage.get("prompt_tokens", 0) or 0
-    completion_tokens = usage.get("completion_tokens", 0) or 0
-    total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
-
-    # 缓存相关（OpenAI / FRIDAY 格式）
-    cache_hit_tokens = (
-        usage.get("prompt_cache_hit_tokens", 0) or
-        usage.get("prompt_tokens_details", {}).get("cached_tokens", 0) or
-        0
-    )
-    cache_miss_tokens = usage.get("prompt_cache_miss_tokens", 0) or 0
-
-    # 推理 token（DeepSeek-R1 等推理模型）
-    reasoning_tokens = (
-        usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0) or 0
-    )
-
-    success = status_code < 400
-    today = str(date_type.today())
-
-    return {
-        "created_at": datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S"),
-        "date": datetime.now(CST).strftime("%Y-%m-%d"),
-        "model": model,
-        "original_model": original_model,
-        "stream": 1 if is_stream else 0,
-        "messages_count": messages_count,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": total_tokens,
-        "cache_hit_tokens": cache_hit_tokens,
-        "cache_miss_tokens": cache_miss_tokens,
-        "reasoning_tokens": reasoning_tokens,
-        "latency_ms": latency_ms,
-        "ttfb_ms": ttfb_ms,
-        "status_code": status_code,
-        "success": 1 if success else 0,
-        "error_type": error_type,
-        "trace_id": trace_id,
-        "client_ip": client_ip,
-        "request_body": request_body,
-        "response_body": response_body,
-        "provider": provider,
-        "api_key_id": api_key_id,
-    }
 
 
 def _fmt_duration(ms: int) -> str:
@@ -465,311 +395,415 @@ def log_request(record: dict):
     proxy_logger.info(msg)
 
 
-def _try_send_request(upstream_url: str, data: dict, headers: dict, api_keys: list, timeout: int, stream: bool = False):
-    """
-    尝试发送请求，支持多 Key 失败重试。
-    返回 (response, used_key_index) 或 (None, -1) 如果所有 Key 都失败。
-    """
-    for idx, api_key in enumerate(api_keys):
+class UpstreamAttemptsExhausted(Exception):
+    def __init__(self, status_code: int, error_type: str, attempts: list):
+        super().__init__(error_type)
+        self.status_code = status_code
+        self.error_type = error_type
+        self.attempts = attempts
+
+
+def _attempt_entry(candidate: 'router.RouteKey', started_at: float, **values) -> dict:
+    entry = {
+        "provider_api_key_id": candidate.id,
+        "duration_ms": max(int((time.time() - started_at) * 1000), 0),
+    }
+    entry.update(values)
+    return entry
+
+
+def _send_with_route_keys(
+    upstream_url: str,
+    data: dict,
+    base_headers: dict,
+    route: 'router.RouteResult',
+    *,
+    stream: bool,
+    auth_style: str,
+):
+    """Try Provider Keys in stable order and return response, Key and attempts."""
+    attempts = []
+    candidates = route.key_candidates
+    if not candidates:
+        raise UpstreamAttemptsExhausted(502, "no_available_key", attempts)
+
+    for index, candidate in enumerate(candidates):
+        started_at = time.time()
+        headers = dict(base_headers)
+        if auth_style == "anthropic":
+            headers["x-api-key"] = candidate.secret
+        else:
+            headers["Authorization"] = f"Bearer {candidate.secret}"
         try:
-            req_headers = dict(headers)
-            req_headers['Authorization'] = f'Bearer {api_key}'
-            resp = http_requests.post(
+            response = http_requests.post(
                 upstream_url,
                 json=data,
-                headers=req_headers,
+                headers=headers,
                 stream=stream,
-                timeout=timeout
+                timeout=config.REQUEST_TIMEOUT,
             )
-            # 成功或客户端错误（4xx，非429）：直接返回
-            if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
-                return resp, idx
-            # 429 或 5xx：尝试下一个 Key
-            if resp.status_code == 429 or resp.status_code >= 500:
-                system_logger.warning(
-                    f"[PROXY] API Key #{idx+1} 返回 {resp.status_code}，"
-                    f"尝试下一个 Key（剩余 {len(api_keys) - idx - 1} 个）"
-                )
-                resp.close()
-                continue
-            return resp, idx
-        except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
-            # 连接错误：尝试下一个 Key
-            if idx < len(api_keys) - 1:
-                system_logger.warning(f"[PROXY] API Key #{idx+1} 连接失败，尝试下一个 Key")
-                continue
-            raise
-    # 所有 Key 都失败
-    return None, -1
-
-
-def handle_non_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None, api_key_id: int = None) -> Response:
-    """处理非流式请求"""
-    usage = {}
-    status_code = 500
-    trace_id = ""
-    error_type = None
-    provider_key = route.provider_key if route else None
-
-    # 确定上游 URL 和 headers
-    base_url = route.base_url
-    upstream_url = f"{base_url}/chat/completions"
-
-    # 获取所有可用 API Key
-    api_keys = route.api_keys if route and route.api_keys else [route.api_key] if route and route.api_key else []
-
-    try:
-        resp, used_idx = _try_send_request(
-            upstream_url, data, headers, api_keys,
-            timeout=config.REQUEST_TIMEOUT, stream=False
-        )
-        
-        if resp is None:
-            # 所有 Key 都失败
-            error_type = "all_keys_failed"
-            latency_ms = int((time.time() - start_time) * 1000)
-            record = build_record(data, 502, {}, latency_ms, is_stream=False,
-                                  error_type=error_type, client_ip=client_ip,
-                                  provider=provider_key, api_key_id=api_key_id)
-            db.insert_request(record)
-            log_request(record)
-            system_logger.error(f"[PROXY] 所有 API Key 均失败: model={data.get('model', 'unknown')}")
-            return Response('{"error": "All API Keys failed"}', status=502, content_type='application/json')
-
-        status_code = resp.status_code
-        trace_id = resp.headers.get("M-TraceId", "")
-
-        # 解析 usage 和响应内容
-        resp_body_str = None
-        if status_code == 200:
-            try:
-                resp_json = resp.json()
-                usage = resp_json.get("usage", {}) or {}
-                resp_body_str = json.dumps(resp_json, ensure_ascii=False)
-            except Exception:
-                pass
-        else:
-            # 非 200：记录完整错误响应体，供请求详情展示
-            try:
-                resp_body_str = resp.text
-            except Exception:
-                pass
-
-        # 请求内容
-        req_body_str = json.dumps(data, ensure_ascii=False)
-
-        latency_ms = int((time.time() - start_time) * 1000)
-        # 非流式请求：TTFB 等于总延迟（一次性返回）
-        record = build_record(data, status_code, usage, latency_ms, is_stream=False,
-                              ttfb_ms=latency_ms,
-                              trace_id=trace_id, client_ip=client_ip,
-                              request_body=req_body_str, response_body=resp_body_str,
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-
-        return Response(resp.content, status=resp.status_code,
-                        content_type=resp.headers.get('Content-Type'))
-
-    except http_requests.exceptions.Timeout:
-        error_type = "timeout"
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 504, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip,
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 请求超时: model={data.get('model', 'unknown')}")
-        return Response('{"error": "Gateway Timeout"}', status=504, content_type='application/json')
-
-    except http_requests.exceptions.ConnectionError:
-        error_type = "connection_error"
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 502, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip,
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 连接失败: model={data.get('model', 'unknown')}")
-        return Response('{"error": "Bad Gateway"}', status=502, content_type='application/json')
-
-    except Exception as e:
-        error_type = "unknown"
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 500, {}, latency_ms, is_stream=False,
-                              error_type=error_type, client_ip=client_ip,
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 未知错误: {e}", exc_info=True)
-        return Response('{"error": "Internal Server Error"}', status=500, content_type='application/json')
-
-
-def handle_stream(data: dict, headers: dict, start_time: float, client_ip: str, route: 'router.RouteResult' = None, api_key_id: int = None) -> Response:
-    """处理流式请求（SSE）"""
-
-    # 确定上游 URL
-    base_url = route.base_url
-    upstream_url = f"{base_url}/chat/completions"
-
-    # 获取所有可用 API Key
-    api_keys = route.api_keys if route and route.api_keys else [route.api_key] if route and route.api_key else []
-
-    provider_key = route.provider_key if route else None
-
-    # 请求流式响应时，添加 stream_options 以获取 usage 统计
-    stream_data = dict(data)
-    stream_data["stream_options"] = {"include_usage": True}
-
-    # 先建立连接，检查上游状态码
-    # 上游非 200 时直接返回带正确 HTTP 状态码的 JSON 错误响应，
-    # 让客户端（如 Codex）能感知到具体错误原因，而不是静默失败
-    try:
-        upstream_resp, used_idx = _try_send_request(
-            upstream_url, stream_data, headers, api_keys,
-            timeout=config.REQUEST_TIMEOUT, stream=True
-        )
-
-        if upstream_resp is None:
-            # 所有 Key 都失败
-            latency_ms = int((time.time() - start_time) * 1000)
-            record = build_record(data, 502, {}, latency_ms, is_stream=True,
-                                  error_type="all_keys_failed", client_ip=client_ip,
-                                  request_body=json.dumps(data, ensure_ascii=False),
-                                  provider=provider_key, api_key_id=api_key_id)
-            db.insert_request(record)
-            log_request(record)
-            system_logger.error(f"[PROXY] 流式请求所有 API Key 均失败: model={data.get('model', 'unknown')}")
-            return Response('{"error":{"message":"All API Keys failed","type":"proxy_error"}}',
-                            status=502, content_type='application/json')
-
-    except http_requests.exceptions.Timeout:
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 504, {}, latency_ms, is_stream=True,
-                              error_type="timeout", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 流式请求超时: model={data.get('model', 'unknown')}")
-        return Response('{"error":{"message":"Gateway Timeout","type":"proxy_error"}}',
-                        status=504, content_type='application/json')
-    except http_requests.exceptions.ConnectionError:
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 502, {}, latency_ms, is_stream=True,
-                              error_type="connection_error", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 流式请求连接失败: model={data.get('model', 'unknown')}")
-        return Response('{"error":{"message":"Bad Gateway","type":"proxy_error"}}',
-                        status=502, content_type='application/json')
-    except Exception as e:
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, 500, {}, latency_ms, is_stream=True,
-                              error_type="unknown", client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False),
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        system_logger.error(f"[PROXY] 流式请求未知错误: {e}", exc_info=True)
-        return Response('{"error":{"message":"Internal Server Error","type":"proxy_error"}}',
-                        status=500, content_type='application/json')
-
-    status_code = upstream_resp.status_code
-    trace_id = upstream_resp.headers.get("M-TraceId", "")
-
-    # 上游非 200：读取错误体，记录日志，以正确 HTTP 状态码返回给客户端
-    if status_code != 200:
-        try:
-            err_content = upstream_resp.content
-            err_text = err_content.decode('utf-8', errors='ignore')
-        except Exception:
-            err_content = b'{"error":{"message":"Unknown upstream error","type":"upstream_error"}}'
-            err_text = err_content.decode()
-
-        system_logger.error(
-            f"[PROXY] 上游返回 {status_code}: model={data.get('model', 'unknown')} "
-            f"trace={trace_id} body={err_text[:500]}"
-        )
-        latency_ms = int((time.time() - start_time) * 1000)
-        record = build_record(data, status_code, {}, latency_ms, is_stream=True,
-                              trace_id=trace_id, client_ip=client_ip,
-                              request_body=json.dumps(data, ensure_ascii=False),
-                              response_body=err_text,
-                              provider=provider_key, api_key_id=api_key_id)
-        db.insert_request(record)
-        log_request(record)
-        content_type = upstream_resp.headers.get('Content-Type', 'application/json')
-        return Response(err_content, status=status_code, content_type=content_type)
-
-    # 上游 200：正常流式转发
-    def generate():
-        usage = {}
-        ttfb_ms = 0
-        first_token = True
-        error_type = None
-        reasoning_chunks = []
-        content_chunks = []
-
-        try:
-            for line in upstream_resp.iter_lines():
-                if line:
-                    yield line + b'\n\n'
-
-                    if first_token:
-                        ttfb_ms = int((time.time() - start_time) * 1000)
-                        first_token = False
-
-                    if line.startswith(b'data: ') and line != b'data: [DONE]':
-                        try:
-                            chunk_str = line[6:].decode('utf-8', errors='ignore')
-                            chunk_json = json.loads(chunk_str)
-                            if chunk_json.get("usage"):
-                                usage = chunk_json["usage"]
-                            choices = chunk_json.get("choices", [])
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                rc = delta.get("reasoning_content")
-                                ct = delta.get("content")
-                                if rc and len(reasoning_chunks) < 200:
-                                    reasoning_chunks.append(rc)
-                                if ct and len(content_chunks) < 200:
-                                    content_chunks.append(ct)
-                        except Exception:
-                            pass
-
         except http_requests.exceptions.Timeout:
-            error_type = "timeout"
-            system_logger.error(f"[PROXY] 流式传输超时: model={data.get('model', 'unknown')}")
-        except Exception as e:
-            error_type = "unknown"
-            system_logger.error(f"[PROXY] 流式传输错误: {e}", exc_info=True)
-        finally:
-            latency_ms = int((time.time() - start_time) * 1000)
-            req_body_str = json.dumps(data, ensure_ascii=False)
-            reasoning_text = "".join(reasoning_chunks)
-            content_text = "".join(content_chunks)
-            if reasoning_text or content_text:
-                resp_body_str = json.dumps({
-                    "reasoning_content": reasoning_text,
-                    "content": content_text,
-                    "_stream": True,
-                }, ensure_ascii=False)
-            else:
-                resp_body_str = None
-            record = build_record(
-                data, status_code, usage, latency_ms,
-                is_stream=True, ttfb_ms=ttfb_ms,
-                trace_id=trace_id, error_type=error_type, client_ip=client_ip,
-                request_body=req_body_str, response_body=resp_body_str,
-                provider=provider_key, api_key_id=api_key_id
+            router.mark_api_key_error(candidate.id, "timeout")
+            attempts.append(_attempt_entry(candidate, started_at, error_type="timeout"))
+            if index == len(candidates) - 1:
+                raise UpstreamAttemptsExhausted(504, "timeout", attempts)
+            continue
+        except http_requests.exceptions.ConnectionError:
+            router.mark_api_key_error(candidate.id, "connection_error")
+            attempts.append(
+                _attempt_entry(candidate, started_at, error_type="connection_error")
             )
-            db.insert_request(record)
-            log_request(record)
+            if index == len(candidates) - 1:
+                raise UpstreamAttemptsExhausted(502, "connection_error", attempts)
+            continue
 
-    return Response(generate(), content_type='text/event-stream')
+        status_code = int(response.status_code)
+        retryable = status_code == 429 or status_code >= 500
+        if retryable:
+            summary = f"upstream_status_{status_code}"
+            router.mark_api_key_error(candidate.id, summary)
+            attempts.append(
+                _attempt_entry(
+                    candidate,
+                    started_at,
+                    status_code=status_code,
+                    error_type=summary,
+                )
+            )
+            if index < len(candidates) - 1:
+                response.close()
+                continue
+            return response, candidate, attempts
+
+        attempts.append(
+            _attempt_entry(
+                candidate,
+                started_at,
+                status_code=status_code,
+                outcome="success" if status_code < 400 else "client_error",
+            )
+        )
+        if status_code < 400 and not stream:
+            router.mark_api_key_used(candidate.id)
+        elif status_code >= 400:
+            router.mark_api_key_used(candidate.id, reset_errors=False)
+        return response, candidate, attempts
+
+    raise UpstreamAttemptsExhausted(502, "all_keys_failed", attempts)
+
+
+def _protocol_error_payload(protocol: str, message: str, error_type: str) -> dict:
+    if protocol == "anthropic_messages":
+        public_type = {
+            "auth_error": "authentication_error",
+            "route_error": "invalid_request_error",
+            "proxy_crash": "api_error",
+            "connection_error": "api_error",
+            "timeout": "api_error",
+        }.get(error_type, error_type)
+        return {"type": "error", "error": {"type": public_type, "message": message}}
+    public_type = {
+        "permission_error": "auth_error",
+        "route_error": "invalid_request_error",
+        "proxy_crash": "proxy_error",
+        "connection_error": "proxy_error",
+        "timeout": "proxy_error",
+    }.get(error_type, error_type)
+    return {"error": {"message": message, "type": public_type}}
+
+
+def _recorded_error(
+    recorder: RequestRecorder,
+    status_code: int,
+    message: str,
+    error_type: str,
+    *,
+    attempts: list = None,
+    provider_api_key_id: int = None,
+) -> Response:
+    payload = _protocol_error_payload(recorder.protocol, message, error_type)
+    recorder.finalize(
+        status_code,
+        error_type=error_type,
+        response_body=payload,
+        attempts=attempts,
+        provider_api_key_id=provider_api_key_id,
+    )
+    return Response(
+        json.dumps(payload, ensure_ascii=False),
+        status=status_code,
+        content_type="application/json",
+    )
+
+
+def _parse_sse_event(line: bytes):
+    if not line.startswith(b"data: ") or line == b"data: [DONE]":
+        return None
+    try:
+        return json.loads(line[6:].decode("utf-8", errors="replace"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_meaningful_stream_event(event: dict, protocol: str) -> bool:
+    if not isinstance(event, dict):
+        return False
+    if protocol == "openai_chat":
+        for choice in event.get("choices") or []:
+            delta = choice.get("delta") or {}
+            if delta.get("content") or delta.get("reasoning_content") or delta.get("tool_calls"):
+                return True
+        return False
+    if protocol == "openai_responses":
+        event_type = str(event.get("type") or "")
+        return event_type.endswith(".delta") and any(
+            event.get(field) for field in ("delta", "text", "content")
+        )
+    delta = event.get("delta") or {}
+    return any(delta.get(field) for field in ("text", "thinking", "partial_json"))
+
+
+def _forward_non_stream(
+    recorder: RequestRecorder,
+    route: 'router.RouteResult',
+    upstream_url: str,
+    data: dict,
+    headers: dict,
+    auth_style: str,
+) -> Response:
+    try:
+        response, candidate, attempts = _send_with_route_keys(
+            upstream_url,
+            data,
+            headers,
+            route,
+            stream=False,
+            auth_style=auth_style,
+        )
+    except UpstreamAttemptsExhausted as exc:
+        return _recorded_error(
+            recorder,
+            exc.status_code,
+            "所有 Provider API Key 均不可用",
+            exc.error_type,
+            attempts=exc.attempts,
+        )
+
+    content = response.content
+    trace_id = response.headers.get("M-TraceId", "")
+    payload = None
+    try:
+        payload = response.json()
+    except Exception:
+        pass
+    usage = normalize_usage((payload or {}).get("usage") if isinstance(payload, dict) else {})
+    status_code = int(response.status_code)
+    recorder.finalize(
+        status_code,
+        usage=usage,
+        ttfb_ms=max(int((time.time() - recorder.started_at) * 1000), 0),
+        trace_id=trace_id,
+        error_type=None if status_code < 400 else "upstream_error",
+        response_body=payload if payload is not None else content,
+        attempts=attempts,
+        provider_api_key_id=candidate.id,
+    )
+    return Response(
+        content,
+        status=status_code,
+        content_type=response.headers.get("Content-Type", "application/json"),
+    )
+
+
+def _forward_stream(
+    recorder: RequestRecorder,
+    route: 'router.RouteResult',
+    upstream_url: str,
+    data: dict,
+    headers: dict,
+    auth_style: str,
+) -> Response:
+    try:
+        response, candidate, attempts = _send_with_route_keys(
+            upstream_url,
+            data,
+            headers,
+            route,
+            stream=True,
+            auth_style=auth_style,
+        )
+    except UpstreamAttemptsExhausted as exc:
+        return _recorded_error(
+            recorder,
+            exc.status_code,
+            "所有 Provider API Key 均不可用",
+            exc.error_type,
+            attempts=exc.attempts,
+        )
+
+    status_code = int(response.status_code)
+    trace_id = response.headers.get("M-TraceId", "")
+    if status_code >= 400:
+        content = response.content
+        recorder.finalize(
+            status_code,
+            trace_id=trace_id,
+            error_type="upstream_error",
+            response_body=content,
+            attempts=attempts,
+            provider_api_key_id=candidate.id,
+        )
+        return Response(
+            content,
+            status=status_code,
+            content_type=response.headers.get("Content-Type", "application/json"),
+        )
+
+    def generate():
+        usage = normalize_usage({})
+        ttfb_ms = 0
+        final_status = status_code
+        error_type = None
+        captured = bytearray()
+        try:
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                framed = line + b"\n\n"
+                captured.extend(framed)
+                event = _parse_sse_event(line)
+                if event is not None:
+                    usage = merge_usage(
+                        usage,
+                        usage_from_stream_event(event, recorder.protocol),
+                    )
+                    if not ttfb_ms and _is_meaningful_stream_event(event, recorder.protocol):
+                        ttfb_ms = max(int((time.time() - recorder.started_at) * 1000), 0)
+                yield framed
+            router.mark_api_key_used(candidate.id)
+        except GeneratorExit:
+            final_status = 499
+            error_type = "client_disconnect"
+            router.mark_api_key_used(candidate.id, reset_errors=False)
+            raise
+        except http_requests.exceptions.Timeout:
+            final_status = 504
+            error_type = "timeout"
+            router.mark_api_key_error(candidate.id, error_type)
+        except (http_requests.exceptions.ConnectionError, http_requests.exceptions.ChunkedEncodingError):
+            final_status = 502
+            error_type = "stream_interrupted"
+            router.mark_api_key_error(candidate.id, error_type)
+        except Exception as exc:
+            final_status = 502
+            error_type = "stream_interrupted"
+            router.mark_api_key_error(candidate.id, f"stream_interrupted:{type(exc).__name__}")
+            system_logger.error(f"[PROXY] 流式传输失败: {exc}", exc_info=True)
+        finally:
+            response.close()
+            recorder.finalize(
+                final_status,
+                usage=usage,
+                ttfb_ms=ttfb_ms,
+                trace_id=trace_id,
+                error_type=error_type,
+                response_body=bytes(captured),
+                attempts=attempts,
+                provider_api_key_id=candidate.id,
+            )
+
+    return Response(generate(), status=200, content_type="text/event-stream")
+
+
+def _proxy_protocol(protocol: str) -> Response:
+    started_at = time.time()
+    client_ip = request.remote_addr or ""
+    data = request.get_json(silent=True, force=True) or {}
+    stream = bool(data.get("stream", False))
+    recorder = RequestRecorder(
+        data,
+        protocol=protocol,
+        endpoint=request.path,
+        stream=stream,
+        client_ip=client_ip,
+        started_at=started_at,
+        log_callback=log_request,
+    )
+    try:
+        if not data or "model" not in data:
+            return _recorded_error(recorder, 400, "缺少 model 字段", "invalid_request_error")
+
+        if protocol == "anthropic_messages":
+            client_secret = request.headers.get("x-api-key", "")
+            if not client_secret:
+                auth_header = request.headers.get("Authorization", "")
+                client_secret = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+        else:
+            auth_header = request.headers.get("Authorization", "")
+            client_secret = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+        if not client_secret:
+            return _recorded_error(recorder, 401, "缺少 API Key", "auth_error")
+
+        key_info = auth.validate_api_key(client_secret)
+        if not key_info:
+            return _recorded_error(recorder, 401, "无效 API Key", "auth_error")
+        recorder.authenticate(int(key_info["id"]))
+
+        requested_model = str(data["model"])
+        if not auth.check_model_access(key_info, requested_model):
+            return _recorded_error(recorder, 403, "无权访问该模型", "permission_error")
+
+        route_protocol = "anthropic" if protocol == "anthropic_messages" else "openai"
+        route = router.resolve_route_for_proxy(requested_model, protocol=route_protocol)
+        if isinstance(route, router.RouteError):
+            return _recorded_error(
+                recorder,
+                route.status_code,
+                route.message,
+                "route_error",
+            )
+        recorder.bind_route(route)
+        system_logger.info(
+            f"[PROXY] 路由: {requested_model} → "
+            f"{route.provider_key}/{route.model_name} ({route.base_url})"
+        )
+
+        upstream_data = dict(data)
+        upstream_data["model"] = route.upstream_model
+        if protocol == "openai_chat":
+            upstream_data = _trim_messages_if_needed(
+                upstream_data,
+                context_window=route.context_window,
+            )
+            if stream:
+                upstream_data["stream_options"] = {"include_usage": True}
+
+        if protocol == "anthropic_messages":
+            path = "/messages"
+            headers = {
+                "Content-Type": "application/json",
+                "anthropic-version": request.headers.get("anthropic-version", "2023-06-01"),
+            }
+            auth_style = "anthropic"
+        elif protocol == "openai_responses":
+            path = "/responses"
+            headers = {"Content-Type": "application/json"}
+            auth_style = "bearer"
+        else:
+            path = "/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            auth_style = "bearer"
+        upstream_url = f"{route.base_url}{path}"
+        if stream:
+            return _forward_stream(
+                recorder, route, upstream_url, upstream_data, headers, auth_style
+            )
+        return _forward_non_stream(
+            recorder, route, upstream_url, upstream_data, headers, auth_style
+        )
+    except Exception as exc:
+        system_logger.error(f"[PROXY] 未捕获异常: {exc}", exc_info=True)
+        return _recorded_error(recorder, 500, "内部服务器错误", "proxy_crash")
 
 
 def _estimate_tokens(data: dict) -> int:
@@ -850,89 +884,7 @@ def _trim_messages_if_needed(data: dict, context_window: int = None) -> dict:
 @app.route('/chat/completions', methods=['POST'])
 @app.route('/openai/chat/completions', methods=['POST'])
 def proxy_openai_chat():
-    start_time = time.time()
-    client_ip = request.remote_addr or ""
-
-    try:
-        data = request.get_json(silent=True, force=True) or {}
-
-        if not data or 'model' not in data:
-            return Response('{"error":{"message":"Missing model field","type":"invalid_request_error"}}',
-                            status=400, content_type='application/json')
-
-        original_model = data['model']
-
-        # ── Heimdall API Key 认证 ──
-        auth_header = request.headers.get('Authorization', '')
-        api_key = None
-        if auth_header.startswith('Bearer '):
-            api_key = auth_header[7:]
-        
-        if not api_key:
-            return Response('{"error":{"message":"Missing API Key","type":"auth_error"}}',
-                           status=401, content_type='application/json')
-        
-        # 验证 Heimdall API Key
-        key_info = auth.validate_api_key(api_key)
-        if not key_info:
-            return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
-                           status=401, content_type='application/json')
-        
-        # 检查模型权限
-        if not auth.check_model_access(key_info, original_model):
-            return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
-                           status=403, content_type='application/json')
-
-        # ── 路由查找：根据 model 字段确定上游 API ──
-        # 不传 auth_header，使用厂商存储的 API Key
-        route = router.resolve_route_for_proxy(original_model, protocol="openai")
-
-        if isinstance(route, router.RouteError):
-            system_logger.warning(f"[PROXY] 路由失败: model={original_model} error={route.message}")
-            return Response(
-                json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),
-                status=route.status_code, content_type='application/json'
-            )
-
-        system_logger.info(
-            f"[PROXY] 路由: {original_model} → {route.provider_key}/{route.model_name}"
-            f" ({route.base_url})"
-        )
-
-        data['model'] = route.model_name
-
-        data = _trim_messages_if_needed(data, context_window=route.context_window)
-
-        # 使用厂商存储的 API Key（不暴露给客户端）
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {route.api_key}',
-        }
-
-        # 判断是否流式请求
-        is_stream = data.get('stream', False)
-
-        if is_stream:
-            return handle_stream(data, headers, start_time, client_ip, route=route, api_key_id=key_info.get("id"))
-        else:
-            return handle_non_stream(data, headers, start_time, client_ip, route=route, api_key_id=key_info.get("id"))
-
-    except Exception as e:
-        # 兜底异常捕获：确保任何未预期的错误都返回 JSON 格式，而非 Flask 默认的 HTML 500 页面
-        try:
-            system_logger.error(f"[PROXY] 路由层未捕获异常: {e}", exc_info=True)
-        except Exception:
-            pass  # logger 本身异常时静默处理，防止二次崩溃
-        latency_ms = int((time.time() - start_time) * 1000)
-        try:
-            record = build_record({}, 500, {}, latency_ms, is_stream=False,
-                                  error_type="proxy_crash", client_ip=client_ip)
-            db.insert_request(record)
-        except Exception:
-            pass
-        return Response('{"error":{"message":"Internal Server Error","type":"proxy_error"}}',
-                        status=500, content_type='application/json')
-
+    return _proxy_protocol("openai_chat")
 
 # ==========================================
 # Anthropic 协议支持
@@ -943,127 +895,7 @@ def proxy_openai_chat():
 @app.route('/anthropic/messages', methods=['POST'])
 def proxy_anthropic_messages():
     """Anthropic Messages API 代理"""
-    start_time = time.time()
-    client_ip = request.remote_addr or ""
-
-    try:
-        data = request.get_json(silent=True, force=True) or {}
-
-        if not data or 'model' not in data:
-            return Response('{"type":"error","error":{"type":"invalid_request_error","message":"Missing model field"}}',
-                            status=400, content_type='application/json')
-
-        original_model = data['model']
-
-        # Heimdall API Key 认证
-        api_key = request.headers.get('x-api-key', '') or request.headers.get('Authorization', '').replace('Bearer ', '')
-        if not api_key:
-            return Response('{"type":"error","error":{"type":"authentication_error","message":"Missing API Key"}}',
-                           status=401, content_type='application/json')
-
-        key_info = auth.validate_api_key(api_key)
-        if not key_info:
-            return Response('{"type":"error","error":{"type":"authentication_error","message":"Invalid API Key"}}',
-                           status=401, content_type='application/json')
-
-        if not auth.check_model_access(key_info, original_model):
-            return Response('{"type":"error","error":{"type":"permission_error","message":"Model access denied"}}',
-                           status=403, content_type='application/json')
-
-        # 路由查找（Anthropic 协议）
-        route = router.resolve_route_for_proxy(original_model, protocol="anthropic")
-        if isinstance(route, router.RouteError):
-            return Response(
-                json.dumps({"type": "error", "error": {"type": "invalid_request_error", "message": route.message}}),
-                status=route.status_code, content_type='application/json'
-            )
-
-        # 转发到上游 Anthropic 端点
-        upstream_url = f"{route.base_url}/messages"
-        anthropic_headers = {
-            'Content-Type': 'application/json',
-            'anthropic-version': request.headers.get('anthropic-version', '2023-06-01'),
-        }
-
-        data['model'] = route.model_name
-
-        # 获取所有可用 API Key
-        api_keys = route.api_keys if route.api_keys else [route.api_key]
-
-        is_stream = data.get('stream', False)
-        start_time_req = time.time()
-
-        # 尝试所有 Key
-        resp = None
-        used_idx = -1
-        for idx, key in enumerate(api_keys):
-            try:
-                req_headers = dict(anthropic_headers)
-                req_headers['x-api-key'] = key
-                resp = http_requests.post(upstream_url, json=data, headers=req_headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
-                if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
-                    used_idx = idx
-                    break
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    system_logger.warning(f"[PROXY] Anthropic Key #{idx+1} 返回 {resp.status_code}，尝试下一个")
-                    resp.close()
-                    resp = None
-                    continue
-                used_idx = idx
-                break
-            except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
-                if idx < len(api_keys) - 1:
-                    system_logger.warning(f"[PROXY] Anthropic Key #{idx+1} 连接失败，尝试下一个")
-                    continue
-                raise
-
-        if resp is None:
-            return Response('{"type":"error","error":{"type":"api_error","message":"All API Keys failed"}}',
-                            status=502, content_type='application/json')
-
-        if is_stream:
-            # 流式响应：yield 并记录
-            def generate():
-                for line in resp.iter_lines():
-                    if line:
-                        yield line + b'\n\n'
-
-            return Response(generate(), content_type='text/event-stream')
-        else:
-            # 非流式响应：记录请求到数据库
-            latency_ms = int((time.time() - start_time_req) * 1000)
-            usage = {}
-            resp_body_str = None
-            try:
-                resp_json = resp.json()
-                usage = resp_json.get('usage', {}) or {}
-                # Anthropic usage 格式转换为 OpenAI 格式
-                prompt_tokens = usage.get('input_tokens', 0) or 0
-                completion_tokens = usage.get('output_tokens', 0) or 0
-                usage = {
-                    'prompt_tokens': prompt_tokens,
-                    'completion_tokens': completion_tokens,
-                    'total_tokens': prompt_tokens + completion_tokens,
-                }
-                resp_body_str = json.dumps(resp_json, ensure_ascii=False)
-            except Exception:
-                pass
-
-            req_body_str = json.dumps(data, ensure_ascii=False)
-            record = build_record(data, resp.status_code, usage, latency_ms, is_stream=False,
-                                  ttfb_ms=latency_ms, client_ip=client_ip,
-                                  request_body=req_body_str, response_body=resp_body_str,
-                                  provider=route.provider_key)
-            db.insert_request(record)
-            log_request(record)
-
-            return Response(resp.content, status=resp.status_code, content_type='application/json')
-
-    except Exception as e:
-        system_logger.error(f"[PROXY] Anthropic 代理错误: {e}", exc_info=True)
-        return Response('{"type":"error","error":{"type":"api_error","message":"Internal Server Error"}}',
-                        status=500, content_type='application/json')
-
+    return _proxy_protocol("anthropic_messages")
 
 # ==========================================
 # OpenAI Responses API 支持
@@ -1073,114 +905,7 @@ def proxy_anthropic_messages():
 @app.route('/openai/responses', methods=['POST'])
 def proxy_openai_responses():
     """OpenAI Responses API 代理"""
-    start_time = time.time()
-    client_ip = request.remote_addr or ""
-
-    try:
-        data = request.get_json(silent=True, force=True) or {}
-
-        if not data or 'model' not in data:
-            return Response('{"error":{"message":"Missing model field","type":"invalid_request_error"}}',
-                            status=400, content_type='application/json')
-
-        original_model = data['model']
-
-        # Heimdall API Key 认证
-        auth_header = request.headers.get('Authorization', '')
-        api_key = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
-        if not api_key:
-            return Response('{"error":{"message":"Missing API Key","type":"auth_error"}}',
-                           status=401, content_type='application/json')
-
-        key_info = auth.validate_api_key(api_key)
-        if not key_info:
-            return Response('{"error":{"message":"Invalid API Key","type":"auth_error"}}',
-                           status=401, content_type='application/json')
-
-        if not auth.check_model_access(key_info, original_model):
-            return Response('{"error":{"message":"Model access denied","type":"auth_error"}}',
-                           status=403, content_type='application/json')
-
-        # 路由查找（OpenAI Responses 协议）
-        route = router.resolve_route_for_proxy(original_model, protocol="openai")
-        if isinstance(route, router.RouteError):
-            return Response(
-                json.dumps({"error": {"message": route.message, "type": "invalid_request_error"}}),
-                status=route.status_code, content_type='application/json'
-            )
-
-        # 转发到上游 Responses 端点
-        upstream_url = f"{route.base_url}/responses"
-        resp_headers = {
-            'Content-Type': 'application/json',
-        }
-
-        data['model'] = route.model_name
-
-        # 获取所有可用 API Key
-        api_keys = route.api_keys if route.api_keys else [route.api_key]
-
-        is_stream = data.get('stream', False)
-        start_time_req = time.time()
-
-        # 尝试所有 Key
-        resp = None
-        for idx, key in enumerate(api_keys):
-            try:
-                req_headers = dict(resp_headers)
-                req_headers['Authorization'] = f'Bearer {key}'
-                resp = http_requests.post(upstream_url, json=data, headers=req_headers, stream=is_stream, timeout=config.REQUEST_TIMEOUT)
-                if resp.status_code < 400 or (resp.status_code >= 400 and resp.status_code < 500 and resp.status_code != 429):
-                    break
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    system_logger.warning(f"[PROXY] Responses Key #{idx+1} 返回 {resp.status_code}，尝试下一个")
-                    resp.close()
-                    resp = None
-                    continue
-                break
-            except (http_requests.exceptions.Timeout, http_requests.exceptions.ConnectionError):
-                if idx < len(api_keys) - 1:
-                    system_logger.warning(f"[PROXY] Responses Key #{idx+1} 连接失败，尝试下一个")
-                    continue
-                raise
-
-        if resp is None:
-            return Response('{"error":{"message":"All API Keys failed","type":"proxy_error"}}',
-                            status=502, content_type='application/json')
-
-        if is_stream:
-            def generate():
-                for line in resp.iter_lines():
-                    if line:
-                        yield line + b'\n\n'
-            return Response(generate(), content_type='text/event-stream')
-        else:
-            # 非流式响应：记录请求到数据库
-            latency_ms = int((time.time() - start_time_req) * 1000)
-            usage = {}
-            resp_body_str = None
-            try:
-                resp_json = resp.json()
-                usage = resp_json.get('usage', {}) or {}
-                resp_body_str = json.dumps(resp_json, ensure_ascii=False)
-            except Exception:
-                pass
-
-            req_body_str = json.dumps(data, ensure_ascii=False)
-            record = build_record(data, resp.status_code, usage, latency_ms, is_stream=False,
-                                  ttfb_ms=latency_ms, client_ip=client_ip,
-                                  request_body=req_body_str, response_body=resp_body_str,
-                                  provider=route.provider_key)
-            db.insert_request(record)
-            log_request(record)
-
-            return Response(resp.content, status=resp.status_code, content_type='application/json')
-
-    except Exception as e:
-        system_logger.error(f"[PROXY] Responses API 代理错误: {e}", exc_info=True)
-        return Response('{"error":{"message":"Internal Server Error","type":"proxy_error"}}',
-                        status=500, content_type='application/json')
-
+    return _proxy_protocol("openai_responses")
 
 # ==========================================
 # 厂商预设 API

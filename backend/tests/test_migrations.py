@@ -35,10 +35,10 @@ def test_empty_database_migration_is_idempotent(tmp_path: Path) -> None:
     second = apply_migrations(database)
 
     assert first.previous_version == 0
-    assert first.current_version == 2
-    assert first.applied_versions == (1, 2)
-    assert second.previous_version == 2
-    assert second.current_version == 2
+    assert first.current_version == 3
+    assert first.applied_versions == (1, 2, 3)
+    assert second.previous_version == 3
+    assert second.current_version == 3
     assert second.applied_versions == ()
     assert inspect_database(database).integrity == "ok"
 
@@ -53,7 +53,7 @@ def test_legacy_database_is_backed_up_before_migration(tmp_path: Path) -> None:
 
     assert backup.integrity == "ok"
     assert Path(backup.database).parent == backup_dir
-    assert result.current_version == 2
+    assert result.current_version == 3
     with sqlite3.connect(database) as connection:
         row = connection.execute("SELECT model FROM requests").fetchone()
         migrated_key = connection.execute(
@@ -71,7 +71,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         connection.execute("CREATE TABLE must_be_rolled_back (id INTEGER)")
         raise RuntimeError("injected migration failure")
 
-    migrations = (*MIGRATIONS, Migration(3, "injected_failure", fail_after_schema_change))
+    migrations = (*MIGRATIONS, Migration(4, "injected_failure", fail_after_schema_change))
     with pytest.raises(RuntimeError, match="injected migration failure"):
         apply_migrations(database, migrations=migrations)
 
@@ -81,7 +81,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         ).fetchone()
         version = connection.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0]
     assert table is None
-    assert version == 2
+    assert version == 3
 
 
 def test_backup_never_overwrites_existing_file(tmp_path: Path) -> None:
@@ -178,7 +178,7 @@ def test_admin_migration_deduplicates_encrypted_legacy_key_and_backfills_pricing
 
     result = apply_migrations(database)
 
-    assert result.current_version == 2
+    assert result.current_version == 3
     with sqlite3.connect(database) as connection:
         key_count = connection.execute(
             "SELECT COUNT(*) FROM provider_api_keys WHERE provider_id = 1"
@@ -195,3 +195,41 @@ def test_admin_migration_deduplicates_encrypted_legacy_key_and_backfills_pricing
     assert key_count == 1
     assert pricing == {"paid-model": 1, "unknown-model": 0}
     assert route_index == (1,)
+
+
+def test_routing_record_migration_backfills_legacy_client_key_and_indexes(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "routing.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                api_key_id INTEGER
+            );
+            INSERT INTO requests (date, model, api_key_id)
+            VALUES ('2026-08-08', 'legacy-model', 7);
+            """
+        )
+        connection.commit()
+
+    result = apply_migrations(database)
+
+    assert result.current_version == 3
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT client_api_key_id, stat_eligible, protocol, route_attempts "
+            "FROM requests"
+        ).fetchone()
+        indexes = {
+            item[0]
+            for item in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        }
+    assert row == (7, 1, None, None)
+    assert "idx_requests_stat_date" in indexes
+    assert "idx_requests_provider_api_key_id" in indexes

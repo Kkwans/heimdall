@@ -8,9 +8,9 @@
 
 import os
 import sqlite3
-import threading
 import logging
-from typing import Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Optional, Union
 
 import config
 import crypto
@@ -20,18 +20,44 @@ from db import _get_conn
 # 路由结果数据类
 # ==========================================
 
-class RouteResult:
-    """路由查找成功的结果"""
-    __slots__ = ("base_url", "api_key", "api_keys", "model_name", "provider_key", "context_window")
+@dataclass(frozen=True)
+class RouteKey:
+    """One selectable Provider Key. Its secret stays inside the proxy process."""
 
-    def __init__(self, base_url: str, api_key: str, model_name: str,
-                 provider_key: str, context_window: int = None, api_keys: list = None):
-        self.base_url = base_url
-        self.api_key = api_key
-        self.api_keys = api_keys or [api_key]  # 所有可用 Key，按优先级排序
-        self.model_name = model_name
+    id: int
+    secret: str
+    priority: int
+
+
+class RouteResult:
+    """结构化路由结果，区分 Heimdall 模型名和上游模型名。"""
+
+    __slots__ = (
+        "base_url", "provider_id", "provider_key", "model_id", "model_name",
+        "upstream_model", "requested_model", "context_window", "key_candidates",
+    )
+
+    def __init__(self, *, base_url: str, provider_id: int, provider_key: str,
+                 model_id: int, model_name: str, upstream_model: str,
+                 requested_model: str, context_window: int = None,
+                 key_candidates: list = None):
+        self.base_url = base_url.rstrip("/")
+        self.provider_id = provider_id
         self.provider_key = provider_key
+        self.model_id = model_id
+        self.model_name = model_name
+        self.upstream_model = upstream_model
+        self.requested_model = requested_model
         self.context_window = context_window
+        self.key_candidates = list(key_candidates or [])
+
+    @property
+    def api_key(self) -> str:
+        return self.key_candidates[0].secret if self.key_candidates else ""
+
+    @property
+    def api_keys(self) -> list:
+        return [candidate.secret for candidate in self.key_candidates]
 
 
 class RouteError:
@@ -94,6 +120,8 @@ def init_routing_tables():
                 last_used_at DATETIME,
                 last_error_at DATETIME,
                 error_count INTEGER DEFAULT 0,
+                cooldown_until DATETIME,
+                last_error_summary TEXT,
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
             )
@@ -128,6 +156,14 @@ def init_routing_tables():
             "ALTER TABLE models ADD COLUMN price_cache_read REAL DEFAULT 0",
             "ALTER TABLE models ADD COLUMN price_cache_write REAL DEFAULT 0",
             "ALTER TABLE models ADD COLUMN pricing_configured BOOLEAN NOT NULL DEFAULT 0",
+        ]:
+            try:
+                conn.execute(col_def)
+            except Exception:
+                pass
+        for col_def in [
+            "ALTER TABLE provider_api_keys ADD COLUMN cooldown_until DATETIME",
+            "ALTER TABLE provider_api_keys ADD COLUMN last_error_summary TEXT",
         ]:
             try:
                 conn.execute(col_def)
@@ -186,117 +222,77 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
     try:
         conn = _get_conn()
         cursor = conn.cursor()
-
+        requested_model = model
         provider_name = None
         model_name = model
+        if "/" in model:
+            provider_name, model_name = model.split("/", 1)
 
-        # 1. 解析 provider 和 model_name
-        if '/' in model:
-            parts = model.split('/', 1)
-            provider_name = parts[0]
-            model_name = parts[1]
-
-        # 2. 查找模型（优先全局唯一匹配）
-        if not provider_name:
-            # 无厂商前缀：先尝试全局唯一模型名
-            cursor.execute("""
-                SELECT m.*, p.name as provider_name, p.display_name, p.api_key,
-                       p.openai_url, p.anthropic_url, p.base_url, p.priority
+        if provider_name:
+            provider_row = cursor.execute(
+                "SELECT * FROM providers WHERE name = ? AND enabled = 1",
+                (provider_name,),
+            ).fetchone()
+            if not provider_row:
+                return RouteError(400, f"未知厂商: {provider_name}")
+            provider_id = int(provider_row["id"])
+            provider_key = str(provider_row["name"])
+            model_row = cursor.execute(
+                "SELECT * FROM models WHERE provider_id = ? AND model_name = ? AND enabled = 1",
+                (provider_id, model_name),
+            ).fetchone()
+            if not model_row:
+                model_row = cursor.execute(
+                    "SELECT * FROM models WHERE provider_id = ? AND upstream_model = ? AND enabled = 1",
+                    (provider_id, model_name),
+                ).fetchone()
+        else:
+            model_row = cursor.execute(
+                """
+                SELECT
+                    m.id AS model_id, m.model_name, m.upstream_model, m.context_window,
+                    p.id AS provider_id, p.name AS provider_name, p.display_name,
+                    p.openai_url, p.anthropic_url, p.base_url, p.priority
                 FROM models m
                 JOIN providers p ON m.provider_id = p.id
                 WHERE m.model_name = ? AND m.enabled = 1 AND p.enabled = 1
-            """, (model_name,))
-            model_row = cursor.fetchone()
+                ORDER BY p.priority DESC, p.id ASC
+                LIMIT 1
+                """,
+                (model_name,),
+            ).fetchone()
+            if not model_row:
+                return RouteError(400, f"不支持的模型: {model_name}")
+            provider_row = model_row
+            provider_id = int(model_row["provider_id"])
+            provider_key = str(model_row["provider_name"])
 
-            if model_row:
-                # 找到全局唯一模型，直接使用
-                base_url = model_row["anthropic_url"] if protocol == "anthropic" else model_row["openai_url"]
-                if not base_url:
-                    base_url = model_row["base_url"]
-                upstream_model = model_row["upstream_model"] or model_name
-                return RouteResult(
-                    base_url=base_url,
-                    api_key=crypto.decrypt(model_row["api_key"] or ""),
-                    model_name=upstream_model,
-                    provider_key=model_row["provider_name"],
-                    context_window=model_row["context_window"],
-                )
+        if not model_row:
+            display_name = dict(provider_row).get("display_name") or provider_key
+            return RouteError(400, f"不支持的模型: {model_name}（厂商: {display_name}）")
 
-            # 全局未找到，使用 priority 最高的厂商
-            cursor.execute(
-                "SELECT * FROM providers WHERE enabled = 1 ORDER BY priority DESC LIMIT 1"
-            )
-            provider_row = cursor.fetchone()
-        else:
-            # 有厂商前缀：精确查找
-            cursor.execute(
-                "SELECT * FROM providers WHERE name = ? AND enabled = 1",
-                (provider_name,)
-            )
-            provider_row = cursor.fetchone()
-
-        if not provider_row:
-            if provider_name:
-                return RouteError(400, f"未知厂商: {provider_name}")
-            else:
-                return RouteError(400, "无可用厂商配置，请先在管理后台添加厂商")
-
-        provider_id = provider_row["id"]
-        provider_key = provider_row["name"]
-
-        # 根据协议选择对应的 base_url
         if protocol == "anthropic":
             base_url = provider_row["anthropic_url"] or provider_row["base_url"]
         else:
             base_url = provider_row["openai_url"] or provider_row["base_url"]
+        if not base_url:
+            return RouteError(500, f"厂商 {provider_key} 未配置 {protocol} 协议地址")
 
-        # 3. 查找模型（厂商内匹配）
-        cursor.execute(
-            "SELECT * FROM models WHERE provider_id = ? AND model_name = ? AND enabled = 1",
-            (provider_id, model_name)
-        )
-        model_row = cursor.fetchone()
-
-        if not model_row:
-            # 尝试别名匹配（upstream_model 字段）
-            cursor.execute(
-                "SELECT * FROM models WHERE provider_id = ? AND upstream_model = ? AND enabled = 1",
-                (provider_id, model_name)
-            )
-            model_row = cursor.fetchone()
-
-        if not model_row:
-            return RouteError(400, f"不支持的模型: {model_name}（厂商: {dict(provider_row).get('display_name', provider_key)}）")
-
-        context_window = model_row["context_window"]
-        # fallback 到 config.py 的硬编码映射
-        if not context_window:
-            context_window = config.get_context_window(model_name)
-
-        # 4. 使用厂商存储的 API Key（解密）
-        # 优先从 provider_api_keys 表获取所有 Key，按优先级排序
-        api_keys = get_provider_api_keys_for_route(provider_id)
-        if not api_keys:
-            # 降级：使用 providers 表的单个 Key
-            api_key = crypto.decrypt(provider_row["api_key"] or "")
-            if not api_key:
-                env_var = f"HEIMDALL_API_KEY_{provider_key.upper()}"
-                api_key = os.environ.get(env_var, "")
-            api_keys = [api_key] if api_key else []
-        
-        if not api_keys:
-            return RouteError(403, f"厂商 {provider_key} 未配置 API Key")
-
-        # 5. 确定上游模型名
-        upstream_model = model_row["upstream_model"] or model_name
+        context_window = model_row["context_window"] or config.get_context_window(model_name)
+        key_candidates = get_provider_api_keys_for_route(provider_id)
+        if not key_candidates:
+            return RouteError(403, f"厂商 {provider_key} 未配置可用 API Key")
 
         return RouteResult(
-            base_url=base_url,
-            api_key=api_keys[0],
-            model_name=upstream_model,
+            base_url=str(base_url),
+            provider_id=provider_id,
             provider_key=provider_key,
+            model_id=int(model_row["id"] if provider_name else model_row["model_id"]),
+            model_name=str(model_row["model_name"]),
+            upstream_model=str(model_row["upstream_model"] or model_row["model_name"]),
+            requested_model=requested_model,
             context_window=context_window,
-            api_keys=api_keys,
+            key_candidates=key_candidates,
         )
 
     except sqlite3.Error as e:
@@ -455,14 +451,24 @@ def get_provider_api_keys(provider_id: int) -> list:
 
 
 def get_provider_api_keys_for_route(provider_id: int) -> list:
-    """获取厂商所有启用的 API Key，按优先级降序（路由用）"""
+    """获取未冷却的启用 Key，按 priority DESC, id ASC 稳定排序。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT api_key FROM provider_api_keys WHERE provider_id = ? AND enabled = 1 ORDER BY priority DESC, id ASC",
+        "SELECT id, api_key, priority FROM provider_api_keys "
+        "WHERE provider_id = ? AND enabled = 1 "
+        "AND (cooldown_until IS NULL OR cooldown_until <= CURRENT_TIMESTAMP) "
+        "ORDER BY priority DESC, id ASC",
         (provider_id,)
     )
-    return [crypto.decrypt(row["api_key"]) for row in cursor.fetchall()]
+    return [
+        RouteKey(
+            id=int(row["id"]),
+            secret=crypto.decrypt(row["api_key"]),
+            priority=int(row["priority"] or 0),
+        )
+        for row in cursor.fetchall()
+    ]
 
 
 def create_provider_api_key(provider_id: int, data: dict) -> int:
@@ -514,25 +520,43 @@ def delete_provider_api_key(key_id: int) -> bool:
     return cursor.rowcount > 0
 
 
-def mark_api_key_error(key_id: int):
-    """标记 API Key 使用出错"""
+def mark_api_key_error(key_id: int, error_summary: str = "retryable_error") -> None:
+    """记录可重试故障；连续三次后让 Key 冷却五分钟。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE provider_api_keys SET last_error_at = CURRENT_TIMESTAMP, error_count = error_count + 1 WHERE id = ?",
-        (key_id,)
+        """
+        UPDATE provider_api_keys
+        SET last_error_at = CURRENT_TIMESTAMP,
+            last_error_summary = ?,
+            error_count = COALESCE(error_count, 0) + 1,
+            cooldown_until = CASE
+                WHEN COALESCE(error_count, 0) + 1 >= 3
+                THEN datetime('now', '+5 minutes')
+                ELSE cooldown_until
+            END
+        WHERE id = ?
+        """,
+        (str(error_summary)[:500], key_id),
     )
     conn.commit()
 
 
-def mark_api_key_used(key_id: int):
-    """标记 API Key 最后使用时间"""
+def mark_api_key_used(key_id: int, *, reset_errors: bool = True) -> None:
+    """记录 Key 使用；成功时清除连续失败和冷却状态。"""
     conn = _get_conn()
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE provider_api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (key_id,)
-    )
+    if reset_errors:
+        cursor.execute(
+            "UPDATE provider_api_keys SET last_used_at = CURRENT_TIMESTAMP, "
+            "error_count = 0, cooldown_until = NULL WHERE id = ?",
+            (key_id,),
+        )
+    else:
+        cursor.execute(
+            "UPDATE provider_api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (key_id,),
+        )
     conn.commit()
 
 
