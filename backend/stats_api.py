@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 from collections import deque
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from flask import Blueprint, request, jsonify, send_from_directory, send_file, Response, stream_with_context
 
@@ -30,6 +30,12 @@ dashboard_bp = Blueprint('dashboard', __name__)
 _retention_service_lock = threading.Lock()
 _retention_service: Optional[RequestRetentionService] = None
 _retention_service_path = ""
+_CST = timezone(timedelta(hours=8))
+
+
+def _today_string() -> str:
+    """Return the product's calendar date independent of the host process TZ."""
+    return datetime.now(_CST).strftime("%Y-%m-%d")
 
 
 def get_request_retention_service() -> RequestRetentionService:
@@ -60,15 +66,15 @@ def get_docker_service() -> DockerService:
 
 def _get_date_range():
     """从 query string 获取日期范围，默认近 7 天"""
-    today = str(date.today())
-    default_start = str(date.today() - timedelta(days=6))
+    today_date = datetime.now(_CST).date()
+    today = str(today_date)
+    default_start = str(today_date - timedelta(days=6))
 
     start_date = request.args.get("start_date", default_start)
     end_date = request.args.get("end_date", today)
 
     # 简单格式校验
     try:
-        from datetime import datetime
         datetime.strptime(start_date, "%Y-%m-%d")
         datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
@@ -339,10 +345,8 @@ def _auto_archive_if_needed():
     在每次日志相关接口被调用时执行，完全透明，前端无感知。
     """
     import re as _re
-    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
-    CST = _tz(_td(hours=8))
-    today = _dt.now(CST).strftime("%Y-%m-%d")
+    today = _today_string()
     DATE_RE = _re.compile(r'^(\d{4}-\d{2}-\d{2})')
 
     for log_file in ("proxy-business.log", "proxy-system.log"):
@@ -422,7 +426,7 @@ def logs_dates():
     prefix = prefix_map.get(log_file_param, "proxy-business.log")
 
     from datetime import datetime as _dt
-    today = str(date.today())
+    today = _today_string()
     dates = [today]  # 今天始终在列表
 
     try:
@@ -463,7 +467,7 @@ def logs_history():
     _auto_archive_if_needed()
 
     log_file_param = request.args.get("log_file", "business")
-    date_str = request.args.get("date", str(date.today()))
+    date_str = request.args.get("date", _today_string())
     try:
         n_lines = min(2000, max(1, int(request.args.get("lines", 200))))
     except (ValueError, TypeError):
@@ -473,7 +477,7 @@ def logs_history():
     except (ValueError, TypeError):
         return _cors_response({"error": "cursor 必须为非负整数"}, 400)
 
-    today = str(date.today())
+    today = _today_string()
     # 今天的日志读无后缀文件，历史日期读归档文件
     if date_str == today:
         log_path = _log_file_path(log_file_param)
@@ -713,7 +717,7 @@ def stats_hourly():
         return _cors_response({})
 
     from datetime import datetime as _dt
-    target_date = request.args.get("date", str(date.today()))
+    target_date = request.args.get("date", _today_string())
     try:
         _dt.strptime(target_date, "%Y-%m-%d")
     except ValueError:

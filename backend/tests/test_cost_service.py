@@ -81,6 +81,19 @@ def test_v5_backfills_only_unambiguous_priced_history(tmp_path) -> None:
                 price_cache_write REAL DEFAULT 0,
                 pricing_configured BOOLEAN NOT NULL DEFAULT 0
             );
+            CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                provider TEXT,
+                provider_id INTEGER,
+                success BOOLEAN DEFAULT 1,
+                stat_eligible BOOLEAN NOT NULL DEFAULT 1,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                cache_hit_tokens INTEGER DEFAULT 0,
+                cache_miss_tokens INTEGER DEFAULT 0
+            );
             INSERT INTO providers (id, name) VALUES (1, 'priced-provider');
             INSERT INTO providers (id, name) VALUES (2, 'unknown-provider');
             INSERT INTO models VALUES (1, 1, 'priced-model', 10, 20, 1, 4, 1);
@@ -118,4 +131,5 @@ def test_v5_backfills_only_unambiguous_priced_history(tmp_path) -> None:
         ).fetchall()
     assert rows[0][0:4] == ("priced-model", 17.6, "historical_estimate", 1_500_000)
     assert json.loads(rows[0][4])["source"] == "historical_estimate"
-    assert rows[1][1:] == (None, None, None, None)
+    # 未知价格不产生花费快照，但可证明的 Token 总量仍应保留用于覆盖率统计。
+    assert rows[1][1:] == (None, None, 120, None)
