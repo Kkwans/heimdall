@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { Card } from 'antd'
-import { fetchModels } from '../../api/stats'
+import { fetchDashboardModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
@@ -27,7 +27,7 @@ const ModelDistribution = memo(function ModelDistribution() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const res = await fetchModels({ start_date: dateRange.start, end_date: dateRange.end })
+      const res = await fetchDashboardModels({ start_date: dateRange.start, end_date: dateRange.end })
       if (silent) { setIfChanged(res.data, setData) } else { setData(res.data) }
     } catch (e) {
       if (!silent) console.error(e)

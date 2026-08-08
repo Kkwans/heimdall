@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react'
 import {
-  Card, Table, Tag, Space, Row, Col, Statistic, DatePicker
+  Alert, Button, Card, Table, Tag, Space, Row, Col, Statistic, DatePicker
 } from 'antd'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType } from 'antd/es/table'
@@ -25,11 +25,13 @@ import {
   fetchProviderStats,
   fetchApiKeyStats,
   fetchApiKeyModelStats,
+  fetchCostStats,
 } from '../api/stats'
+import type { CostGroup, CostStats } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
 import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
-import { fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
+import { fmtCny, fmtCnyPerMillion, fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
 import { PAGE_ICON_STYLE, getVendorColor } from '../components/Charts/chartTheme'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
@@ -1097,6 +1099,58 @@ function ApiKeyModelStatsTable({ data }: { data: any[] }) {
   )
 }
 
+function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'key' | 'model' }) {
+  const columns: ColumnsType<CostGroup> = [
+    {
+      title: dimension === 'key' ? 'Client Access Key' : '模型',
+      dataIndex: 'name',
+      ellipsis: true,
+      render: (value: string) => dimension === 'model'
+        ? <ModelTag name={value} />
+        : <span style={{ fontWeight: 500 }}>{value}</span>,
+    },
+    {
+      title: '花费',
+      dataIndex: 'total_cost',
+      width: 112,
+      align: 'right',
+      render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-warning)' }}>{fmtCny(value)}</span>,
+    },
+    {
+      title: '占比',
+      dataIndex: 'cost_share',
+      width: 78,
+      align: 'right',
+      render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)' }}>{pctStr(value)}</span>,
+    },
+    {
+      title: '平均单价',
+      dataIndex: 'avg_cost_per_million_tokens',
+      width: 154,
+      align: 'right',
+      render: (value: number | null) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{fmtCnyPerMillion(value)}</span>,
+    },
+    {
+      title: '覆盖率',
+      dataIndex: 'coverage_rate',
+      width: 78,
+      align: 'right',
+      render: (value: number) => <span style={{ color: value < 1 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>{pctStr(value)}</span>,
+    },
+  ]
+  return (
+    <Table<CostGroup>
+      columns={columns}
+      dataSource={data}
+      rowKey={row => `${dimension}-${String(row.id)}-${row.name}`}
+      pagination={false}
+      size="small"
+      scroll={{ x: 600 }}
+      locale={{ emptyText: '暂无可计费数据' }}
+    />
+  )
+}
+
 export default function Stats() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
   const { theme } = useTheme()
@@ -1118,6 +1172,9 @@ export default function Stats() {
   const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [apiKeyStats, setApiKeyStats] = useState<any[]>([])
   const [apiKeyModelStats, setApiKeyModelStats] = useState<any[]>([])
+  const [costStats, setCostStats] = useState<CostStats | null>(null)
+  const [costLoading, setCostLoading] = useState(true)
+  const [sectionErrors, setSectionErrors] = useState<string[]>([])
   const [hourlyDate, setHourlyDate] = useState<string>(() => dayjs().format('YYYY-MM-DD'))
 
   // 汇总摘要指标
@@ -1133,31 +1190,34 @@ export default function Stats() {
 
   const loadStats = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    try {
-      const params = {
-        ...(dateRange.start ? { start_date: dateRange.start } : {}),
-        ...(dateRange.end ? { end_date: dateRange.end } : {}),
+    if (!silent) setCostLoading(true)
+    const params = {
+      ...(dateRange.start ? { start_date: dateRange.start } : {}),
+      ...(dateRange.end ? { end_date: dateRange.end } : {}),
+    }
+    const failures: string[] = []
+    const load = async <T,>(label: string, request: Promise<T>, apply: (value: T) => void) => {
+      try {
+        apply(await request)
+      } catch (error) {
+        failures.push(label)
+        console.error(`[Stats] ${label}加载失败`, error)
       }
-      const [ms, ps, ea, hd, dd, aks, akms] = await Promise.all([
-        fetchModelStats(params),
-        fetchProviderStats(params),
-        fetchErrorAnalysis(params),
-        fetchHourly(hourlyDate),
-        fetchDaily(params),
-        fetchApiKeyStats(params),
-        fetchApiKeyModelStats(params),
-      ])
-      setModelStats(ms.data)
-      setProviderStats(ps.data)
-      setErrorAnalysis(ea.data)
-      setHourly(hd.data)
-      setDailyData(dd.data)
-      setApiKeyStats(aks.data)
-      setApiKeyModelStats(akms.data)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      if (!silent) setLoading(false)
+    }
+    await Promise.all([
+      load('模型数据', fetchModelStats(params), value => setModelStats(value.data)),
+      load('厂商数据', fetchProviderStats(params), value => setProviderStats(value.data)),
+      load('错误分析', fetchErrorAnalysis(params), value => setErrorAnalysis(value.data)),
+      load('小时分布', fetchHourly(hourlyDate), value => setHourly(value.data)),
+      load('趋势数据', fetchDaily(params), value => setDailyData(value.data)),
+      load('API Key 统计', fetchApiKeyStats(params), value => setApiKeyStats(value.data)),
+      load('API Key 模型统计', fetchApiKeyModelStats(params), value => setApiKeyModelStats(value.data)),
+      load('成本统计', fetchCostStats(params), value => setCostStats(value)),
+    ])
+    setSectionErrors(failures)
+    if (!silent) {
+      setLoading(false)
+      setCostLoading(false)
     }
   }, [dateRange.start, dateRange.end, hourlyDate])
 
@@ -1178,6 +1238,16 @@ export default function Stats() {
     <div className="page-content">
       {/* PC端：左边显示数据统计标题，右边显示日期筛选+刷新；移动端：仅显示筛选模块 */}
       <Header pageName="数据统计" />
+
+      {sectionErrors.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`${sectionErrors.join('、')}暂时加载失败，其他统计已正常更新`}
+          action={<Button size="small" onClick={() => loadStats(false)}>重试</Button>}
+        />
+      )}
 
       {/* 摘要指标 */}
       <Row gutter={[12, 12]} style={{ marginBottom: 10 }}>
@@ -1334,6 +1404,61 @@ export default function Stats() {
         <Col xs={24} md={12}>
           <Card title={sectionTitle('模型耗时分布', 'P50 / P90 / P99')} bordered={false} className="hd-card" style={cardStyle} size="small">
             {modelStats.length > 0 ? <ModelLatencyCompare data={modelStats} isDark={isDark} /> : <EmptyPlaceholder />}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 成本统计：保持纵向信息架构，仅在原统计流中新增一个模块 */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24}>
+          <Card
+            title={sectionTitle('成本统计', '人民币估算；未知价格不计入总额')}
+            bordered={false}
+            className="hd-card"
+            style={cardStyle}
+            size="small"
+            loading={costLoading}
+          >
+            {costStats ? (
+              <>
+                <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+                  {[
+                    { title: '总花费', value: fmtCny(costStats.summary.total_cost) },
+                    { title: '价格覆盖率', value: pctStr(costStats.summary.coverage_rate) },
+                    { title: '综合平均单价', value: fmtCnyPerMillion(costStats.summary.avg_cost_per_million_tokens) },
+                    { title: '历史估算请求', value: costStats.summary.historical_estimate_requests.toLocaleString() },
+                  ].map(item => (
+                    <Col key={item.title} xs={12} md={6}>
+                      <Statistic
+                        title={<span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.title}</span>}
+                        value={item.value}
+                        valueStyle={{ fontSize: 17, fontWeight: 700, fontFamily: 'var(--font-mono)' }}
+                      />
+                    </Col>
+                  ))}
+                </Row>
+                {costStats.summary.coverage_rate < 1 && costStats.summary.price_eligible_requests > 0 && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message={`有 Token 的成功请求中，${costStats.summary.priced_requests.toLocaleString()} / ${costStats.summary.price_eligible_requests.toLocaleString()} 条已配置价格；其余不计入总花费和平均单价。`}
+                  />
+                )}
+                <Row gutter={[12, 12]}>
+                  <Col xs={24} xl={12}>
+                    <Card size="small" type="inner" title="按 Client Access Key">
+                      <CostGroupTable data={costStats.by_client_key} dimension="key" />
+                    </Card>
+                  </Col>
+                  <Col xs={24} xl={12}>
+                    <Card size="small" type="inner" title="按模型花费占比">
+                      <CostGroupTable data={costStats.by_model} dimension="model" />
+                    </Card>
+                  </Col>
+                </Row>
+              </>
+            ) : <EmptyPlaceholder text="暂无可计费数据" />}
           </Card>
         </Col>
       </Row>

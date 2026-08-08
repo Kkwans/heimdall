@@ -11,6 +11,11 @@ export interface OverviewData {
   p50_latency_ms: number
   p90_latency_ms: number
   p99_latency_ms: number
+  estimated_cost: number
+  priced_requests: number
+  price_eligible_requests: number
+  price_coverage_rate: number
+  avg_cost_per_million_tokens: number | null
 }
 
 export interface DailyData {
@@ -65,6 +70,11 @@ export interface RequestRecord {
   // v3: 详情字段（从 /api/stats/request/:id/detail 获取）
   request_body?: object | null
   response_body?: object | null
+  provider?: string | null
+  estimated_cost?: number | null
+  pricing_snapshot?: Record<string, unknown> | null
+  cost_source?: 'request_snapshot' | 'historical_estimate' | null
+  billable_tokens?: number | null
 }
 
 export interface RequestsResponse {

@@ -227,7 +227,11 @@ export default function Logs() {
   const [lines, setLines]               = useState<LogLine[]>([])
   const [paused, setPaused]             = useState(false)
   const [autoScroll, setAutoScroll]     = useState(true)
-  const [connected, setConnected]       = useState(false)
+  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected'>('connecting')
+  const [bufferedCount, setBufferedCount] = useState(0)
+  const [historyCursor, setHistoryCursor] = useState<number | null>(null)
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyTotal, setHistoryTotal] = useState(0)
   const [streamEmpty, setStreamEmpty]   = useState(false)  // SSE 流为空（后端发送 empty 事件）
   const [filterLevel, setFilterLevel]   = useState<string>('all')
   const [linesLimit, setLinesLimit]     = useState<number>(DEFAULT_LINES)
@@ -240,12 +244,49 @@ export default function Logs() {
   const [retentionSaving, setRetentionSaving]     = useState(false)
 
   const pausedRef = useRef(paused)
-  pausedRef.current = paused
+  const pausedBufferRef = useRef<string[]>([])
+  const liveQueueRef = useRef<string[]>([])
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef       = useRef<HTMLDivElement>(null)
 
   const isToday = selectedDate === getToday()
+  const connected = connectionState === 'connected'
+
+  useEffect(() => {
+    pausedRef.current = paused
+  }, [paused])
+
+  const appendRawBatch = useCallback((rawLines: string[]) => {
+    if (rawLines.length === 0) return
+    const parsed = rawLines.map(parseLogLine)
+    setLines(prev => {
+      const safePrev = prev.map(line => ({ ...line, extra: [...line.extra] }))
+      const next = mergeLogLines([...safePrev, ...parsed])
+      return next.length > MAX_LIVE_LINES
+        ? next.slice(next.length - MAX_LIVE_LINES)
+        : next
+    })
+  }, [])
+
+  const flushLiveQueue = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    const batch = liveQueueRef.current.splice(0, liveQueueRef.current.length)
+    appendRawBatch(batch)
+  }, [appendRawBatch])
+
+  const queueLiveLine = useCallback((raw: string) => {
+    liveQueueRef.current.push(raw)
+    if (liveQueueRef.current.length >= 50) {
+      flushLiveQueue()
+    } else if (!flushTimerRef.current) {
+      flushTimerRef.current = setTimeout(flushLiveQueue, 100)
+    }
+  }, [flushLiveQueue])
 
   // ── 加载可用日期列表 ──────────────────────────────────────
   useEffect(() => {
@@ -265,15 +306,23 @@ export default function Logs() {
   useEffect(() => {
     if (isToday) return
     setLines([])
-    setConnected(false)
+    setConnectionState('disconnected')
     setHistoryLoading(true)
-    const queryLines = linesLimit === 0 ? 9999 : linesLimit
-    fetchLogsHistory({ log_file: logFile, date: selectedDate, lines: queryLines })
+    fetchLogsHistory({ log_file: logFile, date: selectedDate, lines: linesLimit, cursor: 0 })
       .then(r => {
         setEmptyFile(r.empty_file === true)
         setLines(mergeLogLines(r.lines.map(parseLogLine)))
+        setHistoryCursor(r.next_cursor)
+        setHistoryHasMore(r.has_more)
+        setHistoryTotal(r.total)
       })
-      .catch(() => { setEmptyFile(false); setLines([]) })
+      .catch(() => {
+        setEmptyFile(false)
+        setLines([])
+        setHistoryCursor(null)
+        setHistoryHasMore(false)
+        setHistoryTotal(0)
+      })
       .finally(() => setHistoryLoading(false))
   }, [logFile, selectedDate, linesLimit, isToday])
 
@@ -286,70 +335,51 @@ export default function Logs() {
   useEffect(() => {
     if (!isToday) return
     setLines([])
-    setConnected(false)
+    setConnectionState('connecting')
     setStreamEmpty(false)
+    pausedBufferRef.current = []
+    liveQueueRef.current = []
+    setBufferedCount(0)
 
     let es: EventSource | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let destroyed = false
+    let retryAttempt = 0
 
     function connect() {
       if (destroyed) return
-      const queryLines = linesLimit === 0 ? 9999 : linesLimit
-      es = createLogsStream(logFile, queryLines)
-      es.onopen = () => { if (!destroyed) setConnected(true) }
+      setConnectionState(retryAttempt > 0 ? 'reconnecting' : 'connecting')
+      es = createLogsStream(logFile, linesLimit)
+      es.onopen = () => {
+        if (destroyed) return
+        retryAttempt = 0
+        setConnectionState('connected')
+      }
       // 监听后端发送的 empty 事件：日志文件为空，直接显示「暂无系统日志」
       es.addEventListener('empty', () => { if (!destroyed) setStreamEmpty(true) })
+      es.addEventListener('heartbeat', () => {
+        if (!destroyed) setConnectionState('connected')
+      })
       es.onmessage = (e) => {
         if (!destroyed) setStreamEmpty(false)  // 收到日志行，清除空状态
-        if (pausedRef.current || !e.data || e.data.trim() === '') return
-        const parsed = parseLogLine(e.data)
-        setLines(prev => {
-          let next: LogLine[]
-          const last = prev[prev.length - 1]
-
-          if (!parsed.fullTime && prev.length > 0 && last) {
-            // 无时间戳的续行：追加到最后一条
-            const updated = { ...last, extra: [...last.extra, parsed.body || parsed.raw] }
-            next = [...prev.slice(0, -1), updated]
-          } else if (
-            last &&
-            last.fullTime &&
-            last.fullTime === parsed.fullTime &&
-            last.levelTag === parsed.levelTag
-          ) {
-            // 同一时间戳+级别：合并为一组
-            const updated = { ...last, extra: [...last.extra, parsed.body] }
-            next = [...prev.slice(0, -1), updated]
-          } else if (
-            last &&
-            (last.level === 'error' || last.level === 'warning') &&
-            (parsed.level === 'error' || parsed.level === 'warning') &&
-            parsed.levelTag === last.levelTag &&
-            _isTraceContinuation(
-              parsed.body,
-              last.extra.length > 0 ? last.extra[last.extra.length - 1] : last.body
-            )
-          ) {
-            // traceback 续行识别：以缩进或特殊模式开头的 error/warning 行
-            const updated = { ...last, extra: [...last.extra, parsed.body] }
-            next = [...prev.slice(0, -1), updated]
-          } else {
-            next = [...prev, parsed]
+        if (!e.data || e.data.trim() === '') return
+        if (pausedRef.current) {
+          pausedBufferRef.current.push(e.data)
+          if (pausedBufferRef.current.length > MAX_LIVE_LINES) {
+            pausedBufferRef.current.splice(0, pausedBufferRef.current.length - MAX_LIVE_LINES)
           }
-
-          // 截断时保留完整日志组（不在 extra 中间截断）
-          if (next.length > MAX_LIVE_LINES) {
-            next = next.slice(next.length - MAX_LIVE_LINES)
-          }
-          return next
-        })
+          setBufferedCount(pausedBufferRef.current.length)
+          return
+        }
+        queueLiveLine(e.data)
       }
       es.onerror = () => {
         if (destroyed) return
-        setConnected(false)
+        setConnectionState('reconnecting')
         es?.close()
-        retryTimer = setTimeout(() => { if (!destroyed) connect() }, 3000)
+        retryAttempt += 1
+        const retryDelay = Math.min(1000 * (2 ** (retryAttempt - 1)), 30_000)
+        retryTimer = setTimeout(() => { if (!destroyed) connect() }, retryDelay)
       }
     }
 
@@ -357,15 +387,28 @@ export default function Logs() {
     return () => {
       destroyed = true
       if (retryTimer) clearTimeout(retryTimer)
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
       es?.close()
-      setConnected(false)
+      setConnectionState('disconnected')
     }
-  }, [logFile, selectedDate, linesLimit, isToday])
+  }, [logFile, selectedDate, linesLimit, isToday, queueLiveLine])
+
+  const togglePaused = useCallback(() => {
+    setPaused(current => {
+      if (current) {
+        const buffered = pausedBufferRef.current.splice(0, pausedBufferRef.current.length)
+        setBufferedCount(0)
+        buffered.forEach(queueLiveLine)
+        flushLiveQueue()
+      }
+      return !current
+    })
+  }, [flushLiveQueue, queueLiveLine])
 
   // ── 自动滚底 ──────────────────────────────────────────────
   useEffect(() => {
     if (autoScroll && !paused) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
     }
   }, [lines, autoScroll, paused])
 
@@ -385,8 +428,6 @@ export default function Logs() {
         return true
       })
 
-  const timeColor = isDark ? '#4f6272' : '#64748b'
-
   const disabledDate = (d: Dayjs) => {
     // 未来日期始终禁用
     if (d.isAfter(dayjs(), 'day')) return true
@@ -398,8 +439,6 @@ export default function Logs() {
     // 尚未加载完成时不限制历史日期
     return false
   }
-
-  const linesLimitLabel = linesLimit === 0 ? '全部' : `${linesLimit}条`
 
   return (
     <div className="page-content" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -477,21 +516,27 @@ export default function Logs() {
               { label: '100条', value: 100 },
               { label: '200条', value: 200 },
               { label: '500条', value: 500 },
-              { label: '全部', value: 0 },
+              { label: '2000条', value: 2000 },
             ]}
           />
 
           {/* 连接状态 */}
           {isToday ? (
-            <Tag color={connected ? 'success' : 'default'} style={{ borderRadius: 2, fontSize: 11 }}>
-              {connected ? '● 已连接' : '○ 断开'}
+            <Tag color={connected ? 'success' : connectionState === 'reconnecting' ? 'warning' : 'default'} style={{ borderRadius: 2, fontSize: 11 }}>
+              {connectionState === 'connected'
+                ? '● 已连接'
+                : connectionState === 'reconnecting'
+                  ? '◌ 重连中'
+                  : connectionState === 'connecting'
+                    ? '◌ 连接中'
+                    : '○ 已断开'}
             </Tag>
           ) : (
             <Tag color="default" style={{ borderRadius: 2, fontSize: 11 }}>历史</Tag>
           )}
 
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {filteredLines.length} 条
+            {isToday ? `${filteredLines.length} 条` : `${filteredLines.length} / ${historyTotal} 条`}
           </span>
         </Space>
 
@@ -504,9 +549,9 @@ export default function Logs() {
                   size="small"
                   type={paused ? 'primary' : 'default'}
                   icon={paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-                  onClick={() => setPaused(p => !p)}
+                  onClick={togglePaused}
                 >
-                  {paused ? '继续' : '暂停'}
+                  {paused ? `继续${bufferedCount > 0 ? `（${bufferedCount}）` : ''}` : '暂停'}
                 </Button>
               </Tooltip>
               <Space size={4}>
@@ -522,9 +567,14 @@ export default function Logs() {
                 loading={historyLoading}
                 onClick={() => {
                   setHistoryLoading(true)
-                  const queryLines = linesLimit === 0 ? 9999 : linesLimit
-                  fetchLogsHistory({ log_file: logFile, date: selectedDate, lines: queryLines })
-                    .then(r => { setEmptyFile(r.empty_file === true); setLines(mergeLogLines(r.lines.map(parseLogLine))) })
+                  fetchLogsHistory({ log_file: logFile, date: selectedDate, lines: linesLimit, cursor: 0 })
+                    .then(r => {
+                      setEmptyFile(r.empty_file === true)
+                      setLines(mergeLogLines(r.lines.map(parseLogLine)))
+                      setHistoryCursor(r.next_cursor)
+                      setHistoryHasMore(r.has_more)
+                      setHistoryTotal(r.total)
+                    })
                     .catch(() => {})
                     .finally(() => setHistoryLoading(false))
                 }}
@@ -533,12 +583,46 @@ export default function Logs() {
               </Button>
             </Tooltip>
           )}
-          <Button size="small" icon={<ClearOutlined />} onClick={() => setLines([])}>清空</Button>
+          {!isToday && historyHasMore && historyCursor != null && (
+            <Button
+              size="small"
+              loading={historyLoading}
+              onClick={() => {
+                setHistoryLoading(true)
+                fetchLogsHistory({
+                  log_file: logFile,
+                  date: selectedDate,
+                  lines: linesLimit,
+                  cursor: historyCursor,
+                })
+                  .then(result => {
+                    const older = result.lines.map(parseLogLine)
+                    setLines(current => mergeLogLines([
+                      ...older,
+                      ...current.map(line => ({ ...line, extra: [...line.extra] })),
+                    ]))
+                    setHistoryCursor(result.next_cursor)
+                    setHistoryHasMore(result.has_more)
+                  })
+                  .catch(() => message.error('加载更早日志失败'))
+                  .finally(() => setHistoryLoading(false))
+              }}
+            >
+              加载更早
+            </Button>
+          )}
+          <Button size="small" icon={<ClearOutlined />} onClick={() => {
+            setLines([])
+            pausedBufferRef.current = []
+            liveQueueRef.current = []
+            setBufferedCount(0)
+          }}>清空</Button>
           <Tooltip title="滚到底部">
             <Button
               size="small"
               icon={<VerticalAlignBottomOutlined />}
-              onClick={() => { setAutoScroll(true); bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+              aria-label="滚到底部"
+              onClick={() => { setAutoScroll(true); bottomRef.current?.scrollIntoView({ behavior: 'auto' }) }}
             />
           </Tooltip>
           {/* 日志保留天数设置 */}
@@ -634,7 +718,6 @@ export default function Logs() {
             <LogRow
               key={line.id}
               line={line}
-              timeColor={timeColor}
               isDark={isDark}
               isSystemFile={logFile === 'system'}
             />
@@ -648,12 +731,11 @@ export default function Logs() {
 
 interface LogRowProps {
   line: LogLine
-  timeColor: string
   isDark: boolean
   isSystemFile?: boolean
 }
 
-function LogRow({ line, timeColor, isDark, isSystemFile }: LogRowProps) {
+function LogRow({ line, isDark, isSystemFile }: LogRowProps) {
   const COLORS       = isDark ? DARK_COLORS : LIGHT_COLORS
   const LEVEL_COLORS = isDark ? LEVEL_TAG_COLORS_DARK : LEVEL_TAG_COLORS_LIGHT
 

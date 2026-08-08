@@ -66,6 +66,20 @@ export function pctStr(v: number | null | undefined): string {
   return `${(v * 100).toFixed(1)}%`
 }
 
+/** 格式化人民币估算成本；null 表示价格未知，0 表示已配置免费。 */
+export function fmtCny(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value === 0) return '￥0.00'
+  if (Math.abs(value) < 0.01) return `￥${value.toFixed(6)}`
+  return `￥${value.toFixed(4)}`
+}
+
+/** 格式化综合平均单价，单位固定为人民币/百万 Token。 */
+export function fmtCnyPerMillion(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return `${fmtCny(value)}/百万 Token`
+}
+
 /**
  * 耗时颜色分级
  * - < 2s：绿色（快）

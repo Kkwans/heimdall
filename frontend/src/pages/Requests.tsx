@@ -19,7 +19,7 @@ import { useStableData } from '../hooks/useStableData'
 import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
-import { fmtTokens, fmtMs, latencyColor } from '../utils/format'
+import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, latencyColor } from '../utils/format'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
 // 移动端检测
@@ -495,6 +495,11 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                     {rec.stream ? 'SSE 流式' : 'JSON 非流式'}
                   </Tag>
                 </InfoRow>
+                {rec.provider && (
+                  <InfoRow label="厂商">
+                    <VendorTag name={rec.provider} style={{ fontSize: 11, borderRadius: 3 }} />
+                  </InfoRow>
+                )}
 
                 <Divider />
 
@@ -523,6 +528,33 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                   <GridCell label="深度思考">
                     <span style={{ color: thinkingEnabled ? '#10b981' : 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
                       {thinkingEnabled ? '开启' : '关闭'}
+                    </span>
+                  </GridCell>
+                </div>
+
+                <Divider />
+
+                <SectionTitle>成本估算</SectionTitle>
+                <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: gridGap }}>
+                  <GridCell label="本次花费">
+                    <span style={{ color: rec.estimated_cost == null ? 'var(--text-disabled)' : 'var(--color-warning)', fontWeight: 700 }}>
+                      {fmtCny(rec.estimated_cost)}
+                    </span>
+                  </GridCell>
+                  <GridCell label="综合平均单价">
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                      {rec.estimated_cost != null && rec.billable_tokens
+                        ? fmtCnyPerMillion(rec.estimated_cost * 1_000_000 / rec.billable_tokens)
+                        : '—'}
+                    </span>
+                  </GridCell>
+                  <GridCell label="价格来源">
+                    <span style={{ color: rec.cost_source ? 'var(--text-secondary)' : 'var(--text-disabled)', fontSize: 12 }}>
+                      {rec.cost_source === 'historical_estimate'
+                        ? '历史估算'
+                        : rec.cost_source === 'request_snapshot'
+                          ? '请求时快照'
+                          : '未配置价格'}
                     </span>
                   </GridCell>
                 </div>
@@ -834,6 +866,17 @@ export default function Requests() {
         </span>
       ),
     },
+    {
+      title: '厂商',
+      dataIndex: 'provider',
+      width: isMobile ? 80 : 100,
+      align: 'center' as const,
+      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
+      onCell: () => ({ style: cellStyle }),
+      render: (value: string | null) => value
+        ? <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis' }} />
+        : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
+    },
 
     {
       title: '模式',
@@ -904,6 +947,31 @@ export default function Requests() {
           </Tooltip>
         )
       },
+    },
+    {
+      title: '花费',
+      dataIndex: 'estimated_cost',
+      key: 'estimated_cost',
+      width: 92,
+      align: 'center' as const,
+      sorter: true,
+      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
+      onCell: () => ({ style: cellStyle }),
+      render: (value: number | null | undefined, record) => (
+        <Tooltip title={value == null
+          ? '该请求对应模型未配置价格'
+          : record.cost_source === 'historical_estimate'
+            ? '使用当前模型价格回填的历史估算'
+            : '使用请求发生时的价格快照'}>
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: value == null ? 'var(--text-disabled)' : 'var(--color-warning)',
+          }}>
+            {fmtCny(value)}
+          </span>
+        </Tooltip>
+      ),
     },
     {
       title: '思考时间',

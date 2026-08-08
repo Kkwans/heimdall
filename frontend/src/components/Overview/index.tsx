@@ -6,12 +6,12 @@ import {
   ClockCircleOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons'
-import { fetchOverview } from '../../api/stats'
+import { fetchDashboardOverview } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { OverviewData } from '../../types'
 import styles from './Overview.module.css'
-import { fmtTokens as formatTokens } from '../../utils/format'
+import { fmtCny, fmtTokens as formatTokens } from '../../utils/format'
 
 export default function Overview() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -22,7 +22,7 @@ export default function Overview() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const result = await fetchOverview({ start_date: dateRange.start, end_date: dateRange.end })
+      const result = await fetchDashboardOverview({ start_date: dateRange.start, end_date: dateRange.end })
       if (silent) {
         // 后台刷新：只在数据变化时才更新，防止无意义重渲染闪烁
         setIfChanged(result, setData)
@@ -97,6 +97,10 @@ export default function Overview() {
                 {' '}
                 <Tooltip title={`输出: ${data?.total_completion_tokens?.toLocaleString() ?? 0}`}>
                   <span style={{ color: 'var(--color-success)' }}>↓{formatTokens(data?.total_completion_tokens ?? 0)}</span>
+                </Tooltip>
+                {' '}
+                <Tooltip title={`价格覆盖率 ${((data?.price_coverage_rate ?? 0) * 100).toFixed(1)}%`}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{fmtCny(data?.estimated_cost)}</span>
                 </Tooltip>
               </div>
             </div>

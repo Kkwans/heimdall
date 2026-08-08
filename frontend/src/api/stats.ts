@@ -22,6 +22,38 @@ interface DateParams {
   end_date?: string
 }
 
+export interface DashboardSummary {
+  overview: OverviewData
+  daily: DailyData[]
+  models: ModelData[]
+}
+
+const dashboardSummaryInflight = new Map<string, Promise<DashboardSummary>>()
+
+async function fetchDashboardSummary(params: DateParams): Promise<DashboardSummary> {
+  const key = JSON.stringify(params)
+  const existing = dashboardSummaryInflight.get(key)
+  if (existing) return existing
+  const pending = api
+    .get<DashboardSummary>('/api/dashboard/summary', { params })
+    .then(response => response.data)
+    .finally(() => dashboardSummaryInflight.delete(key))
+  dashboardSummaryInflight.set(key, pending)
+  return pending
+}
+
+export async function fetchDashboardOverview(params: DateParams): Promise<OverviewData> {
+  return (await fetchDashboardSummary(params)).overview
+}
+
+export async function fetchDashboardDaily(params: DateParams): Promise<{ data: DailyData[] }> {
+  return { data: (await fetchDashboardSummary(params)).daily }
+}
+
+export async function fetchDashboardModels(params: DateParams): Promise<{ data: ModelData[] }> {
+  return { data: (await fetchDashboardSummary(params)).models }
+}
+
 export async function fetchOverview(params: DateParams): Promise<OverviewData> {
   const { data } = await api.get('/api/stats/overview', { params })
   return data
@@ -34,6 +66,41 @@ export async function fetchDaily(params: DateParams): Promise<{ data: DailyData[
 
 export async function fetchModels(params: DateParams): Promise<{ data: ModelData[] }> {
   const { data } = await api.get('/api/stats/models', { params })
+  return data
+}
+
+export interface CostSummary {
+  total_cost: number
+  currency: 'CNY'
+  priced_requests: number
+  price_eligible_requests: number
+  coverage_rate: number
+  priced_billable_tokens: number
+  eligible_billable_tokens: number
+  avg_cost_per_million_tokens: number | null
+  historical_estimate_requests: number
+}
+
+export interface CostGroup {
+  id: number | string | null
+  name: string
+  price_eligible_requests: number
+  priced_requests: number
+  total_cost: number
+  billable_tokens: number
+  coverage_rate: number
+  avg_cost_per_million_tokens: number | null
+  cost_share: number
+}
+
+export interface CostStats {
+  summary: CostSummary
+  by_client_key: CostGroup[]
+  by_model: CostGroup[]
+}
+
+export async function fetchCostStats(params: DateParams): Promise<CostStats> {
+  const { data } = await api.get('/api/stats/costs', { params })
   return data
 }
 
@@ -143,12 +210,21 @@ export async function fetchLogsHistory(params: {
   log_file?: 'business' | 'system'
   date: string
   lines?: number
-}): Promise<{ lines: string[]; date: string; total: number; empty_file?: boolean }> {
+  cursor?: number
+}): Promise<{
+  lines: string[]
+  date: string
+  total: number
+  empty_file?: boolean
+  has_more: boolean
+  next_cursor: number | null
+}> {
   const { data } = await api.get('/api/logs/history', {
     params: {
       log_file: params.log_file ?? 'business',
       date: params.date,
       lines: params.lines ?? 200,
+      cursor: params.cursor ?? 0,
     },
   })
   return data

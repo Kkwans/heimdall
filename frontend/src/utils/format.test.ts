@@ -6,7 +6,7 @@
  * 重点验证边界值（9999/10000, 99999999/100000000）和 null/undefined 处理
  */
 import { describe, it, expect } from 'vitest'
-import { fmtTokens, fmtMs, pctStr, latencyColor } from './format'
+import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, pctStr, latencyColor } from './format'
 
 // ──────────────────────────────
 // fmtTokens
@@ -128,6 +128,22 @@ describe('pctStr', () => {
 
   it('0.999 返回 "99.9%"', () => {
     expect(pctStr(0.999)).toBe('99.9%')
+  })
+})
+
+describe('人民币成本格式', () => {
+  it('区分未知价格和已配置免费', () => {
+    expect(fmtCny(null)).toBe('—')
+    expect(fmtCny(0)).toBe('￥0.00')
+  })
+
+  it('小额成本保留足够精度', () => {
+    expect(fmtCny(0.0003064)).toBe('￥0.000306')
+    expect(fmtCny(12.5)).toBe('￥12.5000')
+  })
+
+  it('平均单价固定标注每百万 Token', () => {
+    expect(fmtCnyPerMillion(0.61599276)).toBe('￥0.6160/百万 Token')
   })
 })
 

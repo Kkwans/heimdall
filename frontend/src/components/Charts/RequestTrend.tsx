@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { Card } from 'antd'
-import { fetchDaily } from '../../api/stats'
+import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
@@ -19,7 +19,7 @@ const RequestTrend = memo(function RequestTrend() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const res = await fetchDaily({ start_date: dateRange.start, end_date: dateRange.end })
+      const res = await fetchDashboardDaily({ start_date: dateRange.start, end_date: dateRange.end })
       if (silent) {
         setIfChanged(res.data, setData)
       } else {
