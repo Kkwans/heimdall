@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -51,8 +52,11 @@ def runtime_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _close_thread_connection()
     database = tmp_path / "heimdall.db"
     runtime_config = tmp_path / "runtime_config.json"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
     monkeypatch.setattr(config, "DB_PATH", str(database))
     monkeypatch.setattr(config, "RUNTIME_CONFIG_PATH", str(runtime_config))
+    monkeypatch.setattr(config, "LOG_DIR", str(log_dir))
     monkeypatch.setattr(config, "PROXY_EXTERNAL_PORT", 19888)
     monkeypatch.setattr(config, "DASHBOARD_EXTERNAL_PORT", 18889)
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "")
@@ -218,6 +222,45 @@ def test_cost_stats_group_by_client_access_key_and_model(runtime_app) -> None:
     assert payload["by_model"][0]["cost_share"] == 1
     assert dashboard.status_code == 200
     assert set(dashboard.get_json()) == {"overview", "daily", "models"}
+
+
+def test_log_history_uses_cursor_without_fake_all(runtime_app) -> None:
+    app, _database, _runtime_config, _docker = runtime_app
+    today = date.today().isoformat()
+    log_path = Path(config.LOG_DIR) / "proxy-business.log"
+    log_path.write_text(
+        "".join(f"{today} 10:00:0{i} - INFO - line-{i}\n" for i in range(1, 6)),
+        encoding="utf-8",
+    )
+    client = app.test_client()
+
+    latest = client.get(f"/api/logs/history?date={today}&lines=2")
+    older = client.get(f"/api/logs/history?date={today}&lines=2&cursor=2")
+    oldest = client.get(f"/api/logs/history?date={today}&lines=2&cursor=4")
+    invalid = client.get(f"/api/logs/history?date={today}&cursor=bad")
+
+    assert [line.rsplit(" ", 1)[-1] for line in latest.get_json()["lines"]] == [
+        "line-4", "line-5"
+    ]
+    assert latest.get_json()["total"] == 5
+    assert latest.get_json()["next_cursor"] == 2
+    assert older.get_json()["next_cursor"] == 4
+    assert oldest.get_json()["has_more"] is False
+    assert invalid.status_code == 400
+
+
+def test_log_stream_emits_empty_and_real_heartbeat(runtime_app, monkeypatch) -> None:
+    _app, _database, _runtime_config, _docker = runtime_app
+    log_path = Path(config.LOG_DIR) / "proxy-business.log"
+    log_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(config, "LOG_SSE_HEARTBEAT_SECONDS", 0.01, raising=False)
+    monkeypatch.setattr(config, "LOG_SSE_POLL_SECONDS", 0.01, raising=False)
+
+    stream = stats_api._stream_log_file(str(log_path), 20)
+    assert next(stream) == "retry: 3000\n\n"
+    assert next(stream).startswith("event: empty")
+    assert next(stream).startswith("event: heartbeat")
+    stream.close()
 
 
 @pytest.mark.parametrize(

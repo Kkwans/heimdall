@@ -1,9 +1,10 @@
 import os
 import sys
 import signal
-import subprocess
 import tempfile
 import threading
+import time
+from collections import deque
 from datetime import date, timedelta
 from typing import Optional
 from flask import Blueprint, request, jsonify, send_from_directory, send_file, Response, stream_with_context
@@ -452,7 +453,8 @@ def logs_history():
     参数：
       log_file=business|system（默认 business）
       date=YYYY-MM-DD（默认今天）
-      lines=200（返回最后 N 行，最大 2000）
+      lines=200（每页行数，最大 2000）
+      cursor=0（从最新一行向前已经读取的行数）
     """
     if request.method == "OPTIONS":
         return _cors_response({})
@@ -466,6 +468,10 @@ def logs_history():
         n_lines = min(2000, max(1, int(request.args.get("lines", 200))))
     except (ValueError, TypeError):
         n_lines = 200
+    try:
+        cursor = max(0, int(request.args.get("cursor", 0)))
+    except (ValueError, TypeError):
+        return _cors_response({"error": "cursor 必须为非负整数"}, 400)
 
     today = str(date.today())
     # 今天的日志读无后缀文件，历史日期读归档文件
@@ -479,21 +485,87 @@ def logs_history():
 
     if not os.path.exists(log_path):
         # 文件不存在（该日期无日志）
-        return _cors_response({"lines": [], "date": date_str, "total": 0, "empty_file": False})
+        return _cors_response({
+            "lines": [], "date": date_str, "total": 0,
+            "empty_file": False, "has_more": False, "next_cursor": None,
+        })
 
     if os.path.getsize(log_path) == 0:
         # 文件存在但为空（可能是刚轮换的空归档）
-        return _cors_response({"lines": [], "date": date_str, "total": 0, "empty_file": True})
+        return _cors_response({
+            "lines": [], "date": date_str, "total": 0,
+            "empty_file": True, "has_more": False, "next_cursor": None,
+        })
 
     try:
-        result = subprocess.run(
-            ["tail", "-n", str(n_lines), log_path],
-            capture_output=True, text=True, timeout=5
-        )
-        raw_lines = [l for l in result.stdout.splitlines() if l.strip()]
-        return _cors_response({"lines": raw_lines, "date": date_str, "total": len(raw_lines)})
+        with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
+            all_lines = [line.rstrip("\r\n") for line in log_file if line.strip()]
+        total = len(all_lines)
+        page_end = max(total - cursor, 0)
+        page_start = max(page_end - n_lines, 0)
+        raw_lines = all_lines[page_start:page_end]
+        has_more = page_start > 0
+        return _cors_response({
+            "lines": raw_lines,
+            "date": date_str,
+            "total": total,
+            "has_more": has_more,
+            "next_cursor": cursor + len(raw_lines) if has_more else None,
+            "empty_file": False,
+        })
     except Exception as e:
         return _cors_response({"error": str(e)}, 500)
+
+
+def _stream_log_file(log_path: str, n_lines: int):
+    """Yield non-blocking SSE chunks with rotation handling and real heartbeats."""
+    heartbeat_seconds = max(
+        float(getattr(config, "LOG_SSE_HEARTBEAT_SECONDS", 10)), 0.01
+    )
+    poll_seconds = max(float(getattr(config, "LOG_SSE_POLL_SECONDS", 0.2)), 0.01)
+
+    with open(log_path, "r", encoding="utf-8", errors="replace") as initial_file:
+        initial_lines = deque(
+            (line.rstrip("\r\n") for line in initial_file if line.strip()),
+            maxlen=n_lines,
+        )
+    yield "retry: 3000\n\n"
+    if not initial_lines:
+        yield "event: empty\ndata: {}\n\n"
+    else:
+        for line in initial_lines:
+            yield f"data: {line}\n\n"
+
+    stream = open(log_path, "r", encoding="utf-8", errors="replace")
+    try:
+        stream.seek(0, os.SEEK_END)
+        inode = os.fstat(stream.fileno()).st_ino
+        last_heartbeat = time.monotonic()
+        while True:
+            line = stream.readline()
+            if line:
+                text = line.rstrip("\r\n")
+                if text.strip():
+                    yield f"data: {text}\n\n"
+                continue
+
+            try:
+                current = os.stat(log_path)
+                if current.st_ino != inode or current.st_size < stream.tell():
+                    stream.close()
+                    stream = open(log_path, "r", encoding="utf-8", errors="replace")
+                    inode = os.fstat(stream.fileno()).st_ino
+                    continue
+            except FileNotFoundError:
+                pass
+
+            now = time.monotonic()
+            if now - last_heartbeat >= heartbeat_seconds:
+                yield f"event: heartbeat\ndata: {int(time.time())}\n\n"
+                last_heartbeat = now
+            time.sleep(poll_seconds)
+    finally:
+        stream.close()
 
 
 @stats_bp.route("/api/logs/stream", methods=["GET"])
@@ -520,82 +592,8 @@ def logs_stream():
     if not os.path.exists(log_path):
         return jsonify({"error": f"日志文件不存在：{log_path}"}), 404
 
-    # 空文件：发送特殊 SSE 事件通知前端文件为空，而不是挂起 tail -f
-    if os.path.getsize(log_path) == 0:
-        def generate_empty():
-            yield "event: empty\ndata: {}\n\n"
-            # 继续挂起（tail -f 行为），等待新写入
-            import time as _time
-            import subprocess as _sub
-            import os as _os
-            proc = _sub.Popen(["tail", "-f", "-n", "0", log_path],
-                              stdout=_sub.PIPE, stderr=_sub.PIPE)
-            hb = 0
-            while True:
-                line = proc.stdout.readline()
-                if line:
-                    text = line.decode("utf-8", errors="replace").rstrip()
-                    if text:
-                        yield f"data: {text}\n\n"
-                    hb = 0
-                else:
-                    hb += 1
-                    if hb >= 100:
-                        yield ": ping\n\n"
-                        hb = 0
-                    _time.sleep(0.1)
-        return Response(
-            stream_with_context(generate_empty()),
-            content_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-                     "Access-Control-Allow-Origin": "*"},
-        )
-
-    def generate():
-        import time as _time
-        process = None
-        try:
-            # tail -f -n N：先输出最后 N 行历史，再持续追踪新内容
-            process = subprocess.Popen(
-                ["tail", "-f", "-n", str(n_lines), log_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            # 心跳计数器：每 100 次空循环（约 10s）发送一次 SSE 注释心跳
-            # SSE 注释格式：": ping\n\n" —— 浏览器不会触发 onmessage，只是保持连接
-            heartbeat_counter = 0
-
-            while True:
-                line = process.stdout.readline()
-                if line:
-                    text = line.decode("utf-8", errors="replace").rstrip()
-                    if text:
-                        yield f"data: {text}\n\n"
-                    heartbeat_counter = 0
-                else:
-                    heartbeat_counter += 1
-                    if heartbeat_counter >= 100:
-                        yield ": ping\n\n"
-                        heartbeat_counter = 0
-                    _time.sleep(0.1)
-
-        except GeneratorExit:
-            pass
-        except Exception:
-            pass
-        finally:
-            if process:
-                try:
-                    process.terminate()
-                    process.wait(timeout=2)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
-
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_stream_log_file(log_path, n_lines)),
         content_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
