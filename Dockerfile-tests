@@ -2,8 +2,10 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY backend/requirements-dev.txt ./backend/
-RUN pip install --no-cache-dir -r backend/requirements-dev.txt
+COPY backend/requirements.txt backend/requirements-dev.txt ./backend/
+RUN pip install --no-cache-dir \
+    -r backend/requirements.txt \
+    -r backend/requirements-dev.txt
 
 COPY backend/ ./backend/
 COPY pytest.ini ./pytest.ini

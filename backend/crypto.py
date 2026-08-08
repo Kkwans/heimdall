@@ -78,3 +78,14 @@ def is_encrypted(value: str) -> bool:
     if not value:
         return False
     return value.startswith("gAAAAA")
+
+
+def mask_secret(value: str, prefix_length: int = 6, suffix_length: int = 4) -> str:
+    """返回不可还原完整 secret 的预览文本。"""
+    if not value:
+        return ""
+    if len(value) <= 4:
+        return "••••"
+    if len(value) <= prefix_length + suffix_length:
+        return f"{value[:2]}••••{value[-2:]}"
+    return f"{value[:prefix_length]}...{value[-suffix_length:]}"

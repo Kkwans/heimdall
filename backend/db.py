@@ -17,6 +17,7 @@ def _get_conn() -> sqlite3.Connection:
     if not hasattr(_local, "conn") or _local.conn is None:
         conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
         conn.row_factory = sqlite3.Row  # 支持字典风格访问
+        conn.execute("PRAGMA foreign_keys=ON")
         # WAL 模式：提升并发读写性能（写不阻塞读）
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")

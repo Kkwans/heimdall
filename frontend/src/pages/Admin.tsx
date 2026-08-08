@@ -11,7 +11,7 @@ import {
   Card, Table, Button, Modal, Form, Input, Switch, InputNumber, Select,
   Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SaveOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import { VendorTag, ModelTag } from '../components/CommonTag'
@@ -26,9 +26,15 @@ import {
   fetchProviderApiKeys, createProviderApiKey, updateProviderApiKey, deleteProviderApiKey,
   type Provider, type Model, type ApiKey, type ProviderApiKey,
   type ProviderCreateData, type ModelCreateData, type ApiKeyCreateData,
+  getApiErrorMessage,
 } from '../api/admin'
 
 const { Text } = Typography
+
+function showRequestError(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'errorFields' in error) return
+  message.error(getApiErrorMessage(error, fallback))
+}
 
 // 厂商预设类型
 interface VendorPreset {
@@ -108,7 +114,7 @@ function ProviderManager() {
       const { providers } = await fetchProviders()
       setProviders(providers)
     } catch (err) {
-      message.error('加载厂商列表失败')
+      showRequestError(err, '加载厂商列表失败')
     } finally {
       setLoading(false)
     }
@@ -144,7 +150,6 @@ function ProviderManager() {
       display_name: provider.display_name,
       openai_url: provider.openai_url || '',
       anthropic_url: provider.anthropic_url || '',
-      api_key: provider.api_key || '',
       plan_type: provider.plan_type,
     })
     setModalOpen(true)
@@ -156,7 +161,7 @@ function ProviderManager() {
       message.success('删除成功')
       loadProviders()
     } catch (err) {
-      message.error('删除失败')
+      showRequestError(err, '删除失败')
     }
   }
 
@@ -178,13 +183,14 @@ function ProviderManager() {
       setModalOpen(false)
       loadProviders()
     } catch (err) {
-      // 表单验证失败或其他错误
+      showRequestError(err, editingProvider ? '更新厂商失败' : '创建厂商失败')
     }
   }
 
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [managingKeysProvider, setManagingKeysProvider] = useState<Provider | null>(null)
   const [providerApiKeys, setProviderApiKeys] = useState<ProviderApiKey[]>([])
+  const [priorityDrafts, setPriorityDrafts] = useState<Record<number, number>>({})
   const [newApiKey, setNewApiKey] = useState('')
   const [newApiPriority, setNewApiPriority] = useState(0)
 
@@ -192,8 +198,9 @@ function ProviderManager() {
     try {
       const { keys } = await fetchProviderApiKeys(providerId)
       setProviderApiKeys(keys)
-    } catch {
-      message.error('加载 API Key 列表失败')
+      setPriorityDrafts(Object.fromEntries(keys.map((key) => [key.id, key.priority])))
+    } catch (err) {
+      showRequestError(err, '加载 API Key 列表失败')
     }
   }
 
@@ -211,8 +218,8 @@ function ProviderManager() {
       setNewApiKey('')
       setNewApiPriority(0)
       loadProviderApiKeys(managingKeysProvider.id)
-    } catch {
-      message.error('添加失败')
+    } catch (err) {
+      showRequestError(err, '添加失败')
     }
   }
 
@@ -222,8 +229,8 @@ function ProviderManager() {
       await deleteProviderApiKey(id)
       message.success('删除成功')
       loadProviderApiKeys(managingKeysProvider.id)
-    } catch {
-      message.error('删除失败')
+    } catch (err) {
+      showRequestError(err, '删除失败')
     }
   }
 
@@ -232,18 +239,21 @@ function ProviderManager() {
     try {
       await updateProviderApiKey(id, { enabled })
       loadProviderApiKeys(managingKeysProvider.id)
-    } catch {
-      message.error('操作失败')
+    } catch (err) {
+      showRequestError(err, '操作失败')
     }
   }
 
-  const handleUpdateKeyPriority = async (id: number, priority: number) => {
+  const handleSaveKeyPriority = async (id: number) => {
     if (!managingKeysProvider) return
+    const priority = priorityDrafts[id]
+    if (priority === undefined) return
     try {
       await updateProviderApiKey(id, { priority })
+      message.success('优先级已保存')
       loadProviderApiKeys(managingKeysProvider.id)
-    } catch {
-      message.error('更新失败')
+    } catch (err) {
+      showRequestError(err, '更新失败')
     }
   }
 
@@ -462,6 +472,16 @@ function ProviderManager() {
           <Form.Item name="anthropic_url" label="Anthropic 协议地址">
             <Input placeholder="https://api.anthropic.com/v1" />
           </Form.Item>
+          {!editingProvider && (
+            <Form.Item
+              name="api_key"
+              label="首个 Provider API Key"
+              rules={[{ required: true, whitespace: true, message: '请输入首个 Provider API Key' }]}
+              extra="创建成功后只显示掩码，可在 API Keys 管理中继续添加或停用。"
+            >
+              <Input.Password placeholder="请输入厂商提供的 API Key" autoComplete="new-password" />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -517,7 +537,7 @@ function ProviderManager() {
               align: 'center' as const,
               onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
               onCell: () => ({ style: { textAlign: 'center', verticalAlign: 'middle' } }),
-              render: (v: string) => <Text copyable style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{v}</Text>,
+              render: (v: string) => <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{v}</Text>,
             },
             {
               title: '优先级',
@@ -530,12 +550,12 @@ function ProviderManager() {
               render: (v: number, record: ProviderApiKey) => (
                 <InputNumber
                   size="small"
-                  value={v}
+                  value={priorityDrafts[record.id] ?? v}
                   min={0}
                   max={100}
                   className="priority-input"
                   style={{ width: 60 }}
-                  onChange={(val) => val !== null && handleUpdateKeyPriority(record.id, val)}
+                  onChange={(val) => val !== null && setPriorityDrafts((current) => ({ ...current, [record.id]: val }))}
                 />
               ),
             },
@@ -552,12 +572,23 @@ function ProviderManager() {
             {
               title: '操作',
               key: 'action',
-              width: 60,
+              width: 96,
               align: 'center' as const,
               render: (_: unknown, record: ProviderApiKey) => (
-                <Popconfirm title="确定删除？" onConfirm={() => handleDeleteApiKey(record.id)}>
-                  <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
+                <Space size={2}>
+                  <Tooltip title="保存优先级">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<SaveOutlined />}
+                      disabled={(priorityDrafts[record.id] ?? record.priority) === record.priority}
+                      onClick={() => handleSaveKeyPriority(record.id)}
+                    />
+                  </Tooltip>
+                  <Popconfirm title="确定删除？" onConfirm={() => handleDeleteApiKey(record.id)}>
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
               ),
             },
           ]}
@@ -579,6 +610,7 @@ function ModelManager() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<Model | null>(null)
   const [form] = Form.useForm()
+  const pricingConfigured = Form.useWatch('pricing_configured', form)
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
   const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
 
@@ -590,7 +622,7 @@ function ModelManager() {
         setSelectedProvider(providers[0].id)
       }
     } catch (err) {
-      message.error('加载厂商列表失败')
+      showRequestError(err, '加载厂商列表失败')
     }
   }, [selectedProvider])
 
@@ -600,7 +632,7 @@ function ModelManager() {
       const { models } = await fetchModels(providerId)
       setModels(models)
     } catch (err) {
-      message.error('加载模型列表失败')
+      showRequestError(err, '加载模型列表失败')
     } finally {
       setLoading(false)
     }
@@ -625,6 +657,7 @@ function ModelManager() {
     }
     setEditingModel(null)
     form.resetFields()
+    form.setFieldsValue({ pricing_configured: false })
     setModalOpen(true)
   }
 
@@ -634,10 +667,12 @@ function ModelManager() {
       model_name: model.model_name,
       upstream_model: model.upstream_model,
       enabled: model.enabled,
+      context_window: model.context_window,
       price_input: model.price_input,
       price_output: model.price_output,
       price_cache_read: model.price_cache_read,
       price_cache_write: model.price_cache_write,
+      pricing_configured: model.pricing_configured,
     })
     setModalOpen(true)
   }
@@ -648,7 +683,7 @@ function ModelManager() {
       message.success('删除成功')
       if (selectedProvider) loadModels(selectedProvider)
     } catch (err) {
-      message.error('删除失败')
+      showRequestError(err, '删除失败')
     }
   }
 
@@ -666,7 +701,7 @@ function ModelManager() {
       setModalOpen(false)
       loadModels(selectedProvider)
     } catch (err) {
-      // 表单验证失败或其他错误
+      showRequestError(err, editingModel ? '更新模型失败' : '添加模型失败')
     }
   }
 
@@ -703,6 +738,16 @@ function ModelManager() {
       render: (upstream: string | null) => upstream || <Text type="secondary">-</Text>,
     },
     {
+      title: '上下文窗口',
+      dataIndex: 'context_window',
+      key: 'context_window',
+      width: isMobile ? 90 : 110,
+      align: 'center',
+      onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
+      onCell: () => ({ style: cellCenter }),
+      render: (value: number | null) => value ? value.toLocaleString('zh-CN') : '-',
+    },
+    {
       title: '输入价格',
       dataIndex: 'price_input',
       key: 'price_input',
@@ -710,7 +755,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (price: number) => price ? `¥${price}` : '-',
+      render: (price: number, record) => record.pricing_configured ? `¥${price}` : '-',
     },
     {
       title: '输出价格',
@@ -720,7 +765,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (price: number) => price ? `¥${price}` : '-',
+      render: (price: number, record) => record.pricing_configured ? `¥${price}` : '-',
     },
     {
       title: '缓存读取',
@@ -730,7 +775,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (price: number) => price ? `¥${price}` : '-',
+      render: (price: number, record) => record.pricing_configured ? `¥${price}` : '-',
     },
     {
       title: '缓存写入',
@@ -740,7 +785,7 @@ function ModelManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (price: number) => price ? `¥${price}` : '-',
+      render: (price: number, record) => record.pricing_configured ? `¥${price}` : '-',
     },
     {
       title: '状态',
@@ -791,7 +836,7 @@ function ModelManager() {
 
   // 移动端隐藏次要列
   const filteredModelColumns = isMobile
-    ? columns.filter(c => c.key !== 'price_cache_read' && c.key !== 'price_cache_write')
+    ? columns.filter(c => c.key !== 'context_window' && c.key !== 'price_cache_read' && c.key !== 'price_cache_write')
     : columns
 
   return (
@@ -849,19 +894,35 @@ function ModelManager() {
             tooltip="调用方请求时使用的模型名称，可自定义。例如上游是 mimo-v2.5-pro，可简化为 mimo">
             <Input placeholder="自动填充，可修改" />
           </Form.Item>
+          <Form.Item
+            name="context_window"
+            label="上下文窗口"
+            tooltip="模型可处理的最大 Token 数；留空时继续使用内置默认值。"
+            rules={[{ type: 'integer', min: 1, message: '请输入大于 0 的整数' }]}
+          >
+            <InputNumber min={1} precision={0} placeholder="例如: 128000" style={{ width: '100%' }} />
+          </Form.Item>
           <Divider plain>定价配置（元/百万 tokens）</Divider>
+          <Form.Item
+            name="pricing_configured"
+            label="价格状态"
+            valuePropName="checked"
+            extra="关闭表示价格未知；开启后允许所有价格为 0，表示免费模型。"
+          >
+            <Switch checkedChildren="已配置" unCheckedChildren="未知" />
+          </Form.Item>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item name="price_input" label="输入价格">
-              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+              <InputNumber min={0} step={0.01} placeholder="0" disabled={!pricingConfigured} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="price_output" label="输出价格">
-              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+              <InputNumber min={0} step={0.01} placeholder="0" disabled={!pricingConfigured} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="price_cache_read" label="缓存读取">
-              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+              <InputNumber min={0} step={0.01} placeholder="0" disabled={!pricingConfigured} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="price_cache_write" label="缓存写入">
-              <InputNumber min={0} step={0.01} placeholder="0" style={{ width: '100%' }} />
+              <InputNumber min={0} step={0.01} placeholder="0" disabled={!pricingConfigured} style={{ width: '100%' }} />
             </Form.Item>
           </div>
         </Form>
@@ -891,7 +952,7 @@ function ApiKeyManager() {
       const { keys } = await fetchApiKeys()
       setApiKeys(keys)
     } catch (err) {
-      message.error('加载 API Key 列表失败')
+      showRequestError(err, '加载 API Key 列表失败')
     } finally {
       setLoading(false)
     }
@@ -909,7 +970,9 @@ function ApiKeyManager() {
         }
       }
       setAllModels(models)
-    } catch { /* silent */ }
+    } catch (err) {
+      showRequestError(err, '加载可用模型失败')
+    }
   }, [])
 
   const { refreshTick } = useFilter()
@@ -941,7 +1004,7 @@ function ApiKeyManager() {
       message.success('删除成功')
       loadApiKeys()
     } catch (err) {
-      message.error('删除失败')
+      showRequestError(err, '删除失败')
     }
   }
 
@@ -963,7 +1026,7 @@ function ApiKeyManager() {
       setModalOpen(false)
       loadApiKeys()
     } catch (err) {
-      // 表单验证失败或其他错误
+      showRequestError(err, editingKey ? '更新 API Key 失败' : '创建 API Key 失败')
     }
   }
 
@@ -1020,12 +1083,10 @@ function ApiKeyManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (preview: string, record) => (
-        <Space>
-          <Text copyable={{ text: record.key_value }} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-            {preview || record.key_value}
-          </Text>
-        </Space>
+      render: (preview: string) => (
+        <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+          {preview}
+        </Text>
       ),
     },
     {
@@ -1217,7 +1278,7 @@ export default function Admin() {
     },
   ]
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  const isMobile = window.innerWidth <= 768
 
   return (
     <div className="page-content">

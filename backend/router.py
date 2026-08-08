@@ -112,6 +112,7 @@ def init_routing_tables():
                 price_output    REAL DEFAULT 0,
                 price_cache_read REAL DEFAULT 0,
                 price_cache_write REAL DEFAULT 0,
+                pricing_configured BOOLEAN NOT NULL DEFAULT 0,
                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
             )
@@ -126,11 +127,16 @@ def init_routing_tables():
             "ALTER TABLE models ADD COLUMN price_output REAL DEFAULT 0",
             "ALTER TABLE models ADD COLUMN price_cache_read REAL DEFAULT 0",
             "ALTER TABLE models ADD COLUMN price_cache_write REAL DEFAULT 0",
+            "ALTER TABLE models ADD COLUMN pricing_configured BOOLEAN NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(col_def)
             except Exception:
                 pass
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_provider_api_keys_route "
+            "ON provider_api_keys(provider_id, enabled, priority DESC, id ASC)"
+        )
         conn.commit()
     except sqlite3.Error as e:
         _logger.error(f"[ROUTER] 初始化路由表失败: {e}", exc_info=True)
@@ -304,7 +310,7 @@ def resolve_route_for_proxy(model: str, protocol: str = "openai") -> Union[Route
 # CRUD 操作：厂商
 
 def get_all_providers() -> list:
-    """获取所有厂商（含模型数量、API Key 数量，API Key 解密）"""
+    """获取所有厂商（含模型和 Key 数量，不返回 legacy secret）。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("""
@@ -318,64 +324,74 @@ def get_all_providers() -> list:
     rows = []
     for row in cursor.fetchall():
         d = dict(row)
-        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        d.pop("api_key", None)
         rows.append(d)
     return rows
 
 
 def get_provider(provider_id: int) -> Optional[dict]:
-    """获取单个厂商详情（API Key 解密）"""
+    """获取单个厂商详情，不返回 legacy secret。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM providers WHERE id = ?", (provider_id,))
     row = cursor.fetchone()
     if row:
         d = dict(row)
-        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        d.pop("api_key", None)
         return d
     return None
 
 
 def get_provider_by_name(name: str) -> Optional[dict]:
-    """根据名称获取厂商（API Key 解密）"""
+    """根据名称获取厂商，不返回 legacy secret。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM providers WHERE name = ?", (name,))
     row = cursor.fetchone()
     if row:
         d = dict(row)
-        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        d.pop("api_key", None)
         return d
     return None
 
 
 def create_provider(data: dict) -> int:
-    """创建厂商，返回 ID（API Key 加密存储）"""
+    """在单一事务中创建厂商和首个 Provider Key。"""
     conn = _get_conn()
     cursor = conn.cursor()
     base_url = data.get("base_url") or data.get("openai_url", "")
     encrypted_key = crypto.encrypt(data["api_key"])
-    cursor.execute("""
-        INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data["name"],
-        data.get("display_name", data["name"]),
-        base_url,
-        data.get("openai_url", base_url),
-        data.get("anthropic_url", ""),
-        encrypted_key,
-        data.get("enabled", True),
-        data.get("priority", 0),
-        data.get("plan_type", "api"),
-    ))
-    conn.commit()
-    return cursor.lastrowid
+    with conn:
+        cursor.execute("""
+            INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["name"],
+            data.get("display_name", data["name"]),
+            base_url,
+            data.get("openai_url", base_url),
+            data.get("anthropic_url", ""),
+            encrypted_key,
+            data.get("enabled", True),
+            data.get("priority", 0),
+            data.get("plan_type", "api"),
+        ))
+        provider_id = cursor.lastrowid
+        cursor.execute("""
+            INSERT INTO provider_api_keys (provider_id, api_key, priority, enabled)
+            VALUES (?, ?, ?, ?)
+        """, (
+            provider_id,
+            encrypted_key,
+            data.get("api_key_priority", 0),
+            True,
+        ))
+    return provider_id
 
 
 # 允许更新的字段白名单
 _PROVIDER_ALLOWED_FIELDS = {"name", "display_name", "base_url", "openai_url", "anthropic_url", "api_key", "enabled", "priority", "plan_type"}
-_MODEL_ALLOWED_FIELDS = {"model_name", "upstream_model", "enabled", "context_window", "price_input", "price_output", "price_cache_read", "price_cache_write"}
+_MODEL_ALLOWED_FIELDS = {"model_name", "upstream_model", "enabled", "context_window", "price_input", "price_output", "price_cache_read", "price_cache_write", "pricing_configured"}
 
 
 def _validate_field_name(field: str, allowed: set) -> bool:
@@ -393,6 +409,8 @@ def update_provider(provider_id: int, data: dict) -> bool:
         if not _validate_field_name(key, _PROVIDER_ALLOWED_FIELDS):
             continue
         if key == "api_key":
+            if not value:
+                continue
             fields.append(f"{key} = ?")
             values.append(crypto.encrypt(value))
         else:
@@ -419,7 +437,7 @@ def delete_provider(provider_id: int) -> bool:
 # CRUD 操作：厂商 API Keys（多 Key 优先级轮询）
 
 def get_provider_api_keys(provider_id: int) -> list:
-    """获取厂商的所有 API Key，按优先级降序排列"""
+    """获取厂商 Key 的预览和状态，不返回完整 secret。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute(
@@ -430,7 +448,8 @@ def get_provider_api_keys(provider_id: int) -> list:
     result = []
     for row in rows:
         d = dict(row)
-        d["api_key"] = crypto.decrypt(d.get("api_key", ""))
+        plaintext = crypto.decrypt(d.pop("api_key"))
+        d["api_key_preview"] = crypto.mask_secret(plaintext)
         result.append(d)
     return result
 
@@ -440,7 +459,7 @@ def get_provider_api_keys_for_route(provider_id: int) -> list:
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT api_key FROM provider_api_keys WHERE provider_id = ? AND enabled = 1 ORDER BY priority DESC",
+        "SELECT api_key FROM provider_api_keys WHERE provider_id = ? AND enabled = 1 ORDER BY priority DESC, id ASC",
         (provider_id,)
     )
     return [crypto.decrypt(row["api_key"]) for row in cursor.fetchall()]
@@ -524,7 +543,12 @@ def get_models_by_provider(provider_id: int) -> list:
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM models WHERE provider_id = ? ORDER BY model_name", (provider_id,))
-    return [dict(row) for row in cursor.fetchall()]
+    models = []
+    for row in cursor.fetchall():
+        model = dict(row)
+        model["pricing_configured"] = bool(model.get("pricing_configured", False))
+        models.append(model)
+    return models
 
 
 def create_model(provider_id: int, data: dict) -> int:
@@ -533,8 +557,9 @@ def create_model(provider_id: int, data: dict) -> int:
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window,
-                          price_input, price_output, price_cache_read, price_cache_write)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          price_input, price_output, price_cache_read, price_cache_write,
+                          pricing_configured)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         provider_id,
         data["model_name"],
@@ -545,6 +570,7 @@ def create_model(provider_id: int, data: dict) -> int:
         data.get("price_output", 0),
         data.get("price_cache_read", 0),
         data.get("price_cache_write", 0),
+        data.get("pricing_configured", False),
     ))
     conn.commit()
     return cursor.lastrowid

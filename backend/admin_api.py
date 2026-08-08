@@ -5,11 +5,41 @@
 
 import json
 import os
+import sqlite3
 from flask import Blueprint, request, jsonify
 import router
 import auth
 
 admin_bp = Blueprint('admin', __name__)
+
+_MODEL_PRICE_FIELDS = (
+    "price_input",
+    "price_output",
+    "price_cache_read",
+    "price_cache_write",
+)
+
+
+def _validate_model_data(data: dict):
+    """校验模型数值字段，返回中文错误或 None。"""
+    context_window = data.get("context_window")
+    if context_window is not None:
+        if isinstance(context_window, bool) or not isinstance(context_window, (int, float)):
+            return "上下文窗口必须是正整数"
+        if context_window <= 0 or int(context_window) != context_window:
+            return "上下文窗口必须是正整数"
+
+    for field in _MODEL_PRICE_FIELDS:
+        value = data.get(field)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            return "模型价格必须是大于或等于 0 的数字"
+
+    pricing_configured = data.get("pricing_configured")
+    if pricing_configured is not None and pricing_configured not in (True, False, 0, 1):
+        return "价格配置状态无效"
+    return None
 
 
 def load_vendor_presets():
@@ -57,10 +87,9 @@ def create_provider():
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
-    required = ["name", "api_key"]
-    for field in required:
-        if field not in data:
-            return jsonify({"error": f"Missing required field: {field}"}), 400
+    for field, message in (("name", "请输入厂商标识"), ("api_key", "请输入首个 Provider API Key")):
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            return jsonify({"error": message}), 400
     
     # openai_url 和 anthropic_url 至少要有一个
     if not data.get("openai_url") and not data.get("anthropic_url"):
@@ -73,9 +102,13 @@ def create_provider():
     
     try:
         provider_id = router.create_provider(data)
-        return jsonify({"id": provider_id, "message": "Provider created"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"id": provider_id, "message": "厂商创建成功"}), 201
+    except sqlite3.IntegrityError as exc:
+        if "UNIQUE constraint failed: providers.name" in str(exc):
+            return jsonify({"error": f"厂商 '{data['name']}' 已存在"}), 409
+        return jsonify({"error": "创建厂商失败，请稍后重试"}), 500
+    except Exception:
+        return jsonify({"error": "创建厂商失败，请稍后重试"}), 500
 
 
 @admin_bp.route('/api/providers/<int:provider_id>', methods=['PUT'])
@@ -125,17 +158,23 @@ def create_model(provider_id):
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
-    if "model_name" not in data:
-        return jsonify({"error": "Missing required field: model_name"}), 400
+    if not isinstance(data.get("model_name"), str) or not data["model_name"].strip():
+        return jsonify({"error": "请输入模型名称"}), 400
     
     if "upstream_model" not in data or not data["upstream_model"]:
-        return jsonify({"error": "Missing required field: upstream_model"}), 400
+        return jsonify({"error": "请输入上游模型名"}), 400
+
+    validation_error = _validate_model_data(data)
+    if validation_error:
+        return jsonify({"error": validation_error}), 400
     
     try:
         model_id = router.create_model(provider_id, data)
         return jsonify({"id": model_id, "message": "Model created"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except sqlite3.IntegrityError:
+        return jsonify({"error": f"模型 '{data['model_name']}' 已存在"}), 409
+    except Exception:
+        return jsonify({"error": "添加模型失败，请稍后重试"}), 500
 
 
 @admin_bp.route('/api/models/<int:model_id>', methods=['PUT'])
@@ -145,6 +184,9 @@ def update_model(model_id):
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
+    validation_error = _validate_model_data(data)
+    if validation_error:
+        return jsonify({"error": validation_error}), 400
     success = router.update_model(model_id, data)
     if not success:
         return jsonify({"error": "Model not found or no changes"}), 404
@@ -171,11 +213,6 @@ def list_provider_api_keys(provider_id):
     if not provider:
         return jsonify({"error": "Provider not found"}), 404
     keys = router.get_provider_api_keys(provider_id)
-    # 脱敏处理
-    for key in keys:
-        if key.get("api_key"):
-            v = key["api_key"]
-            key["api_key_preview"] = v[:6] + "..." + v[-4:] if len(v) > 10 else v
     return jsonify({"keys": keys})
 
 
@@ -224,11 +261,6 @@ def delete_provider_api_key(key_id):
 def list_api_keys():
     """获取所有 API Key"""
     keys = auth.get_all_api_keys()
-    # 脱敏处理：heimdall-xxxx...后四位
-    for key in keys:
-        if key.get("key_value"):
-            v = key["key_value"]
-            key["key_preview"] = v[:8] + "..." + v[-4:] if len(v) > 12 else v
     return jsonify({"keys": keys})
 
 

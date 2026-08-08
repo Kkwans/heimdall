@@ -54,8 +54,124 @@ def _baseline_schema_versions(_connection: sqlite3.Connection) -> None:
     """Version 1 only establishes the migration ledger itself."""
 
 
+def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone() is not None
+
+
+def _column_exists(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(
+        str(row[1]) == column
+        for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+    )
+
+
+def _database_directory(connection: sqlite3.Connection) -> Path:
+    row = connection.execute("PRAGMA database_list").fetchone()
+    if not row or not row[2]:
+        raise MigrationError("无法确定数据库目录")
+    return Path(str(row[2])).resolve().parent
+
+
+def _decode_stored_secret(connection: sqlite3.Connection, stored_value: str) -> str:
+    """仅用于迁移去重；不会把明文写入迁移表或日志。"""
+    if not stored_value or not stored_value.startswith("gAAAAA"):
+        return stored_value or ""
+
+    key_path = _database_directory(connection) / ".encryption_key"
+    if not key_path.is_file():
+        raise MigrationError("legacy Provider Key 已加密，但数据库目录缺少 .encryption_key")
+
+    try:
+        from cryptography.fernet import Fernet
+
+        return Fernet(key_path.read_bytes()).decrypt(
+            stored_value.encode("utf-8")
+        ).decode("utf-8")
+    except Exception as exc:
+        raise MigrationError("无法解密 legacy Provider Key，迁移已停止") from exc
+
+
+def _migrate_admin_secrets_and_pricing(connection: sqlite3.Connection) -> None:
+    """建立 Provider Key 单一来源，并区分未知价格与免费价格。"""
+    if _table_exists(connection, "providers"):
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_api_keys (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id   INTEGER NOT NULL,
+                api_key       VARCHAR(512) NOT NULL,
+                priority      INTEGER DEFAULT 0,
+                enabled       BOOLEAN DEFAULT 1,
+                last_used_at  DATETIME,
+                last_error_at DATETIME,
+                error_count   INTEGER DEFAULT 0,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_provider_api_keys_route "
+            "ON provider_api_keys(provider_id, enabled, priority DESC, id ASC)"
+        )
+
+        if _column_exists(connection, "providers", "api_key"):
+            providers = connection.execute(
+                "SELECT id, api_key FROM providers WHERE api_key IS NOT NULL AND api_key <> ''"
+            ).fetchall()
+            for provider_id, legacy_stored in providers:
+                legacy_plaintext = _decode_stored_secret(connection, str(legacy_stored))
+                existing = connection.execute(
+                    "SELECT api_key, priority FROM provider_api_keys "
+                    "WHERE provider_id = ? ORDER BY priority DESC, id ASC",
+                    (provider_id,),
+                ).fetchall()
+                existing_plaintexts = {
+                    _decode_stored_secret(connection, str(row[0])) for row in existing
+                }
+                if legacy_plaintext in existing_plaintexts:
+                    continue
+                lowest_priority = min([int(row[1] or 0) for row in existing] + [0])
+                connection.execute(
+                    "INSERT INTO provider_api_keys "
+                    "(provider_id, api_key, priority, enabled) VALUES (?, ?, ?, 1)",
+                    (provider_id, legacy_stored, lowest_priority),
+                )
+
+    if _table_exists(connection, "models"):
+        if not _column_exists(connection, "models", "pricing_configured"):
+            connection.execute(
+                "ALTER TABLE models ADD COLUMN "
+                "pricing_configured BOOLEAN NOT NULL DEFAULT 0"
+            )
+        price_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(models)").fetchall()
+        }
+        known_price_columns = [
+            column
+            for column in (
+                "price_input",
+                "price_output",
+                "price_cache_read",
+                "price_cache_write",
+            )
+            if column in price_columns
+        ]
+        if known_price_columns:
+            nonzero = " OR ".join(
+                f"COALESCE({column}, 0) <> 0" for column in known_price_columns
+            )
+            connection.execute(
+                f"UPDATE models SET pricing_configured = 1 WHERE {nonzero}"
+            )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
+    Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
 )
 
 

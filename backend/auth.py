@@ -123,14 +123,15 @@ def require_auth(f):
 # CRUD 操作
 
 def get_all_api_keys() -> list:
-    """获取所有 API Key（解密后返回）"""
+    """获取所有客户端 API Key，仅返回不可逆预览和元数据。"""
     conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT id, key_value, name, enabled, allowed_models, created_at, last_used_at FROM api_keys ORDER BY created_at DESC")
     rows = []
     for row in cursor.fetchall():
         d = dict(row)
-        d["key_value"] = crypto.decrypt(d["key_value"])
+        plaintext = crypto.decrypt(d.pop("key_value"))
+        d["key_preview"] = crypto.mask_secret(plaintext, prefix_length=8)
         rows.append(d)
     return rows
 

@@ -5,6 +5,19 @@ const api = axios.create({
   timeout: 30000,
 })
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const responseData = error.response?.data as { error?: unknown } | undefined
+    if (typeof responseData?.error === 'string' && responseData.error.trim()) {
+      return responseData.error
+    }
+    if (error.code === 'ECONNABORTED') {
+      return '请求超时，请稍后重试'
+    }
+  }
+  return fallback
+}
+
 // ==========================================
 // 厂商管理 API
 // ==========================================
@@ -16,7 +29,6 @@ export interface Provider {
   base_url: string
   openai_url: string
   anthropic_url: string
-  api_key: string
   enabled: boolean
   priority: number
   plan_type: string
@@ -69,7 +81,6 @@ export async function deleteProvider(id: number): Promise<{ message: string }> {
 export interface ProviderApiKey {
   id: number
   provider_id: number
-  api_key: string
   api_key_preview: string
   priority: number
   enabled: boolean
@@ -114,6 +125,7 @@ export interface Model {
   price_output: number
   price_cache_read: number
   price_cache_write: number
+  pricing_configured: boolean
   created_at: string
 }
 
@@ -126,6 +138,7 @@ export interface ModelCreateData {
   price_output?: number
   price_cache_read?: number
   price_cache_write?: number
+  pricing_configured?: boolean
 }
 
 export async function fetchModels(providerId: number): Promise<{ models: Model[] }> {
@@ -154,8 +167,7 @@ export async function deleteModel(modelId: number): Promise<{ message: string }>
 
 export interface ApiKey {
   id: number
-  key_value: string
-  key_preview?: string
+  key_preview: string
   name: string
   enabled: boolean
   allowed_models: string | null
