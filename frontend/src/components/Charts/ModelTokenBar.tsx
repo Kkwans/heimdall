@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam } from './EChart'
 import { Card } from 'antd'
 import { fetchDashboardModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -35,10 +35,10 @@ const ModelTokenBar = memo(function ModelTokenBar() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   const chartHeight = isMobile ? 340 : 260  // 移动端增大高度，为图例留出更多空间
 
@@ -62,11 +62,11 @@ const ModelTokenBar = memo(function ModelTokenBar() {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...getTooltipForTheme(isDark),
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const model = params[0]?.axisValue
         const t = isDark ? chartText.dark : chartText.light
         let html = `<div style="font-weight:600;margin-bottom:4px;color:${t.primary}">${model}</div>`
-        params.forEach((p: any) => {
+        params.forEach((p) => {
           html += `<div style="color:${t.secondary}">${p.marker}${p.seriesName}: <b style="color:${t.primary}">${fmtTokens(p.value)}</b></div>`
         })
         return html

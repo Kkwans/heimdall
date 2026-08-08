@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam } from './EChart'
 import { Card } from 'antd'
 import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -30,10 +30,10 @@ const TokenTrend = memo(function TokenTrend() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   if (!loading && data.length === 0) {
     return (
@@ -48,10 +48,10 @@ const TokenTrend = memo(function TokenTrend() {
     tooltip: {
       trigger: 'axis',
       ...getTooltipForTheme(isDark),
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const t = isDark ? chartText.dark : chartText.light
         let html = `<div style="font-weight:600;margin-bottom:4px;color:${t.primary}">${params[0]?.axisValue}</div>`
-        params.forEach((p: any) => {
+        params.forEach((p) => {
           html += `<div style="color:${t.secondary}">${p.marker}${p.seriesName}: <b style="color:${t.primary}">${fmtTokens(p.value)}</b></div>`
         })
         return html

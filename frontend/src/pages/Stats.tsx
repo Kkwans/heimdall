@@ -10,11 +10,11 @@
  */
 import React, { useEffect, useState, useCallback } from 'react'
 import {
-  Alert, Button, Card, Table, Tag, Space, Row, Col, Statistic, DatePicker
+  Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker
 } from 'antd'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType } from 'antd/es/table'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam, type EChartRef } from '../components/Charts/EChart'
 import dayjs from 'dayjs'
 import Header from '../components/Header'
 import {
@@ -28,6 +28,7 @@ import {
   fetchCostStats,
 } from '../api/stats'
 import type { CostGroup, CostStats } from '../api/stats'
+import type { ApiKeyModelStat, ApiKeyStat } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
 import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
@@ -48,8 +49,6 @@ const latencyColor = latencyColorUtil
 
 // ECharts 通用主题色
 // 厂商颜色列表（已迁移到 getVendorColor 全局方案）
-const SERIES_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a78bfa', '#f43f5e', '#38bdf8', '#34d399']
-
 // 通用空状态占位
 function EmptyPlaceholder({ text = '暂无数据' }: { text?: string }) {
   return (
@@ -121,7 +120,6 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
       onHeaderCell: () => ({ style: { textAlign: 'center' as const, background: 'var(--bg-secondary, #f5f5f4)' } }),
       onCell: () => ({ style: cellCenterFixed }),
       render: (v: string) => {
-        const vc = getVendorColor(v)
         return (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <ModelTag name={v} />
@@ -338,7 +336,7 @@ function DailyLatencyChart({ data, isDark }: { data: DailyData[]; isDark: boolea
   const option = {
     tooltip: {
       trigger: 'axis',
-      formatter: (params: any) => {
+      formatter: (params: ChartTooltipParam | ChartTooltipParam[]) => {
         const d = Array.isArray(params) ? params[0] : params
         return `${d.name}<br/>${d.marker} avg: ${fmtMs(d.value)}`
       },
@@ -466,7 +464,7 @@ function LatencyBreakdownChart({ data, isDark }: { data: ModelStats[]; isDark: b
 // ──────────────────────────────────────────
 function ModelTokenPieChart({ data, isMobile }: { data: ModelStats[]; isMobile: boolean }) {
   const height = isMobile ? CHART_HEIGHT_MOBILE + 40 : CHART_HEIGHT + 20
-  const chartRef = React.useRef<ReactECharts>(null)
+  const chartRef = React.useRef<EChartRef>(null)
   const touchStartX = React.useRef<number>(0)
   const touchStartY = React.useRef<number>(0)
 
@@ -534,7 +532,7 @@ function ModelTokenPieChart({ data, isMobile }: { data: ModelStats[]; isMobile: 
         // 移动端：圆心居中偏上，给下方图例留空间
         radius: isMobile ? ['38%', '62%'] : ['40%', '65%'],
         center: isMobile ? ['50%', '42%'] : ['32%', '50%'],
-        data: data.map((d, i) => ({
+        data: data.map((d) => ({
           name: d.model,
           value: d.total_tokens,
           itemStyle: { color: getVendorColor(d.model).color },
@@ -608,7 +606,7 @@ function ErrorAnalysisChart({ data, isDark }: { data: ErrorAnalysis[]; isDark: b
   const option = {
     tooltip: {
       trigger: 'axis',
-      formatter: (params: any) => {
+      formatter: (params: ChartTooltipParam | ChartTooltipParam[]) => {
         const d = Array.isArray(params) ? params[0] : params
         const code = parseInt(d.name, 10)
         const item = data.find(e => String(e.status_code) === d.name)
@@ -693,7 +691,7 @@ function DailyCacheChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
   const option = {
     tooltip: {
       trigger: 'axis',
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const d = params[0]
         return `${d.name}<br/>${d.marker} 缓存命中率: ${pctStr(d.value)}`
       },
@@ -730,7 +728,7 @@ function DailyCacheChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
 // ──────────────────────────────────────────
 function ProviderTokenPieChart({ data, isMobile }: { data: ProviderStats[]; isMobile: boolean }) {
   const height = isMobile ? CHART_HEIGHT_MOBILE + 40 : CHART_HEIGHT + 20
-  const chartRef = React.useRef<ReactECharts>(null)
+  const chartRef = React.useRef<EChartRef>(null)
   const touchStartX = React.useRef<number>(0)
   const touchStartY = React.useRef<number>(0)
 
@@ -778,7 +776,7 @@ function ProviderTokenPieChart({ data, isMobile }: { data: ProviderStats[]; isMo
         type: 'pie',
         radius: isMobile ? ['38%', '62%'] : ['40%', '65%'],
         center: isMobile ? ['50%', '42%'] : ['32%', '50%'],
-        data: data.map((d, i) => ({
+        data: data.map((d) => ({
           name: d.provider,
           value: d.total_tokens,
           itemStyle: { color: getVendorColor(d.provider).color },
@@ -831,7 +829,7 @@ function ProviderOverviewChart({ data, isDark }: { data: ProviderStats[]; isDark
   const option = {
     tooltip: {
       trigger: 'axis',
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const lines = [params[0].axisValue]
         for (const p of params) {
           if (p.seriesName === '成功率') {
@@ -1010,7 +1008,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
 // ──────────────────────────────────────────
 // APIKey 统计组件
 // ──────────────────────────────────────────
-function ApiKeyTokenPieChart({ data, isMobile }: { data: any[]; isMobile: boolean }) {
+function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile: boolean }) {
   const filtered = data.filter(d => d.api_key_id !== null)
   if (filtered.length === 0) return <EmptyPlaceholder />
   
@@ -1022,7 +1020,7 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: any[]; isMobile: boolea
   }))
   
   const option = {
-    tooltip: { trigger: 'item', formatter: (p: any) => `${p.name}: ${fmtTokens(p.value)} (${p.percent}%)` },
+    tooltip: { trigger: 'item', formatter: (p: ChartTooltipParam) => `${p.name}: ${fmtTokens(p.value)} (${p.percent}%)` },
     series: [{
       type: 'pie',
       radius: ['40%', '70%'],
@@ -1048,13 +1046,13 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: any[]; isMobile: boolea
   return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
 }
 
-function ApiKeyStatsTable({ data }: { data: any[] }) {
+function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
   const filtered = data.filter(d => d.api_key_id !== null)
   if (filtered.length === 0) return <EmptyPlaceholder text="暂无 API Key 数据" />
   
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
-  const columns: ColumnsType<any> = [
+  const columns: ColumnsType<ApiKeyStat> = [
     { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
     { title: '请求数', dataIndex: 'total_requests', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '成功', dataIndex: 'success_requests', key: 'ok', align: 'center', render: (v: number) => <span style={{ ...mono, color: 'var(--color-success)' }}>{v}</span> },
@@ -1074,13 +1072,13 @@ function ApiKeyStatsTable({ data }: { data: any[] }) {
   )
 }
 
-function ApiKeyModelStatsTable({ data }: { data: any[] }) {
+function ApiKeyModelStatsTable({ data }: { data: ApiKeyModelStat[] }) {
   const filtered = data.filter(d => d.api_key_id !== null)
   if (filtered.length === 0) return <EmptyPlaceholder text="暂无数据" />
   
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
-  const columns: ColumnsType<any> = [
+  const columns: ColumnsType<ApiKeyModelStat> = [
     { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
     { title: '模型', dataIndex: 'model', key: 'model', align: 'center', render: (v: string) => <ModelTag name={v} /> },
     { title: '请求数', dataIndex: 'request_count', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
@@ -1170,8 +1168,8 @@ export default function Stats() {
   const [errorAnalysis, setErrorAnalysis] = useState<ErrorAnalysis[]>([])
   const [hourly, setHourly] = useState<HourlyStat[]>([])
   const [dailyData, setDailyData] = useState<DailyData[]>([])
-  const [apiKeyStats, setApiKeyStats] = useState<any[]>([])
-  const [apiKeyModelStats, setApiKeyModelStats] = useState<any[]>([])
+  const [apiKeyStats, setApiKeyStats] = useState<ApiKeyStat[]>([])
+  const [apiKeyModelStats, setApiKeyModelStats] = useState<ApiKeyModelStat[]>([])
   const [costStats, setCostStats] = useState<CostStats | null>(null)
   const [costLoading, setCostLoading] = useState(true)
   const [sectionErrors, setSectionErrors] = useState<string[]>([])
@@ -1224,7 +1222,7 @@ export default function Stats() {
   // 响应日期变化 + 前台刷新
   useEffect(() => { loadStats() }, [loadStats, refreshTick])
   // 响应后台静默刷新
-  useEffect(() => { if (backgroundTick > 0) loadStats(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) loadStats(true) }, [backgroundTick, loadStats])
 
   const cardStyle = { borderRadius: 6, overflow: 'hidden' as const }
   const sectionTitle = (title: string, subtitle?: string) => (

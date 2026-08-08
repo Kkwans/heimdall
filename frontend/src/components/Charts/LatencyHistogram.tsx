@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam } from './EChart'
 import { Card } from 'antd'
 import { fetchLatencyDistribution } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -26,10 +26,10 @@ const LatencyHistogram = memo(function LatencyHistogram() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   if (!loading && data.length === 0) {
     return (
@@ -54,7 +54,7 @@ const LatencyHistogram = memo(function LatencyHistogram() {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...getTooltipForTheme(isDark),
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const p = params[0]
         const t = isDark ? chartText.dark : chartText.light
         return `<b style="color:${t.primary}">${p.axisValue}</b><br/><span style="color:${t.secondary}">请求数: <b style="color:${t.primary}">${p.value}</b></span>`
@@ -90,7 +90,7 @@ const LatencyHistogram = memo(function LatencyHistogram() {
           position: 'top',
           color: isDark ? '#78716c' : '#a8a29e',
           fontSize: 11,
-          formatter: (p: any) => (p.value > 0 ? p.value : ''),
+          formatter: (p: ChartTooltipParam) => (p.value > 0 ? p.value : ''),
         },
       },
     ],

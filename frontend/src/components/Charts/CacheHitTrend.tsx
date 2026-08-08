@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam } from './EChart'
 import { Card } from 'antd'
 import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -26,10 +26,10 @@ const CacheHitTrend = memo(function CacheHitTrend() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   if (!loading && data.length === 0) {
     return (
@@ -47,7 +47,7 @@ const CacheHitTrend = memo(function CacheHitTrend() {
     tooltip: {
       trigger: 'axis',
       ...getTooltipForTheme(isDark),
-      formatter: (params: any[]) => {
+      formatter: (params: ChartTooltipParam[]) => {
         const p = params[0]
         const t = isDark ? chartText.dark : chartText.light
         return `<b style="color:${t.primary}">${p.axisValue}</b><br/><span style="color:${t.secondary}">缓存命中率: <b style="color:${t.primary}">${p.value}%</b></span>`

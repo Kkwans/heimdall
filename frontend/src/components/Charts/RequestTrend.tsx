@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts from './EChart'
 import { Card } from 'antd'
 import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -30,10 +30,10 @@ const RequestTrend = memo(function RequestTrend() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   if (!loading && data.length === 0) {
     return (

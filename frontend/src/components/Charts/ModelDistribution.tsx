@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactECharts, { type ChartTooltipParam } from './EChart'
 import { Card } from 'antd'
 import { fetchDashboardModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
@@ -34,10 +34,10 @@ const ModelDistribution = memo(function ModelDistribution() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end])
+  }, [dateRange.start, dateRange.end, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
-  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick])
+  useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   if (!loading && data.length === 0) {
     return (
@@ -80,12 +80,13 @@ const ModelDistribution = memo(function ModelDistribution() {
     tooltip: {
       trigger: 'item',
       ...getTooltipForTheme(isDark),
-      formatter: (p: any) => {
-        const d: ModelData = p.data.raw
+      formatter: (p: ChartTooltipParam) => {
+        const item = p.data as { raw: ModelData; value: number }
+        const d = item.raw
         const t = isDark ? chartText.dark : chartText.light
         return `
           <div style="font-weight:600;margin-bottom:6px;color:${t.primary}">${p.name}</div>
-          <div style="color:${t.secondary}">请求数: <b style="color:${t.primary}">${p.data.value}</b> (${p.percent}%)</div>
+          <div style="color:${t.secondary}">请求数: <b style="color:${t.primary}">${item.value}</b> (${p.percent}%)</div>
           <div style="color:${t.secondary}">Token: <b style="color:${t.primary}">${(d.total_tokens / 1000).toFixed(1)}K</b></div>
           <div style="color:${t.secondary}">成功率: <b style="color:${t.primary}">${(d.success_rate * 100).toFixed(1)}%</b></div>
           <div style="color:${t.secondary}">平均延迟: <b style="color:${t.primary}">${d.avg_latency_ms?.toFixed(0)}ms</b></div>
@@ -101,7 +102,7 @@ const ModelDistribution = memo(function ModelDistribution() {
         center: pieCenter,
         avoidLabelOverlap: false,
         label: { show: false },
-        data: data.map((d, i) => ({
+        data: data.map((d) => ({
           name: d.model,
           value: d.total_requests,
           raw: d,
