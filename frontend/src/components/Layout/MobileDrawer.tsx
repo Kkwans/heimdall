@@ -105,7 +105,7 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
 
     const focusTimer = window.setTimeout(() => {
       closeButtonRef.current?.focus({ preventScroll: true })
-    }, 0)
+    }, 120)
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
