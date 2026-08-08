@@ -116,6 +116,24 @@ def overview():
         return _cors_response({"error": str(e)}, 500)
 
 
+@stats_bp.route("/api/dashboard/summary", methods=["GET", "OPTIONS"])
+def dashboard_summary():
+    """Return the existing Dashboard datasets in one consistent response."""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+    try:
+        return _cors_response({
+            "overview": db.query_overview(start_date, end_date),
+            "daily": db.query_daily(start_date, end_date),
+            "models": db.query_models(start_date, end_date),
+        })
+    except Exception as exc:
+        return _cors_response({"error": str(exc)}, 500)
+
+
 @stats_bp.route("/api/stats/daily", methods=["GET", "OPTIONS"])
 def daily():
     """按日期分组的趋势数据"""
@@ -148,6 +166,20 @@ def models():
         return _cors_response({"data": data})
     except Exception as e:
         return _cors_response({"error": str(e)}, 500)
+
+
+@stats_bp.route("/api/stats/costs", methods=["GET", "OPTIONS"])
+def costs():
+    """人民币成本汇总、Client Access Key 与模型分布。"""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    start_date, end_date, err = _get_date_range()
+    if err:
+        return _cors_response({"error": err}, 400)
+    try:
+        return _cors_response(db.query_cost_stats(start_date, end_date))
+    except Exception as exc:
+        return _cors_response({"error": str(exc)}, 500)
 
 
 @stats_bp.route("/api/stats/requests", methods=["GET", "OPTIONS"])

@@ -262,11 +262,118 @@ def _migrate_request_retention(connection: sqlite3.Connection) -> None:
         )
 
 
+def _historical_pricing_for_request(
+    connection: sqlite3.Connection,
+    *,
+    model_name: str,
+    provider_id: Optional[int],
+    provider_name: str,
+):
+    """Return pricing only when an old request can be matched unambiguously."""
+    select_sql = """
+        SELECT m.id AS model_id, m.provider_id, m.model_name,
+               m.price_input, m.price_output,
+               m.price_cache_read, m.price_cache_write
+        FROM models m
+        JOIN providers p ON p.id = m.provider_id
+        WHERE m.model_name = ? AND COALESCE(m.pricing_configured, 0) = 1
+    """
+    params: list[object] = [model_name]
+    if provider_id is not None:
+        select_sql += " AND m.provider_id = ?"
+        params.append(provider_id)
+    elif provider_name:
+        select_sql += " AND p.name = ?"
+        params.append(provider_name)
+    rows = connection.execute(select_sql, params).fetchall()
+    return rows[0] if len(rows) == 1 else None
+
+
+def _migrate_request_costs(connection: sqlite3.Connection) -> None:
+    """Add immutable request cost snapshots and backfill provable history."""
+    if not _table_exists(connection, "requests"):
+        return
+
+    for column, definition in (
+        ("estimated_cost", "REAL"),
+        ("pricing_snapshot", "TEXT"),
+        ("cost_source", "TEXT"),
+        ("billable_tokens", "INTEGER"),
+    ):
+        if not _column_exists(connection, "requests", column):
+            connection.execute(f"ALTER TABLE requests ADD COLUMN {column} {definition}")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_cost_date "
+        "ON requests(stat_eligible, date, estimated_cost)"
+    )
+
+    required_tables = {"models", "providers"}
+    if not all(_table_exists(connection, table) for table in required_tables):
+        return
+
+    connection.execute(
+        """
+        UPDATE requests
+        SET billable_tokens = COALESCE(prompt_tokens, 0)
+                            + COALESCE(completion_tokens, 0)
+        WHERE billable_tokens IS NULL
+          AND COALESCE(success, 1) = 1
+          AND COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0) > 0
+        """
+    )
+
+    from services.cost_service import PricingSnapshot, calculate_cost
+
+    rows = connection.execute(
+        """
+        SELECT id, model, provider_id, COALESCE(provider, '') AS provider,
+               prompt_tokens, completion_tokens,
+               cache_hit_tokens, cache_miss_tokens
+        FROM requests
+        WHERE estimated_cost IS NULL
+          AND COALESCE(success, 1) = 1
+          AND COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0) > 0
+        """
+    ).fetchall()
+    for row in rows:
+        pricing_row = _historical_pricing_for_request(
+            connection,
+            model_name=str(row[1]),
+            provider_id=int(row[2]) if row[2] is not None else None,
+            provider_name=str(row[3] or ""),
+        )
+        if pricing_row is None:
+            continue
+        result = calculate_cost(
+            {
+                "prompt_tokens": row[4],
+                "completion_tokens": row[5],
+                "cache_hit_tokens": row[6],
+                "cache_miss_tokens": row[7],
+            },
+            PricingSnapshot.from_mapping(dict(zip(
+                ("model_id", "provider_id", "model_name", "price_input", "price_output", "price_cache_read", "price_cache_write"),
+                pricing_row,
+            ))),
+            source="historical_estimate",
+        )
+        connection.execute(
+            """
+            UPDATE requests
+            SET estimated_cost = ?, pricing_snapshot = ?,
+                cost_source = 'historical_estimate', billable_tokens = ?
+            WHERE id = ?
+            """,
+            (result.estimated_cost, result.snapshot_json, result.billable_tokens, row[0]),
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
     Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
     Migration(3, "routing_and_request_records", _migrate_routing_and_request_records),
     Migration(4, "request_retention", _migrate_request_retention),
+    Migration(5, "request_costs", _migrate_request_costs),
 )
 
 

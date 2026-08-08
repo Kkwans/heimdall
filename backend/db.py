@@ -77,7 +77,11 @@ def init_db():
                 protocol            TEXT,
                 endpoint            TEXT,
                 route_attempts       TEXT,
-                stat_eligible        BOOLEAN NOT NULL DEFAULT 1
+                stat_eligible        BOOLEAN NOT NULL DEFAULT 1,
+                estimated_cost       REAL,
+                pricing_snapshot     TEXT,
+                cost_source          TEXT,
+                billable_tokens      INTEGER
             )
         """)
 
@@ -127,6 +131,10 @@ def init_db():
             "ALTER TABLE requests ADD COLUMN endpoint TEXT",
             "ALTER TABLE requests ADD COLUMN route_attempts TEXT",
             "ALTER TABLE requests ADD COLUMN stat_eligible BOOLEAN NOT NULL DEFAULT 1",
+            "ALTER TABLE requests ADD COLUMN estimated_cost REAL",
+            "ALTER TABLE requests ADD COLUMN pricing_snapshot TEXT",
+            "ALTER TABLE requests ADD COLUMN cost_source TEXT",
+            "ALTER TABLE requests ADD COLUMN billable_tokens INTEGER",
         ]:
             try:
                 cursor.execute(col_def)
@@ -137,6 +145,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_provider_api_key_id ON requests(provider_api_key_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_stat_date ON requests(stat_eligible, date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_retention_date_id ON requests(date, id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_cost_date ON requests(stat_eligible, date, estimated_cost)")
 
         conn.commit()
     except Exception as e:
@@ -168,7 +177,8 @@ def _do_insert(record: dict):
                 provider,
                 api_key_id,
                 provider_id, provider_api_key_id, client_api_key_id,
-                protocol, endpoint, route_attempts, stat_eligible
+                protocol, endpoint, route_attempts, stat_eligible,
+                estimated_cost, pricing_snapshot, cost_source, billable_tokens
             ) VALUES (
                 :created_at, :date, :model, :original_model, :stream, :messages_count,
                 :prompt_tokens, :completion_tokens, :total_tokens,
@@ -180,7 +190,8 @@ def _do_insert(record: dict):
                 :provider,
                 :api_key_id,
                 :provider_id, :provider_api_key_id, :client_api_key_id,
-                :protocol, :endpoint, :route_attempts, :stat_eligible
+                :protocol, :endpoint, :route_attempts, :stat_eligible,
+                :estimated_cost, :pricing_snapshot, :cost_source, :billable_tokens
             )
         """, record)
         conn.commit()
@@ -289,7 +300,18 @@ def query_overview(start_date: str, end_date: str) -> dict:
                 SUM(prompt_tokens) as total_prompt_tokens,
                 SUM(completion_tokens) as total_completion_tokens,
                 SUM(cache_hit_tokens) as total_cache_hit_tokens,
-                AVG(latency_ms) as avg_latency_ms
+                AVG(latency_ms) as avg_latency_ms,
+                SUM(CASE WHEN success = 1 AND billable_tokens > 0
+                         THEN 1 ELSE 0 END) as price_eligible_requests,
+                SUM(CASE WHEN success = 1 AND billable_tokens > 0
+                              AND estimated_cost IS NOT NULL
+                         THEN 1 ELSE 0 END) as priced_requests,
+                SUM(CASE WHEN success = 1 AND billable_tokens > 0
+                              AND estimated_cost IS NOT NULL
+                         THEN estimated_cost ELSE 0 END) as estimated_cost,
+                SUM(CASE WHEN success = 1 AND billable_tokens > 0
+                              AND estimated_cost IS NOT NULL
+                         THEN billable_tokens ELSE 0 END) as priced_billable_tokens
             FROM requests
             WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
         """, (start_date, end_date)).fetchone()
@@ -315,6 +337,10 @@ def query_overview(start_date: str, end_date: str) -> dict:
             idx = min(idx, len(data) - 1)
             return data[idx]
 
+        priced_requests = int(row["priced_requests"] or 0)
+        price_eligible_requests = int(row["price_eligible_requests"] or 0)
+        estimated_cost = float(row["estimated_cost"] or 0)
+        priced_billable_tokens = int(row["priced_billable_tokens"] or 0)
         return {
             "total_requests": row["total_requests"] or 0,
             "success_requests": row["success_requests"] or 0,
@@ -328,6 +354,15 @@ def query_overview(start_date: str, end_date: str) -> dict:
             "p50_latency_ms": percentile(latencies, 50),
             "p90_latency_ms": percentile(latencies, 90),
             "p99_latency_ms": percentile(latencies, 99),
+            "estimated_cost": round(estimated_cost, 8),
+            "priced_requests": priced_requests,
+            "price_eligible_requests": price_eligible_requests,
+            "price_coverage_rate": round(
+                priced_requests / price_eligible_requests, 4
+            ) if price_eligible_requests else 0,
+            "avg_cost_per_million_tokens": round(
+                estimated_cost * 1_000_000 / priced_billable_tokens, 8
+            ) if priced_billable_tokens else None,
         }
     except Exception as e:
         _logger.error(f"[DB] query_overview 失败: {e}", exc_info=True)
@@ -340,6 +375,8 @@ def _empty_overview() -> dict:
         "total_tokens": 0, "total_prompt_tokens": 0, "total_completion_tokens": 0,
         "total_cache_hit_tokens": 0, "cache_hit_rate": 0,
         "avg_latency_ms": 0, "p50_latency_ms": 0, "p90_latency_ms": 0, "p99_latency_ms": 0,
+        "estimated_cost": 0, "priced_requests": 0, "price_eligible_requests": 0,
+        "price_coverage_rate": 0, "avg_cost_per_million_tokens": None,
     }
 
 
@@ -411,6 +448,7 @@ SORTABLE_FIELDS = {
     'created_at', 'latency_ms', 'ttfb_ms',
     'prompt_tokens', 'completion_tokens', 'total_tokens',
     'cache_hit_tokens',
+    'estimated_cost',
 }
 
 # output_ms 是计算字段，特殊处理
@@ -487,6 +525,7 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
                 r.api_key_id, r.client_api_key_id,
                 r.provider, r.provider_id, r.provider_api_key_id,
                 r.protocol, r.endpoint, r.route_attempts, r.stat_eligible,
+                r.estimated_cost, r.cost_source, r.billable_tokens,
                 ak.name as api_key_name
             FROM requests r
             LEFT JOIN api_keys ak ON r.api_key_id = ak.id
@@ -820,7 +859,7 @@ def query_request_detail(request_id: int):
             return None
         r = dict(row)
         # 尝试将 request_body / response_body 字符串解析为 JSON 对象
-        for key in ("request_body", "response_body", "route_attempts"):
+        for key in ("request_body", "response_body", "route_attempts", "pricing_snapshot"):
             val = r.get(key)
             if val:
                 try:
@@ -831,6 +870,111 @@ def query_request_detail(request_id: int):
     except Exception as e:
         _logger.error(f"[DB] query_request_detail 失败: {e}", exc_info=True)
         return None
+
+
+def query_cost_stats(start_date: str, end_date: str) -> dict:
+    """按 Client Access Key 和模型聚合已固化的人民币成本。"""
+    try:
+        conn = _get_conn()
+        filter_sql = """
+            r.date BETWEEN ? AND ?
+            AND COALESCE(r.stat_eligible, 1) = 1
+            AND r.success = 1
+            AND COALESCE(r.billable_tokens, 0) > 0
+        """
+        summary = conn.execute(
+            f"""
+            SELECT
+                COUNT(*) AS price_eligible_requests,
+                SUM(CASE WHEN r.estimated_cost IS NOT NULL THEN 1 ELSE 0 END)
+                    AS priced_requests,
+                SUM(CASE WHEN r.estimated_cost IS NOT NULL
+                         THEN r.estimated_cost ELSE 0 END) AS total_cost,
+                SUM(CASE WHEN r.estimated_cost IS NOT NULL
+                         THEN r.billable_tokens ELSE 0 END) AS priced_billable_tokens,
+                SUM(r.billable_tokens) AS eligible_billable_tokens,
+                SUM(CASE WHEN r.cost_source = 'historical_estimate'
+                         THEN 1 ELSE 0 END) AS historical_estimate_requests
+            FROM requests r
+            WHERE {filter_sql}
+            """,
+            (start_date, end_date),
+        ).fetchone()
+
+        def grouped(group_expression: str, name_expression: str) -> list:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    {group_expression} AS id,
+                    {name_expression} AS name,
+                    COUNT(*) AS price_eligible_requests,
+                    SUM(CASE WHEN r.estimated_cost IS NOT NULL THEN 1 ELSE 0 END)
+                        AS priced_requests,
+                    SUM(CASE WHEN r.estimated_cost IS NOT NULL
+                             THEN r.estimated_cost ELSE 0 END) AS total_cost,
+                    SUM(CASE WHEN r.estimated_cost IS NOT NULL
+                             THEN r.billable_tokens ELSE 0 END) AS billable_tokens
+                FROM requests r
+                LEFT JOIN api_keys ak ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                WHERE {filter_sql}
+                GROUP BY {group_expression}, {name_expression}
+                ORDER BY total_cost DESC, billable_tokens DESC
+                """,
+                (start_date, end_date),
+            ).fetchall()
+            total_cost_value = float(summary["total_cost"] or 0)
+            result = []
+            for row in rows:
+                item = dict(row)
+                item["total_cost"] = round(float(item["total_cost"] or 0), 8)
+                item["billable_tokens"] = int(item["billable_tokens"] or 0)
+                item["coverage_rate"] = round(
+                    int(item["priced_requests"] or 0)
+                    / int(item["price_eligible_requests"] or 1),
+                    4,
+                )
+                item["avg_cost_per_million_tokens"] = round(
+                    item["total_cost"] * 1_000_000 / item["billable_tokens"], 8
+                ) if item["billable_tokens"] else None
+                item["cost_share"] = round(
+                    item["total_cost"] / total_cost_value, 4
+                ) if total_cost_value else 0
+                result.append(item)
+            return result
+
+        total_cost = round(float(summary["total_cost"] or 0), 8)
+        priced_requests = int(summary["priced_requests"] or 0)
+        eligible_requests = int(summary["price_eligible_requests"] or 0)
+        priced_tokens = int(summary["priced_billable_tokens"] or 0)
+        return {
+            "summary": {
+                "total_cost": total_cost,
+                "currency": "CNY",
+                "priced_requests": priced_requests,
+                "price_eligible_requests": eligible_requests,
+                "coverage_rate": round(
+                    priced_requests / eligible_requests, 4
+                ) if eligible_requests else 0,
+                "priced_billable_tokens": priced_tokens,
+                "eligible_billable_tokens": int(
+                    summary["eligible_billable_tokens"] or 0
+                ),
+                "avg_cost_per_million_tokens": round(
+                    total_cost * 1_000_000 / priced_tokens, 8
+                ) if priced_tokens else None,
+                "historical_estimate_requests": int(
+                    summary["historical_estimate_requests"] or 0
+                ),
+            },
+            "by_client_key": grouped(
+                "COALESCE(r.client_api_key_id, r.api_key_id)",
+                "COALESCE(ak.name, '已删除或未知')",
+            ),
+            "by_model": grouped("r.model", "r.model"),
+        }
+    except Exception as e:
+        _logger.error(f"[DB] query_cost_stats 失败: {e}", exc_info=True)
+        raise
 
 
 def query_api_key_stats(start_date: str, end_date: str) -> list:

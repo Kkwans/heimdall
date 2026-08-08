@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Iterable, Optional
 
 import db
 from services.usage_normalizer import normalize_usage
+from services.cost_service import estimate_for_route
 
 
 CST = timezone(timedelta(hours=8))
@@ -100,6 +101,14 @@ class RequestRecorder:
         messages_count = len(messages) if isinstance(messages, list) else 0
         provider_id = getattr(route, "provider_id", None)
         provider = getattr(route, "provider_key", None)
+        cost = None
+        if route is not None:
+            try:
+                cost = estimate_for_route(
+                    db._get_conn(), getattr(route, "model_id", None), normalized
+                )
+            except Exception:
+                cost = None
 
         record = {
             "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -127,6 +136,12 @@ class RequestRecorder:
             "endpoint": self.endpoint,
             "route_attempts": json.dumps(attempts_list, ensure_ascii=False),
             "stat_eligible": 1 if self.stat_eligible else 0,
+            "estimated_cost": cost.estimated_cost if cost else None,
+            "pricing_snapshot": cost.snapshot_json if cost else None,
+            "cost_source": "request_snapshot" if cost else None,
+            "billable_tokens": (
+                normalized["prompt_tokens"] + normalized["completion_tokens"]
+            ) or None,
         }
         db.insert_request(record)
         if self.log_callback is not None:

@@ -172,6 +172,54 @@ def test_retention_api_requires_preview_and_never_deletes_on_save(runtime_app) -
         assert connection.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 1
 
 
+def test_cost_stats_group_by_client_access_key_and_model(runtime_app) -> None:
+    app, database, _runtime_config, _docker = runtime_app
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS api_keys "
+            "(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        connection.execute("INSERT INTO api_keys (id, name) VALUES (7, '自动化')")
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, success, stat_eligible, api_key_id, client_api_key_id,
+                prompt_tokens, completion_tokens, total_tokens,
+                billable_tokens, estimated_cost, cost_source
+            ) VALUES (
+                date('now'), 'priced-model', 1, 1, 7, 7,
+                800000, 200000, 1000000,
+                1000000, 12.5, 'request_snapshot'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, success, stat_eligible, api_key_id, client_api_key_id,
+                prompt_tokens, completion_tokens, total_tokens, billable_tokens
+            ) VALUES (
+                date('now'), 'unknown-model', 1, 1, 7, 7,
+                90, 10, 100, 100
+            )
+            """
+        )
+        connection.commit()
+
+    response = app.test_client().get("/api/stats/costs")
+    dashboard = app.test_client().get("/api/dashboard/summary")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["summary"]["total_cost"] == 12.5
+    assert payload["summary"]["coverage_rate"] == 0.5
+    assert payload["summary"]["avg_cost_per_million_tokens"] == 12.5
+    assert payload["by_client_key"][0]["name"] == "自动化"
+    assert payload["by_model"][0]["cost_share"] == 1
+    assert dashboard.status_code == 200
+    assert set(dashboard.get_json()) == {"overview", "daily", "models"}
+
+
 @pytest.mark.parametrize(
     "method,path",
     [
