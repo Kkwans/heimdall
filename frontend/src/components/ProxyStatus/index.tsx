@@ -20,6 +20,7 @@ import {
 import axios from 'axios'
 import { useFilter } from '../../context/FilterContext'
 import { buildProxyBaseUrls } from '../../utils/proxyUrl'
+import { copyText } from '../../utils/clipboard'
 import styles from './ProxyStatus.module.css'
 
 // ─────────────────────────────────────────────
@@ -77,19 +78,7 @@ function CopyValue({ value }: { value: string }) {
 
   const copy = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value)
-      } else {
-        const textarea = document.createElement('textarea')
-        textarea.value = value
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
-        const copied = document.execCommand('copy')
-        textarea.remove()
-        if (!copied) throw new Error('copy failed')
-      }
+      await copyText(value)
       setCopied(true)
       message.success('地址已复制')
       window.setTimeout(() => setCopied(false), 1500)
@@ -444,9 +433,9 @@ export default function ProxyStatusCard() {
 
         {/* ══ 信息行 ═══════════════════════════════════════════ */}
         <div className={styles.infoRow}>
-          <InfoCell label="BaseURL-OpenAI" value={<CopyValue value={proxyUrls.openai} />} className={styles.infoCellFull} />
+          <InfoCell label="OpenAI Base URL" value={<CopyValue value={proxyUrls.openai} />} className={styles.infoCellFull} />
           <VSep />
-          <InfoCell label="BaseURL-Anthropic" value={<CopyValue value={proxyUrls.anthropic} />} className={styles.infoCellFull} />
+          <InfoCell label="Anthropic Base URL" value={<CopyValue value={proxyUrls.anthropic} />} className={styles.infoCellFull} />
           <VSep />
           {/* 端口三项：超时时间 / 代理端口 / 系统端口 */}
           <div className={styles.portRow}>

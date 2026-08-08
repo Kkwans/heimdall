@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { Space, Button, Segmented, Switch, Tooltip, Tag, Select, DatePicker, Popover, InputNumber, Empty, message } from 'antd'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { Space, Button, Segmented, Switch, Tooltip, Tag, Select, DatePicker, Popover, InputNumber, Input, Empty, message } from 'antd'
 import {
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -7,11 +7,13 @@ import {
   VerticalAlignBottomOutlined,
   ReloadOutlined,
   SettingOutlined,
+  CopyOutlined,
 } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { createLogsStream, fetchLogsDates, fetchLogsHistory, fetchLogsConfig, updateLogsConfig } from '../api/stats'
 import { useTheme } from '../context/ThemeContext'
 import Header from '../components/Header'
+import { copyText } from '../utils/clipboard'
 
 type LogFile = 'business' | 'system'
 
@@ -53,7 +55,7 @@ interface LogLine {
 
 let lineIdCounter = 0
 
-const isMobileDevice = () => window.innerWidth < 768
+const isMobileDevice = () => window.innerWidth <= 768
 
 function shortenTime(full: string): string {
   const m = full.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/)
@@ -234,6 +236,7 @@ export default function Logs() {
   const [historyTotal, setHistoryTotal] = useState(0)
   const [streamEmpty, setStreamEmpty]   = useState(false)  // SSE 流为空（后端发送 empty 事件）
   const [filterLevel, setFilterLevel]   = useState<string>('all')
+  const [searchText, setSearchText]     = useState('')
   const [linesLimit, setLinesLimit]     = useState<number>(DEFAULT_LINES)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [emptyFile, setEmptyFile]       = useState(false)
@@ -419,14 +422,32 @@ export default function Logs() {
   }, [])
 
   // ── 日志级别筛选 ─────────────────────────────────────────
-  const filteredLines = filterLevel === 'all'
-    ? lines
-    : lines.filter(l => {
-        if (filterLevel === 'INFO')  return l.level === 'info' || l.level === 'success' || l.level === 'muted'
-        if (filterLevel === 'WARN')  return l.level === 'warning'
-        if (filterLevel === 'ERROR') return l.level === 'error'
-        return true
-      })
+  const filteredLines = useMemo(() => {
+    const keyword = searchText.trim().toLocaleLowerCase()
+    return lines.filter(line => {
+      if (filterLevel === 'INFO' && !(line.level === 'info' || line.level === 'success' || line.level === 'muted')) return false
+      if (filterLevel === 'WARN' && line.level !== 'warning') return false
+      if (filterLevel === 'ERROR' && line.level !== 'error') return false
+      if (!keyword) return true
+      return [line.raw, ...line.extra].join('\n').toLocaleLowerCase().includes(keyword)
+    })
+  }, [filterLevel, lines, searchText])
+
+  const copyFilteredLogs = useCallback(async () => {
+    if (filteredLines.length === 0) {
+      message.info('当前筛选下没有可复制的日志')
+      return
+    }
+    const content = filteredLines
+      .flatMap(line => [line.raw, ...line.extra])
+      .join('\n')
+    try {
+      await copyText(content)
+      message.success(`已复制 ${filteredLines.length.toLocaleString()} 条日志`)
+    } catch {
+      message.error('复制失败，请手动选择日志内容')
+    }
+  }, [filteredLines])
 
   const disabledDate = (d: Dayjs) => {
     // 未来日期始终禁用
@@ -460,6 +481,7 @@ export default function Logs() {
         {/* 左侧：日志类型 + 日期 + 级别筛选 + 状态 */}
         <Space size={6} wrap>
           <Segmented
+            aria-label="日志类型"
             size="small"
             value={logFile}
             onChange={(v) => { setLogFile(v as LogFile); setSelectedDate(getToday()) }}
@@ -494,6 +516,7 @@ export default function Logs() {
 
           {/* 级别筛选：加宽到 100px，确保 ERROR 完整展示（含下拉箭头） */}
           <Select
+            aria-label="日志级别"
             size="small"
             value={filterLevel}
             onChange={setFilterLevel}
@@ -506,8 +529,19 @@ export default function Logs() {
             ]}
           />
 
+          <Input
+            size="small"
+            allowClear
+            value={searchText}
+            onChange={event => setSearchText(event.target.value)}
+            placeholder="搜索日志"
+            aria-label="搜索日志"
+            style={{ width: 150 }}
+          />
+
           {/* 条数上限 */}
           <Select
+            aria-label="日志条数上限"
             size="small"
             value={linesLimit}
             onChange={setLinesLimit}
@@ -556,7 +590,7 @@ export default function Logs() {
               </Tooltip>
               <Space size={4}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>自动滚动</span>
-                <Switch size="small" checked={autoScroll} onChange={setAutoScroll} />
+                <Switch aria-label="自动滚动" size="small" checked={autoScroll} onChange={setAutoScroll} />
               </Space>
             </>
           ) : (
@@ -617,6 +651,14 @@ export default function Logs() {
             liveQueueRef.current = []
             setBufferedCount(0)
           }}>清空</Button>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={copyFilteredLogs}
+            disabled={filteredLines.length === 0}
+          >
+            复制
+          </Button>
           <Tooltip title="滚到底部">
             <Button
               size="small"
