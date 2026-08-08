@@ -35,8 +35,9 @@ git clone https://github.com/Kkwans/heimdall.git
 cd heimdall
 
 # 构建前端
-docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine \
-  sh -c "npm install && npm run build"
+docker run --rm --name heimdall-frontend-build \
+  -v $(pwd)/frontend:/app -w /app node:24-alpine \
+  sh -c "npm ci && npm run build"
 
 # 构建镜像
 docker build -f Dockerfile-proxy -t heimdall-proxy:latest .
@@ -44,6 +45,36 @@ docker build -f Dockerfile-dashboard -t heimdall-dashboard:latest .
 
 # 启动服务
 docker compose up -d
+```
+
+### 隔离验收环境
+
+开发验证使用独立的 `docker-compose.isolated.yml`。它固定使用
+`19888/18889` 端口及 `heimdall-refinement-*` 容器、卷和网络，不挂载
+Docker socket、项目目录或正式 `heimdall-data` / `heimdall-logs` 卷。
+
+```bash
+# 先检查解析后的 Compose 配置
+docker compose -f docker-compose.isolated.yml config -q
+python3 scripts/validate-isolated-compose.py
+
+# 运行 Python 测试（容器退出码即测试结果）
+docker compose -f docker-compose.isolated.yml --profile test build tests
+docker compose -f docker-compose.isolated.yml --profile test up \
+  --no-deps --abort-on-container-exit --exit-code-from tests tests
+
+# 构建并启动完整隔离服务
+docker compose -f docker-compose.isolated.yml build
+docker compose -f docker-compose.isolated.yml up -d
+```
+
+SQLite 迁移必须针对明确路径执行。已有数据库若不提供备份目录会被拒绝；
+`--skip-backup` 仅用于一次性临时数据库或隔离测试卷。
+
+```bash
+python backend/migrations.py migrate \
+  --database /path/to/offline-copy.db \
+  --backup-dir /path/to/backups
 ```
 
 ### 环境变量

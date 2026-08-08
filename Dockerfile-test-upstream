@@ -1,0 +1,11 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+COPY backend/tests/fake_upstream.py ./fake_upstream.py
+
+EXPOSE 8090
+
+HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)" || exit 1
+
+CMD ["python", "fake_upstream.py"]

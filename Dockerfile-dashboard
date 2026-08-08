@@ -3,8 +3,8 @@
 # 端口：8889
 # 构建：docker build -f Dockerfile-dashboard -t heimdall-dashboard:latest .
 #
-# 注意：前端在构建前已预构建（npm run build），产物在 frontend/dist/
-# 原因：package-lock.json 中的美团内网 npm 镜像 URL 在 Docker 内无法访问
+# 注意：前端在构建前已预构建（npm run build），产物在 frontend/dist/，
+# 镜像构建只复制已通过 TypeScript 与 Vite 门禁的静态文件。
 
 FROM python:3.9-slim
 

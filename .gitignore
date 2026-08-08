@@ -1,4 +1,8 @@
 backend/__pycache__/
+**/__pycache__/
+.pytest_cache/
+.venv/
+.phase1-artifacts/
 frontend/node_modules/
 frontend/dist/
 data/

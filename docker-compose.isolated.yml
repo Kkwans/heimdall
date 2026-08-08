@@ -1,0 +1,138 @@
+# Standalone validation stack. It intentionally does not inherit production
+# container names, volumes, networks, ports, project mounts, or Docker socket.
+name: heimdall-refinement
+
+x-build-proxy-args: &build-proxy-args
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  ALL_PROXY: ${ALL_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+
+x-proxy-service: &proxy-service
+  image: heimdall-refinement-proxy:${HEIMDALL_REFINEMENT_TAG:-phase1}
+  build:
+    context: .
+    dockerfile: Dockerfile-proxy
+    args: *build-proxy-args
+    network: host
+  volumes:
+    - refinement-data:/data
+    - refinement-logs:/logs
+  networks:
+    - refinement-net
+
+services:
+  tests:
+    profiles: ["test"]
+    image: heimdall-refinement-tests:${HEIMDALL_REFINEMENT_TAG:-phase1}
+    build:
+      context: .
+      dockerfile: Dockerfile-tests
+      args: *build-proxy-args
+      network: host
+    container_name: heimdall-refinement-tests
+    networks:
+      - refinement-net
+
+  fake-upstream:
+    image: heimdall-refinement-upstream:${HEIMDALL_REFINEMENT_TAG:-phase1}
+    build:
+      context: .
+      dockerfile: Dockerfile-test-upstream
+      args: *build-proxy-args
+      network: host
+    container_name: heimdall-refinement-upstream
+    restart: unless-stopped
+    networks:
+      - refinement-net
+
+  migrate:
+    image: heimdall-refinement-proxy:${HEIMDALL_REFINEMENT_TAG:-phase1}
+    container_name: heimdall-refinement-migrate
+    command:
+      - python
+      - migrations.py
+      - migrate
+      - --database
+      - /data/heimdall.db
+      - --skip-backup
+    restart: "no"
+    volumes:
+      - refinement-data:/data
+      - refinement-logs:/logs
+    networks:
+      - refinement-net
+
+  proxy:
+    <<: *proxy-service
+    container_name: heimdall-refinement-proxy
+    restart: unless-stopped
+    ports:
+      - "${HEIMDALL_REFINEMENT_PROXY_PORT:-19888}:8888"
+    environment:
+      HEIMDALL_DATA_DIR: /data
+      HEIMDALL_LOG_DIR: /logs
+      HEIMDALL_PORT: 8888
+      HEIMDALL_DETAIL_LOG: "false"
+      HEIMDALL_LOG_BACKUP_DAYS: 30
+      HEIMDALL_PROXY_PATH: /v1/chat/completions
+      HEIMDALL_TIMEOUT: 10
+      HEIMDALL_PROXY_EXTERNAL_PORT: ${HEIMDALL_REFINEMENT_PROXY_PORT:-19888}
+      TZ: Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8888)); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      fake-upstream:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  dashboard:
+    image: heimdall-refinement-dashboard:${HEIMDALL_REFINEMENT_TAG:-phase1}
+    build:
+      context: .
+      dockerfile: Dockerfile-dashboard
+      args: *build-proxy-args
+      network: host
+    container_name: heimdall-refinement-dashboard
+    restart: unless-stopped
+    ports:
+      - "${HEIMDALL_REFINEMENT_DASHBOARD_PORT:-18889}:8889"
+    volumes:
+      - refinement-data:/data
+      - refinement-logs:/logs
+    environment:
+      HEIMDALL_DATA_DIR: /data
+      HEIMDALL_LOG_DIR: /logs
+      HEIMDALL_DASHBOARD_PORT: 8889
+      HEIMDALL_PROXY_HOST: proxy
+      HEIMDALL_PROXY_EXTERNAL_PORT: ${HEIMDALL_REFINEMENT_PROXY_PORT:-19888}
+      HEIMDALL_DETAIL_LOG: "false"
+      HEIMDALL_LOG_BACKUP_DAYS: 30
+      TZ: Asia/Shanghai
+    networks:
+      - refinement-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8889)); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+volumes:
+  refinement-data:
+    name: heimdall-refinement-data
+  refinement-logs:
+    name: heimdall-refinement-logs
+
+networks:
+  refinement-net:
+    name: heimdall-refinement-net
+    driver: bridge
