@@ -102,9 +102,7 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
       '[tabindex]:not([tabindex="-1"])',
     ].join(',')
 
-    const focusFirstControl = window.requestAnimationFrame(() => {
-      drawer.querySelector<HTMLElement>(focusableSelector)?.focus()
-    })
+    drawer.querySelector<HTMLElement>(focusableSelector)?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -134,7 +132,6 @@ export default function MobileDrawer({ open, onClose }: MobileDrawerProps) {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => {
-      window.cancelAnimationFrame(focusFirstControl)
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
       previousBackgroundState.forEach(({ element, ariaHidden, inert }) => {
