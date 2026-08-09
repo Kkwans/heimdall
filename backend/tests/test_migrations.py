@@ -35,10 +35,10 @@ def test_empty_database_migration_is_idempotent(tmp_path: Path) -> None:
     second = apply_migrations(database)
 
     assert first.previous_version == 0
-    assert first.current_version == 5
-    assert first.applied_versions == (1, 2, 3, 4, 5)
-    assert second.previous_version == 5
-    assert second.current_version == 5
+    assert first.current_version == 6
+    assert first.applied_versions == (1, 2, 3, 4, 5, 6)
+    assert second.previous_version == 6
+    assert second.current_version == 6
     assert second.applied_versions == ()
     assert inspect_database(database).integrity == "ok"
 
@@ -53,7 +53,7 @@ def test_legacy_database_is_backed_up_before_migration(tmp_path: Path) -> None:
 
     assert backup.integrity == "ok"
     assert Path(backup.database).parent == backup_dir
-    assert result.current_version == 5
+    assert result.current_version == 6
     with sqlite3.connect(database) as connection:
         row = connection.execute("SELECT model FROM requests").fetchone()
         migrated_key = connection.execute(
@@ -71,7 +71,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         connection.execute("CREATE TABLE must_be_rolled_back (id INTEGER)")
         raise RuntimeError("injected migration failure")
 
-    migrations = (*MIGRATIONS, Migration(6, "injected_failure", fail_after_schema_change))
+    migrations = (*MIGRATIONS, Migration(7, "injected_failure", fail_after_schema_change))
     with pytest.raises(RuntimeError, match="injected migration failure"):
         apply_migrations(database, migrations=migrations)
 
@@ -81,7 +81,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         ).fetchone()
         version = connection.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0]
     assert table is None
-    assert version == 5
+    assert version == 6
 
 
 def test_backup_never_overwrites_existing_file(tmp_path: Path) -> None:
@@ -178,7 +178,7 @@ def test_admin_migration_deduplicates_encrypted_legacy_key_and_backfills_pricing
 
     result = apply_migrations(database)
 
-    assert result.current_version == 5
+    assert result.current_version == 6
     with sqlite3.connect(database) as connection:
         key_count = connection.execute(
             "SELECT COUNT(*) FROM provider_api_keys WHERE provider_id = 1"
@@ -218,7 +218,7 @@ def test_routing_record_migration_backfills_legacy_client_key_and_indexes(
 
     result = apply_migrations(database)
 
-    assert result.current_version == 5
+    assert result.current_version == 6
     with sqlite3.connect(database) as connection:
         row = connection.execute(
             "SELECT client_api_key_id, stat_eligible, protocol, route_attempts "
@@ -251,7 +251,7 @@ def test_request_retention_migration_defaults_off_and_is_idempotent(tmp_path: Pa
     first = apply_migrations(database)
     second = apply_migrations(database)
 
-    assert first.current_version == 5
+    assert first.current_version == 6
     assert second.applied_versions == ()
     with sqlite3.connect(database) as connection:
         config_row = connection.execute(
@@ -267,3 +267,39 @@ def test_request_retention_migration_defaults_off_and_is_idempotent(tmp_path: Pa
     assert config_row == (0, 30)
     assert lock_table == (1,)
     assert retention_index == (1,)
+
+
+def test_client_key_name_snapshot_migration_backfills_existing_requests(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "client-key-name.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE api_keys (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+            CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                api_key_id INTEGER,
+                client_api_key_id INTEGER
+            );
+            INSERT INTO api_keys (id, name) VALUES (7, '保留名称');
+            INSERT INTO requests (date, model, api_key_id, client_api_key_id)
+            VALUES ('2026-08-09', 'fixture-model', 7, 7);
+            """
+        )
+
+    first = apply_migrations(database)
+    second = apply_migrations(database)
+
+    assert first.current_version == 6
+    assert second.applied_versions == ()
+    with sqlite3.connect(database) as connection:
+        snapshot = connection.execute(
+            "SELECT client_api_key_name FROM requests WHERE id = 1"
+        ).fetchone()[0]
+    assert snapshot == "保留名称"

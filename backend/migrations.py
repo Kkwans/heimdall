@@ -368,12 +368,61 @@ def _migrate_request_costs(connection: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_client_key_name_snapshots(connection: sqlite3.Connection) -> None:
+    """Preserve Client Access Key names on request history before hard deletion."""
+    if not _table_exists(connection, "requests"):
+        return
+
+    if not _column_exists(connection, "requests", "client_api_key_name"):
+        connection.execute(
+            "ALTER TABLE requests ADD COLUMN client_api_key_name TEXT"
+        )
+
+    if not _table_exists(connection, "api_keys"):
+        return
+
+    request_columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(requests)")
+    }
+    key_columns = [
+        column
+        for column in ("client_api_key_id", "api_key_id")
+        if column in request_columns
+    ]
+    if not key_columns:
+        return
+    key_expression = (
+        key_columns[0]
+        if len(key_columns) == 1
+        else f"COALESCE({', '.join(key_columns)})"
+    )
+
+    connection.execute(
+        f"""
+        UPDATE requests
+        SET client_api_key_name = (
+            SELECT ak.name
+            FROM api_keys ak
+            WHERE ak.id = {key_expression}
+        )
+        WHERE (client_api_key_name IS NULL OR client_api_key_name = '')
+          AND {key_expression} IS NOT NULL
+          AND EXISTS (
+              SELECT 1
+              FROM api_keys ak
+              WHERE ak.id = {key_expression}
+          )
+        """
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
     Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
     Migration(3, "routing_and_request_records", _migrate_routing_and_request_records),
     Migration(4, "request_retention", _migrate_request_retention),
     Migration(5, "request_costs", _migrate_request_costs),
+    Migration(6, "client_key_name_snapshots", _migrate_client_key_name_snapshots),
 )
 
 

@@ -1074,6 +1074,11 @@ body {
   text-align: center !important;
 }
 
+/* 成本明细以可扫描性为先：标题与所有数值统一左对齐。 */
+.hd-cost-table .ant-table-thead > tr > th.ant-table-cell {
+  text-align: left !important;
+}
+
 /* sorters 容器：inline-flex，文字+图标自然排列（不强制居中，由 th text-align 负责整体居中） */
 .ant-table-column-sorters {
   display: inline-flex !important;

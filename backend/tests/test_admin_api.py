@@ -146,6 +146,38 @@ def test_generated_client_key_is_returned_only_by_create(admin_app) -> None:
     assert "key_value" not in listed.get_json()["keys"][0]
 
 
+def test_deleting_client_key_preserves_request_name_snapshot(admin_app) -> None:
+    app, database = admin_app
+    client = app.test_client()
+    created = client.post("/api/keys", json={"name": "即将删除的客户端"})
+    key_id = created.get_json()["id"]
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, api_key_id, client_api_key_id,
+                client_api_key_name, stat_eligible
+            ) VALUES (date('now'), 'fixture-model', ?, ?, NULL, 1)
+            """,
+            (key_id, key_id),
+        )
+        connection.commit()
+
+    deleted = client.delete(f"/api/keys/{key_id}")
+
+    assert deleted.status_code == 200
+    with sqlite3.connect(database) as connection:
+        key_count = connection.execute(
+            "SELECT COUNT(*) FROM api_keys WHERE id = ?", (key_id,)
+        ).fetchone()[0]
+        snapshot = connection.execute(
+            "SELECT client_api_key_name FROM requests WHERE client_api_key_id = ?",
+            (key_id,),
+        ).fetchone()[0]
+    assert key_count == 0
+    assert snapshot == "即将删除的客户端"
+
+
 def test_model_context_and_free_price_are_distinct_from_unknown(admin_app) -> None:
     app, _database = admin_app
     client = app.test_client()

@@ -756,7 +756,7 @@ def _proxy_protocol(protocol: str) -> Response:
         key_info = auth.validate_api_key(client_secret)
         if not key_info:
             return _recorded_error(recorder, 401, "无效 API Key", "auth_error")
-        recorder.authenticate(int(key_info["id"]))
+        recorder.authenticate(int(key_info["id"]), str(key_info.get("name") or ""))
 
         requested_model = str(data["model"])
         if not auth.check_model_access(key_info, requested_model):

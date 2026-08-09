@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react'
 import {
-  Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker
+  Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker, Tag
 } from 'antd'
 import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType } from 'antd/es/table'
@@ -62,6 +62,19 @@ function EmptyPlaceholder({ text = '暂无数据' }: { text?: string }) {
     }}>
       {text}
     </div>
+  )
+}
+
+function ApiKeyName({ name, deleted }: { name: string; deleted?: boolean }) {
+  return (
+    <Space size={6} wrap={false}>
+      <span style={{ fontWeight: 500 }}>{name || '未知'}</span>
+      {deleted && (
+        <Tag color="default" style={{ margin: 0, fontSize: 10, lineHeight: '18px' }}>
+          已删除
+        </Tag>
+      )}
+    </Space>
   )
 }
 
@@ -1014,7 +1027,7 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
   
   const colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2']
   const chartData = filtered.map((d, i) => ({
-    name: d.api_key_name,
+    name: d.api_key_deleted ? `${d.api_key_name}（已删除）` : d.api_key_name,
     value: d.total_tokens,
     itemStyle: { color: colors[i % colors.length] },
   }))
@@ -1053,7 +1066,13 @@ function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
   const columns: ColumnsType<ApiKeyStat> = [
-    { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    {
+      title: 'API Key',
+      dataIndex: 'api_key_name',
+      key: 'name',
+      align: 'left',
+      render: (v: string, row) => <ApiKeyName name={v} deleted={row.api_key_deleted} />,
+    },
     { title: '请求数', dataIndex: 'total_requests', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '成功', dataIndex: 'success_requests', key: 'ok', align: 'center', render: (v: number) => <span style={{ ...mono, color: 'var(--color-success)' }}>{v}</span> },
     { title: '失败', dataIndex: 'error_requests', key: 'err', align: 'center', render: (v: number) => <span style={{ ...mono, color: v > 0 ? 'var(--color-danger)' : 'var(--text-muted)' }}>{v}</span> },
@@ -1079,7 +1098,13 @@ function ApiKeyModelStatsTable({ data }: { data: ApiKeyModelStat[] }) {
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   
   const columns: ColumnsType<ApiKeyModelStat> = [
-    { title: 'API Key', dataIndex: 'api_key_name', key: 'name', align: 'center', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '未知'}</span> },
+    {
+      title: 'API Key',
+      dataIndex: 'api_key_name',
+      key: 'name',
+      align: 'left',
+      render: (v: string, row) => <ApiKeyName name={v} deleted={row.api_key_deleted} />,
+    },
     { title: '模型', dataIndex: 'model', key: 'model', align: 'center', render: (v: string) => <ModelTag name={v} /> },
     { title: '请求数', dataIndex: 'request_count', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
@@ -1103,41 +1128,43 @@ function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'ke
       title: dimension === 'key' ? '客户端 API Key' : '模型',
       dataIndex: 'name',
       ellipsis: true,
-      render: (value: string) => dimension === 'model'
+      align: 'left',
+      render: (value: string, row) => dimension === 'model'
         ? <ModelTag name={value} />
-        : <span style={{ fontWeight: 500 }}>{value}</span>,
+        : <ApiKeyName name={value} deleted={row.is_deleted} />,
     },
     {
       title: '花费',
       dataIndex: 'total_cost',
       width: 112,
-      align: 'right',
+      align: 'left',
       render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-warning)' }}>{fmtCny(value)}</span>,
     },
     {
       title: '占比',
       dataIndex: 'cost_share',
       width: 78,
-      align: 'right',
+      align: 'left',
       render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)' }}>{pctStr(value)}</span>,
     },
     {
       title: '平均单价',
       dataIndex: 'avg_cost_per_million_tokens',
       width: 154,
-      align: 'right',
+      align: 'left',
       render: (value: number | null) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{fmtCnyPerMillion(value)}</span>,
     },
     {
       title: '覆盖率',
       dataIndex: 'coverage_rate',
       width: 78,
-      align: 'right',
+      align: 'left',
       render: (value: number) => <span style={{ color: value < 1 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>{pctStr(value)}</span>,
     },
   ]
   return (
     <Table<CostGroup>
+      className="hd-cost-table"
       columns={columns}
       dataSource={data}
       rowKey={row => `${dimension}-${String(row.id)}-${row.name}`}

@@ -77,7 +77,7 @@ export function fmtCny(value: number | null | undefined): string {
 /** 格式化综合平均单价，单位固定为人民币/百万 Token。 */
 export function fmtCnyPerMillion(value: number | null | undefined): string {
   if (value == null) return '—'
-  return `${fmtCny(value)}/百万 Token`
+  return `￥${value.toFixed(2)}/百万 Token`
 }
 
 /**

@@ -143,7 +143,8 @@ describe('人民币成本格式', () => {
   })
 
   it('平均单价固定标注每百万 Token', () => {
-    expect(fmtCnyPerMillion(0.61599276)).toBe('￥0.6160/百万 Token')
+    expect(fmtCnyPerMillion(0.61599276)).toBe('￥0.62/百万 Token')
+    expect(fmtCnyPerMillion(0)).toBe('￥0.00/百万 Token')
   })
 })
 

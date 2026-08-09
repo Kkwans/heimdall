@@ -224,6 +224,67 @@ def test_cost_stats_group_by_client_access_key_and_model(runtime_app) -> None:
     assert set(dashboard.get_json()) == {"overview", "daily", "models"}
 
 
+def test_deleted_client_key_uses_name_snapshot_in_all_stats(runtime_app) -> None:
+    app, database, _runtime_config, _docker = runtime_app
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS api_keys "
+            "(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        connection.execute("INSERT INTO api_keys (id, name) VALUES (9, '历史客户端')")
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, success, stat_eligible, api_key_id, client_api_key_id,
+                client_api_key_name, prompt_tokens, completion_tokens, total_tokens,
+                billable_tokens, estimated_cost, cost_source
+            ) VALUES (
+                date('now'), 'priced-model', 1, 1, 9, 9,
+                '历史客户端', 8, 2, 10,
+                10, 0.0001, 'request_snapshot'
+            )
+            """
+        )
+        connection.execute("DELETE FROM api_keys WHERE id = 9")
+        connection.commit()
+
+    costs = app.test_client().get("/api/stats/costs").get_json()
+    api_keys = app.test_client().get("/api/stats/api-keys").get_json()["data"]
+
+    deleted_cost = next(item for item in costs["by_client_key"] if item["id"] == 9)
+    deleted_usage = next(item for item in api_keys if item["api_key_id"] == 9)
+    assert deleted_cost["name"] == "历史客户端"
+    assert deleted_cost["is_deleted"] is True
+    assert deleted_usage["api_key_name"] == "历史客户端"
+    assert deleted_usage["api_key_deleted"] is True
+
+
+def test_unrecoverable_deleted_client_key_uses_stable_id_fallback(runtime_app) -> None:
+    app, database, _runtime_config, _docker = runtime_app
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS api_keys "
+            "(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, success, stat_eligible, api_key_id, client_api_key_id,
+                prompt_tokens, completion_tokens, total_tokens
+            ) VALUES (date('now'), 'legacy-model', 1, 1, 99, 99, 1, 1, 2)
+            """
+        )
+        connection.commit()
+
+    item = next(
+        item
+        for item in app.test_client().get("/api/stats/api-keys").get_json()["data"]
+        if item["api_key_id"] == 99
+    )
+    assert item["api_key_name"] == "API Key #99"
+    assert item["api_key_deleted"] is True
+
+
 def test_log_history_uses_cursor_without_fake_all(runtime_app) -> None:
     app, _database, _runtime_config, _docker = runtime_app
     today = date.today().isoformat()

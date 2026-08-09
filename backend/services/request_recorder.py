@@ -48,6 +48,7 @@ class RequestRecorder:
         self.client_ip = client_ip
         self.started_at = started_at if started_at is not None else time.time()
         self.client_api_key_id: Optional[int] = None
+        self.client_api_key_name: Optional[str] = None
         self.stat_eligible = False
         self.route = None
         self.log_callback = log_callback
@@ -59,8 +60,9 @@ class RequestRecorder:
         with self._lock:
             return self._finalized
 
-    def authenticate(self, client_api_key_id: int) -> None:
+    def authenticate(self, client_api_key_id: int, client_api_key_name: str = "") -> None:
         self.client_api_key_id = client_api_key_id
+        self.client_api_key_name = client_api_key_name.strip() or None
         self.stat_eligible = True
 
     def bind_route(self, route: Any) -> None:
@@ -132,6 +134,7 @@ class RequestRecorder:
             "provider_id": provider_id,
             "provider_api_key_id": provider_api_key_id,
             "client_api_key_id": self.client_api_key_id,
+            "client_api_key_name": self.client_api_key_name,
             "protocol": self.protocol,
             "endpoint": self.endpoint,
             "route_attempts": json.dumps(attempts_list, ensure_ascii=False),

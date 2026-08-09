@@ -68,6 +68,7 @@ export interface RequestRecord {
   // v4: APIKey 关联
   api_key_id?: number | null
   api_key_name?: string | null
+  api_key_deleted?: boolean
   // v3: 详情字段（从 /api/stats/request/:id/detail 获取）
   request_body?: object | null
   response_body?: object | null

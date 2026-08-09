@@ -74,6 +74,7 @@ def init_db():
                 provider_id         INTEGER,
                 provider_api_key_id INTEGER,
                 client_api_key_id   INTEGER,
+                client_api_key_name TEXT,
                 protocol            TEXT,
                 endpoint            TEXT,
                 route_attempts       TEXT,
@@ -127,6 +128,7 @@ def init_db():
             "ALTER TABLE requests ADD COLUMN provider_id INTEGER",
             "ALTER TABLE requests ADD COLUMN provider_api_key_id INTEGER",
             "ALTER TABLE requests ADD COLUMN client_api_key_id INTEGER",
+            "ALTER TABLE requests ADD COLUMN client_api_key_name TEXT",
             "ALTER TABLE requests ADD COLUMN protocol TEXT",
             "ALTER TABLE requests ADD COLUMN endpoint TEXT",
             "ALTER TABLE requests ADD COLUMN route_attempts TEXT",
@@ -177,6 +179,7 @@ def _do_insert(record: dict):
                 provider,
                 api_key_id,
                 provider_id, provider_api_key_id, client_api_key_id,
+                client_api_key_name,
                 protocol, endpoint, route_attempts, stat_eligible,
                 estimated_cost, pricing_snapshot, cost_source, billable_tokens
             ) VALUES (
@@ -190,6 +193,7 @@ def _do_insert(record: dict):
                 :provider,
                 :api_key_id,
                 :provider_id, :provider_api_key_id, :client_api_key_id,
+                :client_api_key_name,
                 :protocol, :endpoint, :route_attempts, :stat_eligible,
                 :estimated_cost, :pricing_snapshot, :cost_source, :billable_tokens
             )
@@ -522,13 +526,27 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
                 r.latency_ms, r.ttfb_ms,
                 r.status_code, r.success, r.error_type,
                 r.trace_id, r.client_ip,
-                r.api_key_id, r.client_api_key_id,
+                r.api_key_id, r.client_api_key_id, r.client_api_key_name,
                 r.provider, r.provider_id, r.provider_api_key_id,
                 r.protocol, r.endpoint, r.route_attempts, r.stat_eligible,
                 r.estimated_cost, r.cost_source, r.billable_tokens,
-                ak.name as api_key_name
+                COALESCE(
+                    NULLIF(ak.name, ''),
+                    NULLIF(r.client_api_key_name, ''),
+                    CASE
+                        WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL
+                            THEN '未知'
+                        ELSE 'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    END
+                ) AS api_key_name,
+                CASE
+                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+                         AND ak.id IS NULL THEN 1
+                    ELSE 0
+                END AS api_key_deleted
             FROM requests r
-            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+            LEFT JOIN api_keys ak
+              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
             {where_sql}
             {order_sql}
             LIMIT ? OFFSET ?
@@ -544,6 +562,7 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
                 item["route_attempts"] = _json.loads(item.get("route_attempts") or "[]")
             except (TypeError, ValueError):
                 item["route_attempts"] = []
+            item["api_key_deleted"] = bool(item.get("api_key_deleted"))
             items.append(item)
 
         return {
@@ -901,12 +920,17 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
             (start_date, end_date),
         ).fetchone()
 
-        def grouped(group_expression: str, name_expression: str) -> list:
+        def grouped(
+            group_expression: str,
+            name_expression: str,
+            deleted_expression: str = "0",
+        ) -> list:
             rows = conn.execute(
                 f"""
                 SELECT
                     {group_expression} AS id,
                     {name_expression} AS name,
+                    {deleted_expression} AS is_deleted,
                     COUNT(*) AS price_eligible_requests,
                     SUM(CASE WHEN r.estimated_cost IS NOT NULL THEN 1 ELSE 0 END)
                         AS priced_requests,
@@ -926,6 +950,7 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
             result = []
             for row in rows:
                 item = dict(row)
+                item["is_deleted"] = bool(item.get("is_deleted"))
                 item["total_cost"] = round(float(item["total_cost"] or 0), 8)
                 item["billable_tokens"] = int(item["billable_tokens"] or 0)
                 item["coverage_rate"] = round(
@@ -968,7 +993,20 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
             },
             "by_client_key": grouped(
                 "COALESCE(r.client_api_key_id, r.api_key_id)",
-                "COALESCE(ak.name, '已删除或未知')",
+                """CASE
+                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL
+                        THEN '未关联 API Key'
+                    ELSE COALESCE(
+                        NULLIF(ak.name, ''),
+                        NULLIF(r.client_api_key_name, ''),
+                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    )
+                END""",
+                """CASE
+                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+                         AND ak.id IS NULL THEN 1
+                    ELSE 0
+                END""",
             ),
             "by_model": grouped("r.model", "r.model"),
         }
@@ -983,8 +1021,13 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
         conn = _get_conn()
         rows = conn.execute("""
             SELECT
-                COALESCE(ak.name, '未知') as api_key_name,
-                r.api_key_id,
+                COALESCE(
+                    NULLIF(ak.name, ''),
+                    NULLIF(r.client_api_key_name, ''),
+                    'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                ) AS api_key_name,
+                COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
+                CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
                 COUNT(*) as total_requests,
                 SUM(CASE WHEN r.success = 1 THEN 1 ELSE 0 END) as success_requests,
                 SUM(CASE WHEN r.success = 0 THEN 1 ELSE 0 END) as error_requests,
@@ -995,12 +1038,17 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
                 SUM(r.reasoning_tokens) as total_reasoning_tokens,
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
-            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+            LEFT JOIN api_keys ak
+              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
             WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
-            GROUP BY r.api_key_id
+              AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+            GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name, api_key_deleted
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+        for item in result:
+            item["api_key_deleted"] = bool(item["api_key_deleted"])
+        return result
     except Exception as e:
         _logger.error(f"[DB] query_api_key_stats 失败: {e}", exc_info=True)
         return []
@@ -1012,19 +1060,30 @@ def query_api_key_model_stats(start_date: str, end_date: str) -> list:
         conn = _get_conn()
         rows = conn.execute("""
             SELECT
-                COALESCE(ak.name, '未知') as api_key_name,
-                r.api_key_id,
+                COALESCE(
+                    NULLIF(ak.name, ''),
+                    NULLIF(r.client_api_key_name, ''),
+                    'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                ) AS api_key_name,
+                COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
+                CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
                 r.model,
                 COUNT(*) as request_count,
                 SUM(r.total_tokens) as total_tokens,
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
-            LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+            LEFT JOIN api_keys ak
+              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
             WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
-            GROUP BY r.api_key_id, r.model
+              AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+            GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name,
+                     api_key_deleted, r.model
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+        for item in result:
+            item["api_key_deleted"] = bool(item["api_key_deleted"])
+        return result
     except Exception as e:
         _logger.error(f"[DB] query_api_key_model_stats 失败: {e}", exc_info=True)
         return []
@@ -1038,37 +1097,55 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
             rows = conn.execute("""
                 SELECT
                     r.date,
-                    COALESCE(ak.name, '未知') as api_key_name,
+                    COALESCE(
+                        NULLIF(ak.name, ''),
+                        NULLIF(r.client_api_key_name, ''),
+                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    ) AS api_key_name,
+                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
                     COUNT(*) as requests,
                     SUM(r.total_tokens) as tokens,
                     SUM(r.prompt_tokens) as prompt_tokens,
                     SUM(r.completion_tokens) as completion_tokens,
                     ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
                 FROM requests r
-                LEFT JOIN api_keys ak ON r.api_key_id = ak.id
-                WHERE r.date >= ? AND r.date <= ? AND r.api_key_id = ?
+                LEFT JOIN api_keys ak
+                  ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                WHERE r.date >= ? AND r.date <= ?
+                  AND COALESCE(r.client_api_key_id, r.api_key_id) = ?
                   AND COALESCE(r.stat_eligible, 1) = 1
-                GROUP BY r.date
+                GROUP BY r.date, api_key_name, api_key_deleted
                 ORDER BY r.date
             """, (start_date, end_date, api_key_id)).fetchall()
         else:
             rows = conn.execute("""
                 SELECT
                     r.date,
-                    COALESCE(ak.name, '未知') as api_key_name,
-                    r.api_key_id,
+                    COALESCE(
+                        NULLIF(ak.name, ''),
+                        NULLIF(r.client_api_key_name, ''),
+                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    ) AS api_key_name,
+                    COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
+                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
                     COUNT(*) as requests,
                     SUM(r.total_tokens) as tokens,
                     SUM(r.prompt_tokens) as prompt_tokens,
                     SUM(r.completion_tokens) as completion_tokens,
                     ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
                 FROM requests r
-                LEFT JOIN api_keys ak ON r.api_key_id = ak.id
+                LEFT JOIN api_keys ak
+                  ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
                 WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
-                GROUP BY r.date, r.api_key_id
+                  AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+                GROUP BY r.date, COALESCE(r.client_api_key_id, r.api_key_id),
+                         api_key_name, api_key_deleted
                 ORDER BY r.date, tokens DESC
             """, (start_date, end_date)).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+        for item in result:
+            item["api_key_deleted"] = bool(item["api_key_deleted"])
+        return result
     except Exception as e:
         _logger.error(f"[DB] query_api_key_daily 失败: {e}", exc_info=True)
         return []

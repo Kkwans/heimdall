@@ -174,9 +174,27 @@ def update_api_key(key_id: int, data: dict) -> bool:
 
 
 def delete_api_key(key_id: int) -> bool:
-    """删除 API Key"""
+    """删除 API Key，并在同一事务中为历史请求固化删除时的名称。"""
     conn = _get_conn()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
-    conn.commit()
-    return cursor.rowcount > 0
+    try:
+        row = cursor.execute(
+            "SELECT name FROM api_keys WHERE id = ?", (key_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        cursor.execute(
+            """
+            UPDATE requests
+            SET client_api_key_name = ?
+            WHERE COALESCE(client_api_key_id, api_key_id) = ?
+            """,
+            (str(row["name"] or ""), key_id),
+        )
+        cursor.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+    except Exception:
+        conn.rollback()
+        raise

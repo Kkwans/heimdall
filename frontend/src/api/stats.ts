@@ -91,6 +91,7 @@ export interface CostGroup {
   coverage_rate: number
   avg_cost_per_million_tokens: number | null
   cost_share: number
+  is_deleted: boolean
 }
 
 export interface CostStats {
@@ -310,6 +311,7 @@ export async function fetchProviderStats(params: {
 export interface ApiKeyStat {
   api_key_id: number | null
   api_key_name: string
+  api_key_deleted: boolean
   total_requests: number
   success_requests: number
   error_requests: number
@@ -324,6 +326,7 @@ export interface ApiKeyStat {
 export interface ApiKeyModelStat {
   api_key_id: number | null
   api_key_name: string
+  api_key_deleted: boolean
   model: string
   request_count: number
   total_tokens: number
