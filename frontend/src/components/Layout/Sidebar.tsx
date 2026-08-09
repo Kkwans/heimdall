@@ -76,6 +76,14 @@ const EyeLogo = () => (
   </svg>
 )
 
+const MenuIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="17" x2="20" y2="17" />
+  </svg>
+)
+
 const navItems = [
   { to: '/', label: '仪表盘', icon: <DashboardIcon /> },
   { to: '/requests', label: '请求明细', icon: <RequestsIcon /> },
@@ -84,16 +92,34 @@ const navItems = [
   { to: '/admin', label: '系统配置', icon: <AdminIcon /> },
 ]
 
-export default function Sidebar() {
+interface SidebarProps {
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
+}
+
+export default function Sidebar({ collapsed = false, onToggleCollapsed }: SidebarProps) {
   const { theme, toggleTheme } = useTheme()
 
   return (
-    <aside className={styles.sidebar}>
+    <aside className={`${styles.sidebar} ${collapsed ? styles.sidebarCollapsed : ''}`}>
       {/* Logo */}
       <div className={styles.logo}>
         <span className={styles.logoIcon}><EyeLogo /></span>
         <span className={styles.logoText}>Heimdall</span>
       </div>
+
+      {onToggleCollapsed && (
+        <button
+          type="button"
+          className={styles.collapseBtn}
+          onClick={onToggleCollapsed}
+          title={collapsed ? '展开侧边栏' : '收起侧边栏'}
+          aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+          aria-expanded={!collapsed}
+        >
+          <MenuIcon />
+        </button>
+      )}
 
       {/* 导航菜单 */}
       <nav className={styles.nav}>
@@ -105,6 +131,7 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `${styles.navItem} ${isActive ? styles.navItemActive : ''}`
             }
+            title={collapsed ? item.label : undefined}
           >
             <span className={styles.navIcon}>{item.icon}</span>
             <span className={styles.navLabel}>{item.label}</span>

@@ -62,17 +62,26 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('heimdall-sidebar-collapsed') === '1')
   const location = useLocation()
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(current => {
+      const next = !current
+      localStorage.setItem('heimdall-sidebar-collapsed', next ? '1' : '0')
+      return next
+    })
+  }, [])
 
   const pageName = PAGE_NAMES[location.pathname] ?? 'Heimdall'
   const pageIcon = PAGE_ICONS[location.pathname] ?? PAGE_ICONS['/']
 
   return (
-    <div className="layout">
+    <div className={`layout ${sidebarCollapsed ? 'layout--sidebar-collapsed' : ''}`}>
       {/* 桌面端左侧边栏 */}
       <div className="layout-sidebar">
-        <Sidebar />
+        <Sidebar collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} />
       </div>
 
       {/* 内容区 */}

@@ -8,7 +8,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react'
 import {
-  Card, Table, Button, Modal, Form, Input, Switch, InputNumber, Select,
+  Card, Table, Button, Form, Input, Switch, InputNumber, Select,
   Space, Tag, Tooltip, Popconfirm, message, Tabs, Divider, Typography
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SaveOutlined } from '@ant-design/icons'
@@ -18,6 +18,7 @@ import { VendorTag, ModelTag } from '../components/CommonTag'
 import MobileTooltip from '../components/MobileTooltip'
 import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
+import AppModal from '../components/AppModal'
 import { useFilter } from '../context/FilterContext'
 import {
   fetchProviders, createProvider, updateProvider, deleteProvider,
@@ -427,7 +428,7 @@ function ProviderManager() {
         scroll={{ x: isMobile ? 'max-content' : 950 }}
       />
 
-      <Modal
+      <AppModal
         title={editingProvider ? '编辑厂商' : '添加厂商'}
         open={modalOpen}
         onOk={handleSubmit}
@@ -484,10 +485,10 @@ function ProviderManager() {
             </Form.Item>
           )}
         </Form>
-      </Modal>
+      </AppModal>
 
       {/* API Key 管理弹窗 */}
-      <Modal
+      <AppModal
         title={`管理厂商 API Key · ${managingKeysProvider?.display_name || managingKeysProvider?.name || ''}`}
         open={apiKeyModalOpen}
         onCancel={() => setApiKeyModalOpen(false)}
@@ -595,7 +596,7 @@ function ProviderManager() {
             },
           ]}
         />
-      </Modal>
+      </AppModal>
     </>
   )
 }
@@ -874,7 +875,7 @@ function ModelManager() {
         scroll={{ x: isMobile ? 'max-content' : 800 }}
       />
 
-      <Modal
+      <AppModal
         title={editingModel ? '编辑模型' : '添加模型'}
         open={modalOpen}
         onOk={handleSubmit}
@@ -929,7 +930,7 @@ function ModelManager() {
             </Form.Item>
           </div>
         </Form>
-      </Modal>
+      </AppModal>
     </>
   )
 }
@@ -1192,7 +1193,7 @@ function ApiKeyManager() {
         scroll={{ x: isMobile ? 'max-content' : 800 }}
       />
 
-      <Modal
+      <AppModal
         title={editingKey ? '编辑 API Key' : '创建 API Key'}
         open={modalOpen}
         onOk={handleSubmit}
@@ -1224,10 +1225,10 @@ function ApiKeyManager() {
             />
           </Form.Item>
         </Form>
-      </Modal>
+      </AppModal>
 
       {/* 新 Key 创建成功后的提示弹窗 */}
-      <Modal
+      <AppModal
         title="API Key 创建成功"
         open={!!newKeyValue}
         onOk={() => setNewKeyValue(null)}
@@ -1254,7 +1255,7 @@ function ApiKeyManager() {
         }}>
           {newKeyValue}
         </div>
-      </Modal>
+      </AppModal>
     </>
   )
 }

@@ -19,7 +19,9 @@ import { useStableData } from '../hooks/useStableData'
 import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
+import AppModal from '../components/AppModal'
 import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, latencyColor } from '../utils/format'
+import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
 // 移动端检测
@@ -357,7 +359,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, minHeight: 24 }}>
       <span style={{ color: 'var(--text-muted)', fontSize: 12, width: 60, minWidth: 60, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, flex: 1, minWidth: 0 }}>{children}</span>
+      <span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, flex: 1, minWidth: 0 }}>{children}</span>
     </div>
   )
 }
@@ -366,13 +368,13 @@ function GridCell({ label, children }: { label: string; children: React.ReactNod
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: isMobileCheck() ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
+      <span style={{ fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums', fontSize: isMobileCheck() ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
     </div>
   )
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{children}</div>
+  return <div style={{ fontSize: 12, fontWeight: 650, color: 'var(--text-secondary)', marginBottom: 9 }}>{children}</div>
 }
 
 function DetailDivider() {
@@ -446,52 +448,22 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
   const MOBILE_V_MARGIN = 56  // 上下各留 56px，与顶部 tab 高度一致
 
   return (
-    <Modal
-      title={
-        // 自定义标题行：标题文字 + 关闭按钮在同一 flex 行
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: mobile ? '0 12px' : '0 16px',
-          height: mobile ? 44 : 48,
-          borderBottom: '1px solid var(--border-subtle)',
-        }}>
-          <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1, color: 'var(--text-primary)' }}>
-            请求详情
-            {rec ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 13, marginLeft: 6 }}>#{rec.id}</span> : ''}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭请求详情"
-            style={{
-              width: 28, height: 28, border: 'none', background: 'transparent',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text-muted)', borderRadius: 6, padding: 0, flexShrink: 0,
-              fontSize: 16,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-          >✕</button>
-        </div>
-      }
+    <AppModal
+      title="请求详情"
+      titleMeta={rec ? `#${rec.id}` : undefined}
       open={recordId != null}
       onCancel={onClose}
       footer={null}
-      closable={false}
       width={mobile ? window.innerWidth - 24 : Math.min(860, window.innerWidth - 48)}
       className="hd-request-detail-modal"
       centered={true}
       style={mobile ? { marginTop: MOBILE_V_MARGIN, marginBottom: MOBILE_V_MARGIN, marginLeft: 12, marginRight: 12 } : undefined}
       styles={{
-        header: { padding: 0, marginBottom: 0 },
         body: {
           maxHeight: mobile
             ? `calc(100svh - ${MOBILE_V_MARGIN * 2 + 44 + 20}px)`
             : 'calc(80vh - 56px)',
           overflowY: 'auto',
-          padding: mobile ? '8px 0 16px' : '8px 4px 12px',
         },
       }}
     >
@@ -513,19 +485,23 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
             children: (
               <>
                 {/* ── 基本信息：单列 label+value ── */}
-                <InfoRow label="请求时间">{rec.created_at}</InfoRow>
+                <InfoRow label="请求时间">
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{rec.created_at}</span>
+                </InfoRow>
                 <InfoRow label="请求模型">
+                  {rec.provider && (
+                    <>
+                      <VendorTag name={rec.provider} style={{ fontSize: 11, borderRadius: 3 }} />
+                      <span style={{ color: 'var(--text-disabled)', fontSize: 11 }}>/</span>
+                    </>
+                  )}
                   <ModelTag name={rec.model} style={{ fontSize: 11, borderRadius: 3 }} />
-                  <span style={{ color: 'var(--text-disabled)', fontSize: 11 }}>/</span>
+                </InfoRow>
+                <InfoRow label="请求类型">
                   <Tag color={rec.stream ? 'purple' : 'default'} style={{ fontSize: 11, borderRadius: 3, margin: 0 }}>
-                    {rec.stream ? 'SSE 流式' : 'JSON 非流式'}
+                    {formatRequestType(rec.stream)}
                   </Tag>
                 </InfoRow>
-                {rec.provider && (
-                  <InfoRow label="厂商">
-                    <VendorTag name={rec.provider} style={{ fontSize: 11, borderRadius: 3 }} />
-                  </InfoRow>
-                )}
 
                 <DetailDivider />
 
@@ -609,22 +585,29 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
 
                 <DetailDivider />
 
-                {/* ── Token 统计：移动端3列×2行，PC端6列×1行 ── */}
-                <SectionTitle>Token 统计</SectionTitle>
+                {/* 缓存读取/写入是输入 Token 的组成部分，不在总计中重复相加。 */}
+                <SectionTitle>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    Token 统计
+                    <Tooltip title="缓存读取与缓存写入已包含在输入总量中；总计为输入总量与输出的合计。">
+                      <span aria-label="Token 统计说明" style={{ color: 'var(--text-muted)', cursor: 'help', fontSize: 11 }}>ⓘ</span>
+                    </Tooltip>
+                  </span>
+                </SectionTitle>
                 <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: gridGap }}>
-                  <GridCell label="输入">{rec.prompt_tokens.toLocaleString()}</GridCell>
-                  <GridCell label="输出">{rec.completion_tokens.toLocaleString()}</GridCell>
-                  <GridCell label="总计">{rec.total_tokens.toLocaleString()}</GridCell>
-                  {(rec.cache_write_tokens ?? 0) > 0 && (
-                    <GridCell label="缓存写入">
-                      <span style={{ color: 'var(--color-warning)' }}>{rec.cache_write_tokens?.toLocaleString()}</span>
-                    </GridCell>
-                  )}
-                  <GridCell label="缓存命中">
+                  <GridCell label="输入总量">{rec.prompt_tokens.toLocaleString()}</GridCell>
+                  <GridCell label="其中缓存读取">
                     {rec.cache_hit_tokens > 0
                       ? <span style={{ color: 'var(--color-warning)' }}>{rec.cache_hit_tokens.toLocaleString()}</span>
                       : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
                   </GridCell>
+                  <GridCell label="其中缓存写入">
+                    {(rec.cache_write_tokens ?? 0) > 0
+                      ? <span style={{ color: 'var(--color-warning)' }}>{rec.cache_write_tokens?.toLocaleString()}</span>
+                      : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
+                  </GridCell>
+                  <GridCell label="输出">{rec.completion_tokens.toLocaleString()}</GridCell>
+                  <GridCell label="总计">{rec.total_tokens.toLocaleString()}</GridCell>
                   <GridCell label="命中率">
                     {rec.cache_hit_tokens > 0
                       ? <span style={{ color: 'var(--color-warning)' }}>{cacheRate}</span>
@@ -661,7 +644,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
           },
         ]} />
       )}
-    </Modal>
+    </AppModal>
   )
 }
 
@@ -868,18 +851,26 @@ export default function Requests() {
       ),
     },
     {
-      title: '模型',
+      title: '请求模型',
       dataIndex: 'model',
       key: 'model',
-      width: isMobile ? 100 : 140,
+      width: isMobile ? 176 : 210,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
-      render: (v: string) => {
+      render: (v: string, record) => {
         return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: '100%', minWidth: 0 }}>
+            {record.provider && (
+              <>
+                <Tooltip title={record.provider}>
+                  <VendorTag name={record.provider} style={{ flexShrink: 0, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }} />
+                </Tooltip>
+                <span aria-hidden="true" style={{ color: 'var(--text-disabled)', fontSize: 11 }}>/</span>
+              </>
+            )}
             <Tooltip title={v}>
-              <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
+              <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: isMobile ? 94 : 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
             </Tooltip>
           </div>
         )
@@ -893,34 +884,22 @@ export default function Requests() {
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
       render: (v: string | null) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: v ? 'var(--color-primary)' : 'var(--text-muted)' }}>
+        <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, fontWeight: v ? 550 : 400, color: v ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
           {v || '未知'}
         </span>
       ),
     },
     {
-      title: '厂商',
-      dataIndex: 'provider',
-      key: 'provider',
-      width: isMobile ? 80 : 100,
-      align: 'center' as const,
-      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
-      onCell: () => ({ style: cellStyle }),
-      render: (value: string | null) => value
-        ? <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis' }} />
-        : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
-    },
-
-    {
-      title: '模式',
+      title: '请求类型',
       dataIndex: 'stream',
-      width: 56,
+      key: 'request_type',
+      width: 94,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
       render: (v: number) => (
-        <Tag color={v ? 'purple' : 'default'} style={{ fontSize: 10, borderRadius: 2, margin: 0, padding: '0 4px' }}>
-          {v ? 'SSE' : 'JSON'}
+        <Tag color={v ? 'purple' : 'default'} style={{ fontSize: 11, borderRadius: 3, margin: 0, padding: '0 5px', whiteSpace: 'nowrap' }}>
+          {formatRequestType(v)}
         </Tag>
       ),
     },
@@ -1100,7 +1079,7 @@ export default function Requests() {
   const mobileColumnKeys = new Set([
     'created_at',
     'model',
-    'provider',
+    'request_type',
     'total_tokens',
     'estimated_cost',
     'success',
@@ -1279,7 +1258,7 @@ export default function Requests() {
         </section>
       </div>
 
-      <Modal
+      <AppModal
         title="请求记录保留"
         open={retentionOpen}
         onOk={saveRetentionSettings}
@@ -1330,7 +1309,7 @@ export default function Requests() {
             {retentionLastError && <div style={{ color: 'var(--color-danger)' }}>上次错误：{retentionLastError}</div>}
           </div>
         </Spin>
-      </Modal>
+      </AppModal>
 
       <RequestDetailModal recordId={detailId} onClose={() => {
         setDetailId(null)

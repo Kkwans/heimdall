@@ -16,9 +16,9 @@
 .pageTitle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
-  height: 22px;
+  min-height: 28px;
 }
 
 .pageTitleIcon {
@@ -26,17 +26,23 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+}
+
+.pageTitleIcon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 
 .pageTitleText {
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 650;
   color: var(--text-primary);
   letter-spacing: -0.01em;
   white-space: nowrap;
-  line-height: 22px;
+  line-height: 1.25;
 }
 
 /* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */

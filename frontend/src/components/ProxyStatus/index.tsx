@@ -21,6 +21,7 @@ import axios from 'axios'
 import { useFilter } from '../../context/FilterContext'
 import { buildProxyBaseUrls } from '../../utils/proxyUrl'
 import { copyText } from '../../utils/clipboard'
+import AppModal from '../AppModal'
 import styles from './ProxyStatus.module.css'
 
 // ─────────────────────────────────────────────
@@ -461,7 +462,7 @@ export default function ProxyStatusCard() {
       </Card>
 
       {/* ══ 编辑代理配置弹窗 ══════════════════════════════════ */}
-      <Modal
+      <AppModal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <EditOutlined style={{ color: 'var(--color-info)' }} />
@@ -476,9 +477,6 @@ export default function ProxyStatusCard() {
         confirmLoading={editSaving}
         width={480}
         destroyOnClose
-        styles={{
-          body: { padding: '12px 24px 4px' },
-        }}
       >
         <Form
           form={editForm}
@@ -517,7 +515,7 @@ export default function ProxyStatusCard() {
             {' '}超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；代理端口和系统端口由部署配置管理，此处只读。
           </div>
         </Form>
-      </Modal>
+      </AppModal>
     </>
   )
 }
