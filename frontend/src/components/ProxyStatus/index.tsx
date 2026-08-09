@@ -45,6 +45,8 @@ interface ProxyConfig {
   request_timeout: number
   autostart_enabled: boolean
   public_base_url?: string
+  openai_base_url?: string
+  anthropic_base_url?: string
   restart_pending?: boolean
   deployment_readonly?: string[]
   editable_fields?: string[]
@@ -261,7 +263,8 @@ export default function ProxyStatusCard() {
   const openEdit = () => {
     editForm.setFieldsValue({
       proxy_port: cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888,
-      public_base_url: cfg?.public_base_url ?? '',
+      openai_base_url: cfg?.openai_base_url || proxyUrls.openai,
+      anthropic_base_url: cfg?.anthropic_base_url || proxyUrls.anthropic,
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)
@@ -314,13 +317,26 @@ export default function ProxyStatusCard() {
 
     const currentPort = cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888
     const nextPort = Number(values.proxy_port)
-    const currentBaseUrl = (cfg?.public_base_url ?? '').trim().replace(/\/+$/, '')
-    const nextBaseUrl = String(values.public_base_url ?? '').trim().replace(/\/+$/, '')
+    const currentOpenAIBaseUrl = proxyUrls.openai
+    const currentAnthropicBaseUrl = proxyUrls.anthropic
+    const nextOpenAIBaseUrl = String(values.openai_base_url ?? '').trim().replace(/\/+$/, '')
+    const nextAnthropicBaseUrl = String(values.anthropic_base_url ?? '').trim().replace(/\/+$/, '')
     const portChanged = currentPort !== nextPort
-    const baseUrlChanged = currentBaseUrl !== nextBaseUrl
+    const baseUrlChanged = currentOpenAIBaseUrl !== nextOpenAIBaseUrl
+      || currentAnthropicBaseUrl !== nextAnthropicBaseUrl
+    const valuesToSave = {
+      ...values,
+      // 回显自动推导地址，但若用户未改动它，就继续保留“自动”语义，避免改端口后锁死旧地址。
+      openai_base_url: !cfg?.openai_base_url && nextOpenAIBaseUrl === currentOpenAIBaseUrl
+        ? ''
+        : nextOpenAIBaseUrl,
+      anthropic_base_url: !cfg?.anthropic_base_url && nextAnthropicBaseUrl === currentAnthropicBaseUrl
+        ? ''
+        : nextAnthropicBaseUrl,
+    }
 
     if (!portChanged && !baseUrlChanged) {
-      await saveConfig(values)
+      await saveConfig(valuesToSave)
       return
     }
 
@@ -337,7 +353,7 @@ export default function ProxyStatusCard() {
           )}
           {baseUrlChanged && (
             <p style={{ margin: 0 }}>
-              Base URL 将更新 Dashboard 中展示和复制的 OpenAI、Anthropic 地址。请确认该地址能从客户端网络实际访问；它不会修改上游厂商地址。
+              OpenAI / Anthropic Base URL 将分别更新 Dashboard 中展示和复制的客户端地址。请确认两个地址都能从客户端网络实际访问；它们不会修改上游厂商地址。
             </p>
           )}
         </div>
@@ -345,7 +361,7 @@ export default function ProxyStatusCard() {
       okText: '确认保存',
       cancelText: '返回修改',
       okButtonProps: { danger: portChanged },
-      onOk: () => saveConfig(values),
+      onOk: () => saveConfig(valuesToSave),
     })
   }
 
@@ -356,6 +372,8 @@ export default function ProxyStatusCard() {
     {
       proxy_port: activeProxyPort,
       public_base_url: cfg?.public_base_url,
+      openai_base_url: cfg?.openai_base_url,
+      anthropic_base_url: cfg?.anthropic_base_url,
     },
     window.location,
   )
@@ -567,9 +585,9 @@ export default function ProxyStatusCard() {
           </div>
 
           <Form.Item
-            label="Base URL"
-            name="public_base_url"
-            tooltip="用于 Dashboard 展示和复制客户端连接地址，不会修改上游厂商地址。"
+            label="OpenAI Base URL"
+            name="openai_base_url"
+            tooltip="OpenAI 客户端使用的完整 Base URL，不会修改上游厂商地址。"
             rules={[
               {
                 validator: (_, value) => {
@@ -586,9 +604,34 @@ export default function ProxyStatusCard() {
                 },
               },
             ]}
-            extra="留空时根据当前浏览器主机名、协议和实际代理端口自动生成。"
+            extra="例如 http://NAS-IP:9888/openai。"
           >
-            <Input placeholder="例如：https://gateway.example.com:9888" allowClear />
+            <Input placeholder="例如：https://gateway.example.com/openai" allowClear />
+          </Form.Item>
+
+          <Form.Item
+            label="Anthropic Base URL"
+            name="anthropic_base_url"
+            tooltip="Anthropic 客户端使用的完整 Base URL，不会修改上游厂商地址。"
+            rules={[
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve()
+                  try {
+                    const url = new URL(String(value))
+                    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+                      throw new Error('invalid')
+                    }
+                    return Promise.resolve()
+                  } catch {
+                    return Promise.reject(new Error('请输入有效的 http:// 或 https:// 地址，且不要包含账号、查询参数或锚点'))
+                  }
+                },
+              },
+            ]}
+            extra="例如 http://NAS-IP:9888/anthropic。"
+          >
+            <Input placeholder="例如：https://gateway.example.com/anthropic" allowClear />
           </Form.Item>
 
           {/* 提示信息 */}
@@ -603,7 +646,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: 'var(--color-info)', fontWeight: 500 }}>💡</span>
-            {' '}代理端口和超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；Base URL 仅更新展示和复制地址并立即生效；系统端口仍由部署配置管理。
+            {' '}代理端口和超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；两个 Base URL 分别更新展示和复制地址并立即生效；系统端口仍由部署配置管理。
           </div>
         </Form>
       </AppModal>

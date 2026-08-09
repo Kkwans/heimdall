@@ -1,6 +1,8 @@
 export interface ProxyUrlConfig {
   proxy_port: number
   public_base_url?: string
+  openai_base_url?: string
+  anthropic_base_url?: string
 }
 
 export interface BrowserLocation {
@@ -17,11 +19,12 @@ export function buildProxyBaseUrls(
   config: ProxyUrlConfig,
   location: BrowserLocation,
 ): { openai: string; anthropic: string } {
-  const explicit = config.public_base_url?.trim().replace(/\/+$/, '')
+  const legacyExplicit = config.public_base_url?.trim().replace(/\/+$/, '')
+  const explicitOpenAI = config.openai_base_url?.trim().replace(/\/+$/, '')
+  const explicitAnthropic = config.anthropic_base_url?.trim().replace(/\/+$/, '')
   const fallback = `${location.protocol}//${formatHostname(location.hostname)}:${config.proxy_port}`
-  const base = explicit || fallback
   return {
-    openai: `${base}/openai`,
-    anthropic: `${base}/anthropic`,
+    openai: explicitOpenAI || `${legacyExplicit || fallback}/openai`,
+    anthropic: explicitAnthropic || `${legacyExplicit || fallback}/anthropic`,
   }
 }

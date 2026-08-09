@@ -73,6 +73,12 @@ PROXY_CONTAINER_NAME = os.getenv("HEIMDALL_PROXY_CONTAINER_NAME", "heimdall-prox
 # 可选的显式公共代理地址，例如 https://gateway.example.com:9888。
 # 为空时由浏览器基于当前 hostname、scheme 和部署端口生成。
 PUBLIC_BASE_URL = os.getenv("HEIMDALL_PUBLIC_BASE_URL", "").strip().rstrip("/")
+PUBLIC_OPENAI_BASE_URL = os.getenv(
+    "HEIMDALL_PUBLIC_OPENAI_BASE_URL", ""
+).strip().rstrip("/")
+PUBLIC_ANTHROPIC_BASE_URL = os.getenv(
+    "HEIMDALL_PUBLIC_ANTHROPIC_BASE_URL", ""
+).strip().rstrip("/")
 
 # ==========================================
 # Dashboard 配置

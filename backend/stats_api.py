@@ -965,12 +965,15 @@ def _get_config_path():
 def _load_runtime_config() -> dict:
     """读取运行时可编辑配置"""
     cfg_path = _get_config_path()
+    legacy_public_base_url = getattr(config, 'PUBLIC_BASE_URL', '')
     defaults = {
         "upstream_url": getattr(config, 'TARGET_BASE_URL', ''),
         "proxy_path": getattr(config, 'PROXY_PATH', '/v1/openai/native'),
         "request_timeout": config.REQUEST_TIMEOUT,
         "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
-        "public_base_url": getattr(config, 'PUBLIC_BASE_URL', ''),
+        "public_base_url": legacy_public_base_url,
+        "openai_base_url": getattr(config, 'PUBLIC_OPENAI_BASE_URL', ''),
+        "anthropic_base_url": getattr(config, 'PUBLIC_ANTHROPIC_BASE_URL', ''),
     }
     if os.path.isfile(cfg_path):
         try:
@@ -979,12 +982,20 @@ def _load_runtime_config() -> dict:
                 saved = json.load(f)
             for field in (
                 "upstream_url", "proxy_path", "request_timeout", "log_retention_days",
-                "proxy_port", "public_base_url",
+                "proxy_port", "public_base_url", "openai_base_url", "anthropic_base_url",
             ):
                 if field in saved:
                     defaults[field] = saved[field]
         except Exception:
             pass
+    legacy_public_base_url = str(defaults.get("public_base_url") or "").rstrip("/")
+    if legacy_public_base_url:
+        defaults["openai_base_url"] = (
+            defaults.get("openai_base_url") or f"{legacy_public_base_url}/openai"
+        )
+        defaults["anthropic_base_url"] = (
+            defaults.get("anthropic_base_url") or f"{legacy_public_base_url}/anthropic"
+        )
     return defaults
 
 
@@ -1017,25 +1028,25 @@ def _save_runtime_config(data: dict):
             os.unlink(temporary_path)
 
 
-def _normalize_public_base_url(value) -> str:
+def _normalize_public_base_url(value, label="Base URL") -> str:
     if not isinstance(value, str):
-        raise ValueError("Base URL 必须为字符串")
+        raise ValueError(f"{label} 必须为字符串")
     normalized = value.strip().rstrip("/")
     if not normalized:
         return ""
     if len(normalized) > 512:
-        raise ValueError("Base URL 最多 512 个字符")
+        raise ValueError(f"{label} 最多 512 个字符")
     parsed = urlsplit(normalized)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("Base URL 必须是有效的 http:// 或 https:// 地址")
+        raise ValueError(f"{label} 必须是有效的 http:// 或 https:// 地址")
     if parsed.username or parsed.password:
-        raise ValueError("Base URL 不允许包含用户名或密码")
+        raise ValueError(f"{label} 不允许包含用户名或密码")
     if parsed.query or parsed.fragment:
-        raise ValueError("Base URL 不允许包含查询参数或锚点")
+        raise ValueError(f"{label} 不允许包含查询参数或锚点")
     try:
         parsed.port
     except ValueError as exc:
-        raise ValueError("Base URL 端口无效") from exc
+        raise ValueError(f"{label} 端口无效") from exc
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
@@ -1068,9 +1079,13 @@ def proxy_config_get():
         "request_timeout": int(cfg.get("request_timeout", config.REQUEST_TIMEOUT)),
         "autostart_enabled": autostart_enabled,
         "public_base_url": cfg.get("public_base_url", ""),
+        "openai_base_url": cfg.get("openai_base_url", ""),
+        "anthropic_base_url": cfg.get("anthropic_base_url", ""),
         "restart_pending": configured_proxy_port != active_proxy_port,
         "deployment_readonly": ["dashboard_port"],
-        "editable_fields": ["proxy_port", "public_base_url", "request_timeout"],
+        "editable_fields": [
+            "proxy_port", "openai_base_url", "anthropic_base_url", "request_timeout",
+        ],
     })
 
 
@@ -1094,7 +1109,7 @@ def proxy_config_put():
 
         allowed = {
             "request_timeout", "upstream_url", "proxy_path",
-            "proxy_port", "public_base_url",
+            "proxy_port", "public_base_url", "openai_base_url", "anthropic_base_url",
         }
         unknown = sorted(set(body) - allowed)
         if unknown:
@@ -1121,6 +1136,15 @@ def proxy_config_put():
                 to_save["public_base_url"] = _normalize_public_base_url(body["public_base_url"])
             except ValueError as exc:
                 return _cors_response({"success": False, "message": str(exc)}, 400)
+        for field, label in (
+            ("openai_base_url", "OpenAI Base URL"),
+            ("anthropic_base_url", "Anthropic Base URL"),
+        ):
+            if field in body:
+                try:
+                    to_save[field] = _normalize_public_base_url(body[field], label)
+                except ValueError as exc:
+                    return _cors_response({"success": False, "message": str(exc)}, 400)
         if "request_timeout" in body:
             try:
                 timeout = int(body["request_timeout"])
@@ -1148,6 +1172,10 @@ def proxy_config_put():
         restart_required = bool(restart_fields.intersection(changed_fields))
         if "public_base_url" in changed_fields:
             config.PUBLIC_BASE_URL = to_save["public_base_url"]
+        if "openai_base_url" in changed_fields:
+            config.PUBLIC_OPENAI_BASE_URL = to_save["openai_base_url"]
+        if "anthropic_base_url" in changed_fields:
+            config.PUBLIC_ANTHROPIC_BASE_URL = to_save["anthropic_base_url"]
         return _cors_response({
             "success": True,
             "changed_fields": changed_fields,

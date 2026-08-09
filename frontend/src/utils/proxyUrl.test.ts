@@ -19,6 +19,20 @@ describe('buildProxyBaseUrls', () => {
     ).openai).toBe('https://gateway.example.com/openai')
   })
 
+  it('supports independent OpenAI and Anthropic public addresses', () => {
+    expect(buildProxyBaseUrls(
+      {
+        proxy_port: 9888,
+        openai_base_url: 'https://openai.example.com/gateway///',
+        anthropic_base_url: 'https://anthropic.example.com/proxy/',
+      },
+      { protocol: 'http:', hostname: 'localhost' },
+    )).toEqual({
+      openai: 'https://openai.example.com/gateway',
+      anthropic: 'https://anthropic.example.com/proxy',
+    })
+  })
+
   it('wraps an IPv6 hostname before appending the deployment port', () => {
     expect(buildProxyBaseUrls(
       { proxy_port: 9888 },

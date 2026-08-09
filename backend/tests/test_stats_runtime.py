@@ -77,6 +77,8 @@ def runtime_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "PROXY_EXTERNAL_PORT", 19888)
     monkeypatch.setattr(config, "DASHBOARD_EXTERNAL_PORT", 18889)
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "")
+    monkeypatch.setattr(config, "PUBLIC_OPENAI_BASE_URL", "")
+    monkeypatch.setattr(config, "PUBLIC_ANTHROPIC_BASE_URL", "")
     db.init_db()
     _close_thread_connection()
     apply_migrations(database)
@@ -105,14 +107,15 @@ def runtime_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _close_thread_connection()
 
 
-def test_proxy_config_allows_port_and_public_base_url_with_explicit_restart(runtime_app) -> None:
+def test_proxy_config_allows_port_and_protocol_base_urls_with_explicit_restart(runtime_app) -> None:
     app, _database, runtime_config, docker = runtime_app
     client = app.test_client()
 
     config_response = client.get("/api/proxy/config")
     saved = client.put("/api/proxy/config", json={
         "proxy_port": 29999,
-        "public_base_url": "https://gateway.example.com///",
+        "openai_base_url": "https://openai.example.com/gateway///",
+        "anthropic_base_url": "https://anthropic.example.com/proxy/",
     })
     pending = client.get("/api/proxy/config")
 
@@ -120,18 +123,22 @@ def test_proxy_config_allows_port_and_public_base_url_with_explicit_restart(runt
     assert config_response.get_json()["proxy_port"] == 19888
     assert config_response.get_json()["active_proxy_port"] == 19888
     assert config_response.get_json()["editable_fields"] == [
-        "proxy_port", "public_base_url", "request_timeout",
+        "proxy_port", "openai_base_url", "anthropic_base_url", "request_timeout",
     ]
     assert saved.status_code == 200
-    assert saved.get_json()["changed_fields"] == ["proxy_port", "public_base_url"]
+    assert saved.get_json()["changed_fields"] == [
+        "anthropic_base_url", "openai_base_url", "proxy_port",
+    ]
     assert saved.get_json()["restart_required"] is True
     assert pending.get_json()["proxy_port"] == 29999
     assert pending.get_json()["active_proxy_port"] == docker.active_port == 19888
-    assert pending.get_json()["public_base_url"] == "https://gateway.example.com"
+    assert pending.get_json()["openai_base_url"] == "https://openai.example.com/gateway"
+    assert pending.get_json()["anthropic_base_url"] == "https://anthropic.example.com/proxy"
     assert pending.get_json()["restart_pending"] is True
     persisted = json.loads(runtime_config.read_text(encoding="utf-8"))
     assert persisted["proxy_port"] == 29999
-    assert persisted["public_base_url"] == "https://gateway.example.com"
+    assert persisted["openai_base_url"] == "https://openai.example.com/gateway"
+    assert persisted["anthropic_base_url"] == "https://anthropic.example.com/proxy"
 
 
 @pytest.mark.parametrize("payload", [
@@ -140,12 +147,27 @@ def test_proxy_config_allows_port_and_public_base_url_with_explicit_restart(runt
     {"public_base_url": "ftp://gateway.example.com"},
     {"public_base_url": "https://user:secret@gateway.example.com"},
     {"public_base_url": "https://gateway.example.com?token=secret"},
+    {"openai_base_url": "ftp://gateway.example.com/openai"},
+    {"anthropic_base_url": "https://user:secret@gateway.example.com/anthropic"},
 ])
 def test_proxy_config_rejects_unsafe_connection_settings(runtime_app, payload) -> None:
     app, _database, runtime_config, _docker = runtime_app
     response = app.test_client().put("/api/proxy/config", json=payload)
     assert response.status_code == 400
     assert not runtime_config.exists()
+
+
+def test_legacy_public_base_url_is_expanded_for_both_protocols(runtime_app) -> None:
+    app, _database, runtime_config, _docker = runtime_app
+    runtime_config.write_text(
+        json.dumps({"public_base_url": "https://legacy.example.com"}),
+        encoding="utf-8",
+    )
+
+    payload = app.test_client().get("/api/proxy/config").get_json()
+
+    assert payload["openai_base_url"] == "https://legacy.example.com/openai"
+    assert payload["anthropic_base_url"] == "https://legacy.example.com/anthropic"
 
 
 def test_runtime_timeout_is_atomic_and_explicitly_requires_restart(runtime_app) -> None:
