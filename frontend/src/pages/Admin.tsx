@@ -24,11 +24,13 @@ import {
   fetchProviders, createProvider, updateProvider, deleteProvider,
   fetchModels, createModel, updateModel, deleteModel,
   fetchApiKeys, createApiKey, updateApiKey, deleteApiKey,
+  copyApiKey,
   fetchProviderApiKeys, createProviderApiKey, updateProviderApiKey, deleteProviderApiKey,
   type Provider, type Model, type ApiKey, type ProviderApiKey,
   type ProviderCreateData, type ModelCreateData, type ApiKeyCreateData,
   getApiErrorMessage,
 } from '../api/admin'
+import { copyText } from '../utils/clipboard'
 
 const { Text } = Typography
 
@@ -951,6 +953,8 @@ function ApiKeyManager() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null)
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
+  const [newKeyTitle, setNewKeyTitle] = useState('API Key 创建成功')
+  const [resetKeyPending, setResetKeyPending] = useState(false)
   const [form] = Form.useForm()
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
   const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
@@ -994,18 +998,35 @@ function ApiKeyManager() {
 
   const handleAdd = () => {
     setEditingKey(null)
+    setResetKeyPending(false)
     form.resetFields()
     setModalOpen(true)
   }
 
   const handleEdit = (key: ApiKey) => {
     setEditingKey(key)
+    setResetKeyPending(false)
     form.setFieldsValue({
       name: key.name,
       enabled: key.enabled,
       allowed_models: key.allowed_models ? key.allowed_models.split(',').map(m => m.trim()) : [],
     })
     setModalOpen(true)
+  }
+
+  const resetApiKeyForm = () => {
+    setResetKeyPending(false)
+    if (editingKey) {
+      form.setFieldsValue({
+        name: editingKey.name,
+        enabled: editingKey.enabled,
+        allowed_models: editingKey.allowed_models
+          ? editingKey.allowed_models.split(',').map(model => model.trim())
+          : [],
+      })
+    } else {
+      form.resetFields()
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -1026,10 +1047,18 @@ function ApiKeyManager() {
         values.allowed_models = values.allowed_models.join(',')
       }
       if (editingKey) {
-        await updateApiKey(editingKey.id, values)
+        const result = await updateApiKey(editingKey.id, {
+          ...values,
+          reset_key: resetKeyPending,
+        })
+        if (result.key_value) {
+          setNewKeyTitle('API Key 重置成功')
+          setNewKeyValue(result.key_value)
+        }
         message.success('更新成功')
       } else {
         const result = await createApiKey(values as ApiKeyCreateData)
+        setNewKeyTitle('API Key 创建成功')
         setNewKeyValue(result.key_value)
         message.success('创建成功')
       }
@@ -1040,29 +1069,22 @@ function ApiKeyManager() {
     }
   }
 
-  const handleCopyKey = (key: string) => {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(key).then(() => message.success('已复制到剪贴板')).catch(() => {
-        const ta = document.createElement('textarea')
-        ta.value = key
-        ta.style.position = 'fixed'
-        ta.style.left = '-9999px'
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
-        message.success('已复制到剪贴板')
-      })
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = key
-      ta.style.position = 'fixed'
-      ta.style.left = '-9999px'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
+  const handleCopyKey = async (key: string) => {
+    try {
+      await copyText(key)
       message.success('已复制到剪贴板')
+    } catch {
+      message.error('复制失败，请重试')
+    }
+  }
+
+  const handleCopyStoredKey = async (record: ApiKey) => {
+    try {
+      const { key_value } = await copyApiKey(record.id)
+      await copyText(key_value)
+      message.success(`已复制 ${record.name || 'API Key'}`)
+    } catch (err) {
+      showRequestError(err, '复制 API Key 失败')
     }
   }
 
@@ -1154,13 +1176,22 @@ function ApiKeyManager() {
     {
       title: '操作',
       key: 'action',
-      width: 80,
+      width: 116,
       
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
+          <Tooltip title="复制完整 Key">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              aria-label={`复制客户端 API Key ${record.name}`}
+              onClick={() => handleCopyStoredKey(record)}
+            />
+          </Tooltip>
           <Tooltip title="编辑">
             <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑客户端 API Key ${record.name}`} onClick={() => handleEdit(record)} />
           </Tooltip>
@@ -1209,7 +1240,15 @@ function ApiKeyManager() {
         onCancel={() => setModalOpen(false)}
         width={560}
         destroyOnClose
-        
+        footer={(
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Button onClick={resetApiKeyForm}>恢复原值</Button>
+            <Space>
+              <Button onClick={() => setModalOpen(false)}>取消</Button>
+              <Button type="primary" onClick={handleSubmit}>确定</Button>
+            </Space>
+          </div>
+        )}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="名称">
@@ -1218,6 +1257,28 @@ function ApiKeyManager() {
           {!editingKey && (
             <Form.Item name="key_value" label="API Key">
               <Input placeholder="留空自动生成" />
+            </Form.Item>
+          )}
+          {editingKey && (
+            <Form.Item
+              label="API Key"
+              extra={resetKeyPending
+                ? '点击“确定”后才会生成并应用新 Key；旧 Key 随即失效。'
+                : '列表复制会按需读取当前完整 Key；重置操作不会在点击确定前生效。'}
+            >
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  readOnly
+                  value={resetKeyPending ? '已准备重置，尚未保存' : editingKey.key_preview}
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                />
+                <Button
+                  danger={!resetKeyPending}
+                  onClick={() => setResetKeyPending(pending => !pending)}
+                >
+                  {resetKeyPending ? '取消重置' : '重置 Key'}
+                </Button>
+              </Space.Compact>
             </Form.Item>
           )}
           <Form.Item name="allowed_models" label="允许的模型">
@@ -1238,7 +1299,7 @@ function ApiKeyManager() {
 
       {/* 新 Key 创建成功后的提示弹窗 */}
       <AppModal
-        title="API Key 创建成功"
+        title={newKeyTitle}
         open={!!newKeyValue}
         onOk={() => setNewKeyValue(null)}
         onCancel={() => setNewKeyValue(null)}
@@ -1252,7 +1313,7 @@ function ApiKeyManager() {
         ]}
       >
         <div style={{ marginBottom: 8 }}>
-          <Text type="warning">请立即复制保存，此 Key 只会显示一次！</Text>
+          <Text type="warning">完整 Key 仅在创建、重置结果或主动复制时返回，不会随列表加载。</Text>
         </div>
         <div style={{
           padding: 12,

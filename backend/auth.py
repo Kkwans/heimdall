@@ -136,6 +136,17 @@ def get_all_api_keys() -> list:
     return rows
 
 
+def get_api_key_value(key_id: int) -> Optional[str]:
+    """按用户显式操作读取单个 Client API Key；列表接口始终保持脱敏。"""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT key_value FROM api_keys WHERE id = ?", (key_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return crypto.decrypt(row["key_value"])
+
+
 def create_api_key(data: dict) -> dict:
     """创建 API Key（加密存储）"""
     conn = _get_conn()
@@ -155,8 +166,8 @@ def create_api_key(data: dict) -> dict:
     return {"id": cursor.lastrowid, "key_value": key_value}
 
 
-def update_api_key(key_id: int, data: dict) -> bool:
-    """更新 API Key"""
+def update_api_key(key_id: int, data: dict) -> tuple:
+    """更新 API Key；可在同一事务中重置 secret，并仅返回一次新值。"""
     conn = _get_conn()
     cursor = conn.cursor()
     fields = []
@@ -165,12 +176,18 @@ def update_api_key(key_id: int, data: dict) -> bool:
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])
+    new_key_value = None
+    if data.get("reset_key") is True:
+        new_key_value = generate_api_key()
+        fields.append("key_value = ?")
+        values.append(crypto.encrypt(new_key_value))
     if not fields:
-        return False
+        return False, None
     values.append(key_id)
     cursor.execute(f"UPDATE api_keys SET {', '.join(fields)} WHERE id = ?", values)
     conn.commit()
-    return cursor.rowcount > 0
+    updated = cursor.rowcount > 0
+    return updated, new_key_value if updated else None
 
 
 def delete_api_key(key_id: int) -> bool:

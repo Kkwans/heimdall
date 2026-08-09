@@ -180,6 +180,7 @@ export interface ApiKeyCreateData {
   key_value?: string
   enabled?: boolean
   allowed_models?: string
+  reset_key?: boolean
 }
 
 export async function fetchApiKeys(): Promise<{ keys: ApiKey[] }> {
@@ -192,8 +193,13 @@ export async function createApiKey(keyData: ApiKeyCreateData = {}): Promise<{ id
   return data
 }
 
-export async function updateApiKey(id: number, keyData: Partial<ApiKeyCreateData>): Promise<{ message: string }> {
+export async function updateApiKey(id: number, keyData: Partial<ApiKeyCreateData>): Promise<{ message: string; key_value?: string }> {
   const { data } = await api.put(`/api/keys/${id}`, keyData)
+  return data
+}
+
+export async function copyApiKey(id: number): Promise<{ key_value: string }> {
+  const { data } = await api.post(`/api/keys/${id}/copy`)
   return data
 }
 

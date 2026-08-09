@@ -270,7 +270,9 @@ def create_api_key():
     data = request.get_json() or {}
     try:
         result = auth.create_api_key(data)
-        return jsonify(result), 201
+        response = jsonify(result)
+        response.headers["Cache-Control"] = "no-store"
+        return response, 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -282,10 +284,27 @@ def update_api_key(key_id):
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
-    success = auth.update_api_key(key_id, data)
+    success, new_key_value = auth.update_api_key(key_id, data)
     if not success:
         return jsonify({"error": "API Key not found or no changes"}), 404
-    return jsonify({"message": "API Key updated"})
+    payload = {"message": "API Key updated"}
+    if new_key_value is not None:
+        payload["key_value"] = new_key_value
+    response = jsonify(payload)
+    if new_key_value is not None:
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@admin_bp.route('/api/keys/<int:key_id>/copy', methods=['POST'])
+def copy_api_key(key_id):
+    """仅在用户主动点击复制时返回单个完整 Key，不随列表批量下发。"""
+    key_value = auth.get_api_key_value(key_id)
+    if key_value is None:
+        return jsonify({"error": "API Key not found"}), 404
+    response = jsonify({"key_value": key_value})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @admin_bp.route('/api/keys/<int:key_id>', methods=['DELETE'])

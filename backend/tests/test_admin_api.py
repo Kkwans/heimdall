@@ -131,12 +131,13 @@ def test_all_secret_list_responses_are_masked(admin_app) -> None:
     assert responses[3].get_json()["keys"][0]["key_preview"]
 
 
-def test_generated_client_key_is_returned_only_by_create(admin_app) -> None:
+def test_generated_client_key_is_not_returned_by_list(admin_app) -> None:
     app, _database = admin_app
     client = app.test_client()
 
     created = client.post("/api/keys", json={"name": "自动生成"})
     assert created.status_code == 201
+    assert created.headers["Cache-Control"] == "no-store"
     full_key = created.get_json()["key_value"]
     assert full_key.startswith("heimdall-")
 
@@ -144,6 +145,42 @@ def test_generated_client_key_is_returned_only_by_create(admin_app) -> None:
     assert listed.status_code == 200
     assert full_key not in listed.get_data(as_text=True)
     assert "key_value" not in listed.get_json()["keys"][0]
+
+
+def test_client_key_copy_requires_an_explicit_single_key_action(admin_app) -> None:
+    app, _database = admin_app
+    client = app.test_client()
+    created = client.post("/api/keys", json={"name": "显式复制"}).get_json()
+
+    copied = client.post(f"/api/keys/{created['id']}/copy")
+    missing = client.post("/api/keys/999999/copy")
+
+    assert copied.status_code == 200
+    assert copied.headers["Cache-Control"] == "no-store"
+    assert copied.get_json()["key_value"] == created["key_value"]
+    assert missing.status_code == 404
+    assert created["key_value"] not in client.get("/api/keys").get_data(as_text=True)
+
+
+def test_client_key_reset_returns_new_secret_only_after_update(admin_app) -> None:
+    app, _database = admin_app
+    client = app.test_client()
+    created = client.post("/api/keys", json={"name": "待重置"}).get_json()
+
+    unchanged = client.post(f"/api/keys/{created['id']}/copy").get_json()["key_value"]
+    updated = client.put(
+        f"/api/keys/{created['id']}",
+        json={"name": "已重置", "reset_key": True},
+    )
+    copied_after = client.post(f"/api/keys/{created['id']}/copy").get_json()["key_value"]
+
+    assert unchanged == created["key_value"]
+    assert updated.status_code == 200
+    assert updated.headers["Cache-Control"] == "no-store"
+    assert updated.get_json()["key_value"].startswith("heimdall-")
+    assert copied_after == updated.get_json()["key_value"]
+    assert copied_after != unchanged
+    assert copied_after not in client.get("/api/keys").get_data(as_text=True)
 
 
 def test_deleting_client_key_preserves_request_name_snapshot(admin_app) -> None:
