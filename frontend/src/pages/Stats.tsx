@@ -12,7 +12,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import {
   Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker, Tag
 } from 'antd'
-import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
+import { TableSkeleton } from '../components/LoadingSkeleton'
 import type { ColumnsType } from 'antd/es/table'
 import ReactECharts, { type ChartTooltipParam, type EChartRef } from '../components/Charts/EChart'
 import dayjs from 'dayjs'
@@ -113,6 +113,8 @@ function splitLine(isDark: boolean) {
 // 列名缩短，均思考支持排序，全列居中，横向滚动
 // ──────────────────────────────────────────
 function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boolean }) {
+  if (loading && data.length === 0) return <TableSkeleton columns={9} rows={7} compact />
+
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
   const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
@@ -257,8 +259,7 @@ function ModelStatsTable({ data, loading }: { data: ModelStats[]; loading: boole
       columns={columns}
       dataSource={data}
       rowKey="model"
-      loading={loading ? TABLE_SPIN_INDICATOR : false}
-      locale={{ emptyText: loading ? <span /> : '暂无数据' }}
+      locale={{ emptyText: '暂无数据' }}
       size="small"
       showSorterTooltip={false}
       pagination={false}
@@ -902,6 +903,8 @@ function ProviderOverviewChart({ data, isDark }: { data: ProviderStats[]; isDark
 // 子组件：厂商统计表
 // ──────────────────────────────────────────
 function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading: boolean }) {
+  if (loading && data.length === 0) return <TableSkeleton columns={8} rows={5} compact />
+
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
   const cellCenter: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle' }
   const cellCenterFixed: React.CSSProperties = { textAlign: 'center', verticalAlign: 'middle', background: 'var(--bg-surface, #fff)' }
@@ -991,8 +994,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
       columns={columns}
       dataSource={data}
       rowKey="provider"
-      loading={loading ? TABLE_SPIN_INDICATOR : false}
-      locale={{ emptyText: loading ? <span /> : '暂无厂商数据' }}
+      locale={{ emptyText: '暂无厂商数据' }}
       size="small"
       showSorterTooltip={false}
       pagination={false}

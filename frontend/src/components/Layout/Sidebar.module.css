@@ -15,6 +15,7 @@
   min-height: 65px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
 }
 
 .logoIcon {
@@ -34,6 +35,7 @@
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 /* ── 导航 ── */
@@ -89,6 +91,18 @@
 
 .navLabel {
   flex: 1;
+}
+
+.logoText,
+.navLabel,
+.utilityBtnLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity var(--duration-fast) var(--ease-default) 150ms,
+              transform var(--duration-fast) var(--ease-default) 150ms;
 }
 
 /* ── 底部 ── */
@@ -147,17 +161,20 @@
 .sidebarCollapsed .logoText,
 .sidebarCollapsed .navLabel,
 .sidebarCollapsed .utilityBtnLabel {
-  display: none;
+  width: 0;
+  flex: 0 0 0;
+  opacity: 0;
+  transform: translateX(-4px);
+  pointer-events: none;
+  transition-delay: 0ms;
 }
 
 .sidebarCollapsed .nav {
-  align-items: center;
   padding-inline: 8px;
 }
 
 .sidebarCollapsed .navItem {
   justify-content: center;
-  width: 44px;
   padding-inline: 0;
 }
 

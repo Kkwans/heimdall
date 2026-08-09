@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
-import { SpinRing, TABLE_SPIN_INDICATOR } from '../components/SpinRing'
+import { DetailSkeleton, TableSkeleton } from '../components/LoadingSkeleton'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import type { SorterResult } from 'antd/es/table/interface'
 import { EyeOutlined, SettingOutlined } from '@ant-design/icons'
@@ -467,7 +467,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
         overflowY: 'auto',
       }}
     >
-      {loading && <div style={{ textAlign: 'center', padding: '40px 0' }}><SpinRing size={28} /></div>}
+      {loading && <DetailSkeleton />}
       {!loading && loadError && recordId != null && (
         <Alert
           type="error"
@@ -1214,53 +1214,56 @@ export default function Requests() {
                 <span aria-hidden="true">↔</span> 左右滑动查看更多信息，点击行查看详情
               </div>
             )}
-            <Table<RequestRecord>
-              columns={visibleColumns}
-              dataSource={data}
-              rowKey="id"
-              loading={loading ? TABLE_SPIN_INDICATOR : false}
-              locale={{ emptyText: loading ? <span /> : '暂无数据' }}
-              size="small"
-              // onChange 只处理排序，不处理分页（由 pagination.onChange 单独管理）
-              onChange={handleTableChange}
-              pagination={{
-                current: page,
-                pageSize,
-                total,
-                showSizeChanger: true,
-                showQuickJumper: false,
-                // 移动端：simple 模式（上一页/页码/下一页），彻底避免末页重叠
-                // PC端：showLessItems 减少显示页码数量，使末页与省略号间距更宽松
-                ...(isMobile ? { simple: true } : { showLessItems: true }),
-                pageSizeOptions: ['15', '30', '50', '100'],
-                showTotal: (t) => `共 ${t.toLocaleString()} 条`,
-                // itemRender：为省略号按钮（jump-next/jump-prev）包裹额外间距，彻底避免与末页重叠
-                itemRender: (page, type, originalElement) => {
-                  if (type === 'jump-next' || type === 'jump-prev') {
-                    return (
-                      <span style={{ display: 'inline-block', padding: '0 4px' }}>
-                        {originalElement}
-                      </span>
-                    )
-                  }
-                  return originalElement
-                },
-                // 使用独立的分页 onChange，与表格排序完全解耦
-                onChange: (p, ps) => {
-                  setPage(p)
-                  if (ps !== pageSize) {
-                    setPageSize(ps)
-                    setPage(1)
-                  }
-                },
-                size: 'small',
-              }}
-              scroll={{ x: 'max-content' }}
-              onRow={isMobile ? (record) => ({
-                onClick: () => setDetailId(record.id),
-                style: { cursor: 'pointer' },
-              }) : undefined}
-            />
+            {loading && data.length === 0 ? (
+              <TableSkeleton columns={isMobile ? 5 : 10} rows={10} compact />
+            ) : (
+              <Table<RequestRecord>
+                columns={visibleColumns}
+                dataSource={data}
+                rowKey="id"
+                locale={{ emptyText: '暂无数据' }}
+                size="small"
+                // onChange 只处理排序，不处理分页（由 pagination.onChange 单独管理）
+                onChange={handleTableChange}
+                pagination={{
+                  current: page,
+                  pageSize,
+                  total,
+                  showSizeChanger: true,
+                  showQuickJumper: false,
+                  // 移动端：simple 模式（上一页/页码/下一页），彻底避免末页重叠
+                  // PC端：showLessItems 减少显示页码数量，使末页与省略号间距更宽松
+                  ...(isMobile ? { simple: true } : { showLessItems: true }),
+                  pageSizeOptions: ['15', '30', '50', '100'],
+                  showTotal: (t) => `共 ${t.toLocaleString()} 条`,
+                  // itemRender：为省略号按钮（jump-next/jump-prev）包裹额外间距，彻底避免与末页重叠
+                  itemRender: (page, type, originalElement) => {
+                    if (type === 'jump-next' || type === 'jump-prev') {
+                      return (
+                        <span style={{ display: 'inline-block', padding: '0 4px' }}>
+                          {originalElement}
+                        </span>
+                      )
+                    }
+                    return originalElement
+                  },
+                  // 使用独立的分页 onChange，与表格排序完全解耦
+                  onChange: (p, ps) => {
+                    setPage(p)
+                    if (ps !== pageSize) {
+                      setPageSize(ps)
+                      setPage(1)
+                    }
+                  },
+                  size: 'small',
+                }}
+                scroll={{ x: 'max-content' }}
+                onRow={isMobile ? (record) => ({
+                  onClick: () => setDetailId(record.id),
+                  style: { cursor: 'pointer' },
+                }) : undefined}
+              />
+            )}
           </Card>
         </section>
       </div>

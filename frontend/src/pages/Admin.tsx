@@ -13,7 +13,7 @@ import {
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SaveOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
+import { TableSkeleton } from '../components/LoadingSkeleton'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 import MobileTooltip from '../components/MobileTooltip'
 import { getVendorColor } from '../components/Charts/chartTheme'
@@ -411,22 +411,25 @@ function ProviderManager() {
         </Button>
       </div>
 
-      <Table
-        columns={filteredColumns}
-        dataSource={providers}
-        rowKey="id"
-        loading={loading ? TABLE_SPIN_INDICATOR : false}
-        locale={{ emptyText: loading ? <span /> : '暂无数据' }}
-        size="small"
-        showSorterTooltip={false}
-        pagination={{
-          pageSize: 15,
-          showSizeChanger: true,
-          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        scroll={{ x: isMobile ? 'max-content' : 950 }}
-      />
+      {loading && providers.length === 0 ? (
+        <TableSkeleton columns={isMobile ? 5 : 8} rows={5} compact />
+      ) : (
+        <Table
+          columns={filteredColumns}
+          dataSource={providers}
+          rowKey="id"
+          locale={{ emptyText: '暂无数据' }}
+          size="small"
+          showSorterTooltip={false}
+          pagination={{
+            pageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          scroll={{ x: isMobile ? 'max-content' : 950 }}
+        />
+      )}
 
       <AppModal
         title={editingProvider ? '编辑厂商' : '添加厂商'}
@@ -858,22 +861,25 @@ function ModelManager() {
         </Button>
       </div>
 
-      <Table
-        columns={filteredModelColumns}
-        dataSource={models}
-        rowKey="id"
-        loading={loading ? TABLE_SPIN_INDICATOR : false}
-        locale={{ emptyText: loading ? <span /> : '暂无数据' }}
-        size="small"
-        showSorterTooltip={false}
-        pagination={{
-          pageSize: 15,
-          showSizeChanger: true,
-          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        scroll={{ x: isMobile ? 'max-content' : 800 }}
-      />
+      {loading && models.length === 0 ? (
+        <TableSkeleton columns={isMobile ? 5 : 8} rows={6} compact />
+      ) : (
+        <Table
+          columns={filteredModelColumns}
+          dataSource={models}
+          rowKey="id"
+          locale={{ emptyText: '暂无数据' }}
+          size="small"
+          showSorterTooltip={false}
+          pagination={{
+            pageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          scroll={{ x: isMobile ? 'max-content' : 800 }}
+        />
+      )}
 
       <AppModal
         title={editingModel ? '编辑模型' : '添加模型'}
@@ -1176,22 +1182,25 @@ function ApiKeyManager() {
         </Button>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={apiKeys}
-        rowKey="id"
-        loading={loading ? TABLE_SPIN_INDICATOR : false}
-        locale={{ emptyText: loading ? <span /> : '暂无数据' }}
-        size="small"
-        showSorterTooltip={false}
-        pagination={{
-          pageSize: 15,
-          showSizeChanger: true,
-          pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        scroll={{ x: isMobile ? 'max-content' : 800 }}
-      />
+      {loading && apiKeys.length === 0 ? (
+        <TableSkeleton columns={isMobile ? 4 : 7} rows={5} compact />
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={apiKeys}
+          rowKey="id"
+          locale={{ emptyText: '暂无数据' }}
+          size="small"
+          showSorterTooltip={false}
+          pagination={{
+            pageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '15', '20', '30', '50'],
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          scroll={{ x: isMobile ? 'max-content' : 800 }}
+        />
+      )}
 
       <AppModal
         title={editingKey ? '编辑 API Key' : '创建 API Key'}

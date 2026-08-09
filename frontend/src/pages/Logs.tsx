@@ -14,6 +14,7 @@ import { createLogsStream, fetchLogsDates, fetchLogsHistory, fetchLogsConfig, up
 import { useTheme } from '../context/ThemeContext'
 import Header from '../components/Header'
 import { copyText } from '../utils/clipboard'
+import { LogSkeleton } from '../components/LoadingSkeleton'
 import {
   getLogHeaderMetadata,
   mergeLogLines,
@@ -603,18 +604,18 @@ export default function Logs() {
           maxHeight: 'calc(100vh - 260px)',
         }}
       >
-        {filteredLines.length === 0 ? (
+        {filteredLines.length === 0 && (historyLoading || (isToday && connectionState === 'connecting')) ? (
+          <LogSkeleton />
+        ) : filteredLines.length === 0 ? (
           <div style={{ color: isDark ? '#4a5568' : '#9ca3af', textAlign: 'center', paddingTop: 48, fontSize: 13 }}>
-            {historyLoading
-              ? '加载中...'
-              : isToday
+            {isToday
                 ? !connected
-                  ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>正在连接日志流...</span>
+                  ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>正在连接日志流…</span>
                   : streamEmpty
                     ? <Empty description="暂无系统日志，系统运行正常" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
                     : logFile === 'system'
-                      ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>系统日志较少，等待新日志...</span>
-                      : '暂无日志，等待新日志...'
+                      ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>系统日志较少，等待新日志…</span>
+                      : '暂无日志，等待新日志…'
                 : emptyFile
                   ? <Empty description="该日期的日志文件存在但暂无内容" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
                   : logFile === 'system'

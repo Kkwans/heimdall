@@ -610,6 +610,7 @@ body {
   left: 0;
   height: 100vh;
   z-index: 100;
+  overflow: hidden;
   transition: width var(--duration-slow) var(--ease-default),
               background var(--duration-slow) var(--ease-default);
 }
@@ -901,6 +902,124 @@ body {
   width: 100%;
   height: 320px;
   min-width: 0;
+}
+
+/* ── 结构化加载骨架 ── */
+.hd-skeleton {
+  width: 100%;
+}
+
+.hd-skeleton__block {
+  display: block;
+  min-width: 12px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-surface) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: hd-shimmer 1.4s var(--ease-default) infinite;
+}
+
+.hd-table-skeleton {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.hd-table-skeleton__row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hd-table-skeleton__row:last-child {
+  border-bottom: 0;
+}
+
+.hd-table-skeleton__head {
+  min-height: 42px;
+  background: var(--bg-secondary);
+}
+
+.hd-table-skeleton__head .hd-skeleton__block {
+  height: 14px;
+}
+
+.hd-table-skeleton--compact .hd-table-skeleton__row {
+  min-height: 40px;
+}
+
+.hd-detail-skeleton {
+  padding-top: 2px;
+}
+
+.hd-detail-skeleton__tabs {
+  display: flex;
+  gap: 28px;
+  padding: 8px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hd-detail-skeleton__section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hd-detail-skeleton__section:last-child {
+  border-bottom: 0;
+}
+
+.hd-detail-skeleton__title {
+  margin-bottom: 14px;
+}
+
+.hd-detail-skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+
+.hd-detail-skeleton__item {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.hd-detail-skeleton__item .hd-skeleton__block:last-child {
+  height: 16px;
+}
+
+.hd-log-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.hd-log-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 720px;
+}
+
+.hd-log-skeleton__row .hd-skeleton__block {
+  height: 13px;
+}
+
+@media (max-width: 768px) {
+  .hd-table-skeleton__row {
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .hd-detail-skeleton__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
 }
 
 /* ── Ant Design 全局覆盖（浅色主题基础）── */
@@ -1440,5 +1559,12 @@ body {
   .hd-spin-ring {
     animation-duration: 0.9s !important;
     animation-iteration-count: infinite !important;
+  }
+
+  .hd-skeleton__block,
+  .route-skeleton__header,
+  .route-skeleton__line,
+  .route-skeleton__card {
+    animation: none !important;
   }
 }

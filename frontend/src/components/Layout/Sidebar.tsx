@@ -133,12 +133,12 @@ export default function Sidebar({ collapsed = false, onToggleCollapsed }: Sideba
             type="button"
             className={styles.utilityBtn}
             onClick={onToggleCollapsed}
-            title={collapsed ? '展开侧边栏' : '收起侧边栏'}
-            aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+            title={collapsed ? '展开侧栏' : '折叠侧栏'}
+            aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
             aria-expanded={!collapsed}
           >
             <span className={styles.utilityBtnIcon}><MenuIcon /></span>
-            <span className={styles.utilityBtnLabel}>{collapsed ? '展开侧边栏' : '收起侧边栏'}</span>
+            <span className={styles.utilityBtnLabel}>{collapsed ? '展开侧栏' : '折叠侧栏'}</span>
           </button>
         )}
         <button

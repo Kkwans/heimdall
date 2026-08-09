@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import MobileDrawer from './MobileDrawer'
 import RefreshModule from '../Header/RefreshModule'
+import { readSidebarCollapsedPreference, writeSidebarCollapsedPreference } from './sidebarPreference'
 
 // 路由 → 页面名称映射
 const PAGE_NAMES: Record<string, string> = {
@@ -62,14 +63,14 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('heimdall-sidebar-collapsed') === '1')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readSidebarCollapsedPreference(window.localStorage))
   const location = useLocation()
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed(current => {
       const next = !current
-      localStorage.setItem('heimdall-sidebar-collapsed', next ? '1' : '0')
+      writeSidebarCollapsedPreference(window.localStorage, next)
       return next
     })
   }, [])
