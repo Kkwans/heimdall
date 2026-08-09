@@ -21,7 +21,7 @@ import type { RequestRecord } from '../types'
 import Header from '../components/Header'
 import AppModal from '../components/AppModal'
 import MobileTooltip from '../components/MobileTooltip'
-import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, latencyColor } from '../utils/format'
+import { fmtCny, fmtCnyPerMillionValue, fmtTokens, fmtMs, latencyColor } from '../utils/format'
 import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
@@ -543,10 +543,10 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                       {fmtCny(rec.estimated_cost)}
                     </span>
                   </GridCell>
-                  <GridCell label="综合平均单价">
+                  <GridCell label="综合平均单价（￥/百万 Token）">
                     <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
                       {rec.estimated_cost != null && rec.billable_tokens
-                        ? fmtCnyPerMillion(rec.estimated_cost * 1_000_000 / rec.billable_tokens)
+                        ? fmtCnyPerMillionValue(rec.estimated_cost * 1_000_000 / rec.billable_tokens)
                         : '—'}
                     </span>
                   </GridCell>

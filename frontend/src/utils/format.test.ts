@@ -6,7 +6,7 @@
  * 重点验证边界值（9999/10000, 99999999/100000000）和 null/undefined 处理
  */
 import { describe, it, expect } from 'vitest'
-import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, pctStr, latencyColor } from './format'
+import { fmtCny, fmtCnyPerMillionValue, fmtTokens, fmtMs, pctStr, latencyColor } from './format'
 
 // ──────────────────────────────
 // fmtTokens
@@ -142,9 +142,10 @@ describe('人民币成本格式', () => {
     expect(fmtCny(12.5)).toBe('￥12.5000')
   })
 
-  it('平均单价固定标注每百万 Token', () => {
-    expect(fmtCnyPerMillion(0.61599276)).toBe('￥0.62/百万 Token')
-    expect(fmtCnyPerMillion(0)).toBe('￥0.00/百万 Token')
+  it('平均单价值固定保留两位小数且不重复单位', () => {
+    expect(fmtCnyPerMillionValue(0.61599276)).toBe('0.62')
+    expect(fmtCnyPerMillionValue(0)).toBe('0.00')
+    expect(fmtCnyPerMillionValue(null)).toBe('—')
   })
 })
 

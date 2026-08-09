@@ -32,7 +32,7 @@ import type { ApiKeyModelStat, ApiKeyStat } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useTheme } from '../context/ThemeContext'
 import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } from '../types'
-import { fmtCny, fmtCnyPerMillion, fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
+import { fmtCny, fmtCnyPerMillionValue, fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
 import { PAGE_ICON_STYLE, getVendorColor } from '../components/Charts/chartTheme'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 
@@ -97,13 +97,6 @@ function legendBottom(textStyle?: object) {
 const gridWithLegend = { left: 52, right: 20, top: 30, bottom: 60 }
 const gridWithLegendLarge = { left: 52, right: 20, top: 30, bottom: 80 }
 const gridNoLegend = { left: 52, right: 20, top: 30, bottom: 30 }
-
-// 动态 X 轴 rotate
-function xAxisRotate(dataLen: number) {
-  if (dataLen > 10) return 45
-  if (dataLen > 6) return 30
-  return 0
-}
 
 // Y 轴 splitLine（根据主题）
 function splitLine(isDark: boolean) {
@@ -285,7 +278,7 @@ function DailyRequestChart({ data, isDark }: { data: DailyData[]; isDark: boolea
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLabel: { fontSize: 10, rotate: xAxisRotate(data.length) },
+      axisLabel: { fontSize: 10 },
     },
     yAxis: {
       type: 'value',
@@ -323,7 +316,7 @@ function DailyTokenChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLabel: { fontSize: 10, rotate: xAxisRotate(data.length) },
+      axisLabel: { fontSize: 10 },
     },
     yAxis: {
       type: 'value',
@@ -358,7 +351,7 @@ function DailyLatencyChart({ data, isDark }: { data: DailyData[]; isDark: boolea
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLabel: { fontSize: 10, rotate: xAxisRotate(data.length) },
+      axisLabel: { fontSize: 10 },
     },
     yAxis: {
       type: 'value',
@@ -394,9 +387,6 @@ function ModelLatencyCompare({ data, isDark }: { data: ModelStats[]; isDark: boo
       axisLabel: {
         fontSize: 10,
         interval: 0,
-        rotate: 45,
-        overflow: 'truncate',
-        width: 60,
       },
     },
     yAxis: {
@@ -431,9 +421,6 @@ function LatencyBreakdownChart({ data, isDark }: { data: ModelStats[]; isDark: b
       axisLabel: {
         fontSize: 10,
         interval: 0,
-        rotate: 45,
-        overflow: 'truncate',
-        width: 60,
       },
     },
     yAxis: {
@@ -713,7 +700,7 @@ function DailyCacheChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
-      axisLabel: { fontSize: 10, rotate: xAxisRotate(data.length) },
+      axisLabel: { fontSize: 10 },
     },
     yAxis: {
       type: 'value',
@@ -818,7 +805,7 @@ function ProviderLatencyCompare({ data, isDark }: { data: ProviderStats[]; isDar
     xAxis: {
       type: 'category',
       data: providers,
-      axisLabel: { fontSize: 10, interval: 0, rotate: 45, overflow: 'truncate', width: 60 },
+      axisLabel: { fontSize: 10, interval: 0 },
     },
     yAxis: {
       type: 'value',
@@ -859,7 +846,7 @@ function ProviderOverviewChart({ data, isDark }: { data: ProviderStats[]; isDark
     xAxis: {
       type: 'category',
       data: providers,
-      axisLabel: { fontSize: 10, interval: 0, rotate: 45, overflow: 'truncate', width: 60 },
+      axisLabel: { fontSize: 10, interval: 0 },
     },
     yAxis: [
       {
@@ -1036,8 +1023,8 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
     tooltip: { trigger: 'item', formatter: (p: ChartTooltipParam) => `${p.name}: ${fmtTokens(p.value)} (${p.percent}%)` },
     series: [{
       type: 'pie',
-      radius: ['40%', '70%'],
-      center: isMobile ? ['50%', '50%'] : ['40%', '50%'],
+      radius: isMobile ? ['38%', '66%'] : ['36%', '64%'],
+      center: isMobile ? ['50%', '50%'] : ['28%', '50%'],
       data: chartData,
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 12 } },
@@ -1045,7 +1032,8 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
     legend: isMobile ? undefined : {
       type: 'scroll',
       orient: 'vertical',
-      right: '5%',
+      left: '52%',
+      right: '4%',
       top: 'middle',
       itemWidth: 10,
       itemHeight: 10,
@@ -1056,7 +1044,11 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
       },
     },
   }
-  return <ReactECharts option={option} style={{ height: CHART_HEIGHT }} />
+  return (
+    <div className="hd-api-key-token-chart">
+      <ReactECharts option={option} style={{ height: CHART_HEIGHT + 40 }} />
+    </div>
+  )
 }
 
 function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
@@ -1148,11 +1140,11 @@ function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'ke
       render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)' }}>{pctStr(value)}</span>,
     },
     {
-      title: '平均单价',
+      title: '平均单价（￥/百万 Token）',
       dataIndex: 'avg_cost_per_million_tokens',
       width: 154,
       align: 'left',
-      render: (value: number | null) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{fmtCnyPerMillion(value)}</span>,
+      render: (value: number | null) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{fmtCnyPerMillionValue(value)}</span>,
     },
     {
       title: '覆盖率',
@@ -1450,7 +1442,7 @@ export default function Stats() {
                   {[
                     { title: '总花费', value: fmtCny(costStats.summary.total_cost) },
                     { title: '价格覆盖率', value: pctStr(costStats.summary.coverage_rate) },
-                    { title: '综合平均单价', value: fmtCnyPerMillion(costStats.summary.avg_cost_per_million_tokens) },
+                    { title: '综合平均单价（￥/百万 Token）', value: fmtCnyPerMillionValue(costStats.summary.avg_cost_per_million_tokens) },
                     { title: '历史估算请求', value: costStats.summary.historical_estimate_requests.toLocaleString() },
                   ].map(item => (
                     <Col key={item.title} xs={12} md={6}>
@@ -1493,7 +1485,7 @@ export default function Stats() {
         <>
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={12}>
-              <Card title={sectionTitle('API Key Token 占比', '按 API Key 分布')} bordered={false} className="hd-card" style={{ ...cardStyle, height: '100%' }} size="small">
+              <Card title={sectionTitle('API Key Token 占比', '按 API Key 分布')} bordered={false} className="hd-card hd-api-key-token-card" style={{ ...cardStyle, height: '100%' }} size="small">
                 <ApiKeyTokenPieChart data={apiKeyStats} isMobile={isMobile} />
               </Card>
             </Col>
