@@ -43,6 +43,7 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
   line-height: 1.25;
+  transform: translateY(-1px);
 }
 
 /* 旧版 brand/logo/title：保留向后兼容（不再使用，但防止删除后报错） */

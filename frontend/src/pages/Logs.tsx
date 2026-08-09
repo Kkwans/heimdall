@@ -14,6 +14,12 @@ import { createLogsStream, fetchLogsDates, fetchLogsHistory, fetchLogsConfig, up
 import { useTheme } from '../context/ThemeContext'
 import Header from '../components/Header'
 import { copyText } from '../utils/clipboard'
+import {
+  getLogHeaderMetadata,
+  mergeLogLines,
+  parseLogLine,
+  type LogLine,
+} from '../utils/logDisplay'
 
 type LogFile = 'business' | 'system'
 
@@ -39,145 +45,6 @@ export function speedIcon(ms: number): string {
   if (ms < 30_000) return ''
   if (ms < 60_000) return ' ⏳'
   return ' 🐢'
-}
-
-// ── 日志行解析 ─────────────────────────────────────────
-interface LogLine {
-  id: number
-  raw: string
-  level: 'success' | 'error' | 'warning' | 'info' | 'muted'
-  timeShort: string
-  fullTime: string
-  levelTag: string
-  body: string
-  extra: string[]
-}
-
-let lineIdCounter = 0
-
-const isMobileDevice = () => window.innerWidth <= 768
-
-function shortenTime(full: string): string {
-  const m = full.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/)
-  if (m) {
-    if (isMobileDevice()) {
-      // 移动端：包含完整日期和时间（含年份）
-      return `${m[1]} ${m[2]}`
-    }
-    // PC端：去掉年份，保留月-日 HH:mm:ss
-    const datePart = m[1].slice(5) // 去掉年份，MM-DD
-    return `${datePart} ${m[2]}`
-  }
-  return full
-}
-
-function parseLogLine(raw: string): LogLine {
-  lineIdCounter++
-  const stdMatch = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)?) - (\w+) - (.*)$/)
-
-  let timeShort = ''
-  let fullTime = ''
-  let levelTag = ''
-  let body = raw
-
-  if (stdMatch) {
-    fullTime = stdMatch[1]
-    timeShort = shortenTime(fullTime)
-    levelTag = stdMatch[2].toUpperCase()
-    body = stdMatch[3]
-  }
-
-  let level: LogLine['level'] = 'info'
-  // 分隔线识别：body 全部为 '=' 字符且长度 >= 3
-  const trimmedBody = body.trim()
-  if (trimmedBody.length >= 3 && /^=+$/.test(trimmedBody)) {
-    level = 'muted'
-  } else if (levelTag === 'ERROR' || body.includes('Exception') || body.includes('Traceback') || body.includes('Error:')) {
-    level = 'error'
-  } else if (
-    // HTTP 错误码识别：[❌ 5xx] 模式 → error
-    body.includes('[❌') && /5\d\d/.test(body)
-  ) {
-    level = 'error'
-  } else if (
-    // HTTP 错误码识别：[⚠️ 4xx/5xx] 或 [❌ 4xx] 模式 → warning
-    // 使用 includes 替代正则以避免 emoji 多码点匹配问题
-    (body.includes('[⚠') && /[45]\d\d/.test(body)) ||
-    (body.includes('[❌') && /4\d\d/.test(body)) ||
-    levelTag === 'WARNING' || levelTag === 'WARN' ||
-    (body.includes('Port') && body.includes('use')) ||
-    body.includes('Address already')
-  ) {
-    level = 'warning'
-  } else if (body.includes('[✅') || body.includes('✅') || body.startsWith('HTTP 2')) {
-    level = 'success'
-  } else if (trimmedBody === '') {
-    level = 'muted'
-  }
-
-  return { id: lineIdCounter, raw, level, timeShort, fullTime, levelTag, body, extra: [] }
-}
-
-// ── 续行判断：是否是 traceback/exception 续行 ──
-// 识别规则：
-//   1. body 以空格或 Tab 开头（traceback indent）
-//   2. body 为单独的 ":" 或很短的文本（Python exception 换行）
-//   3. body 看起来是 exception message（上一行是 ExceptionType:）
-//   4. body 以常见 exception 关键字结尾（SyntaxError, TypeError 等）
-function _isTraceContinuation(body: string, prevBody: string): boolean {
-  if (!body) return false
-  // 以缩进开头的行（traceback 堆栈行）
-  if (/^\s+/.test(body)) return true
-  // 单独的 ":" 或极短的行（Python exception 类型和消息拆成两行的情况）
-  if (body === ':' || body.trim() === '') return true
-  // 上一行以 Exception 类型名结尾（如 TypeError）
-  if (/^[A-Z]\w+(Error|Exception|Warning|Interrupt)$/.test(prevBody?.trim() ?? '')) return true
-  // 上一行以 ":" 结尾（错误类型行）
-  if ((prevBody?.trimEnd().endsWith(':')) && body.length < 200) return true
-  return false
-}
-
-// ── 日志合并：同一时间戳+级别的多条日志合并为一组，续行自动追加 ──
-// 相比 v6：
-//   - 增强续行识别：不仅识别无时间戳续行，也识别 traceback 特征行
-//   - 相同时间戳的连续同级别日志合并（应对后端每行都加时间戳的情况）
-function mergeLogLines(lines: LogLine[]): LogLine[] {
-  const result: LogLine[] = []
-  for (const line of lines) {
-    if (line.level === 'muted') {
-      result.push(line)
-      continue
-    }
-    const last = result[result.length - 1]
-
-    // 无时间戳的续行（标准 Python logging exc_info 格式）：追加到上一条
-    if (!line.fullTime && last) {
-      last.extra.push(line.body || line.raw)
-      continue
-    }
-
-    // 同一毫秒时间戳 + 同级别的日志合并（后端每行都加时间戳的特殊格式）
-    if (last && last.fullTime && last.fullTime === line.fullTime && last.levelTag === line.levelTag) {
-      last.extra.push(line.body)
-      continue
-    }
-
-    // 续行识别：当前行是 traceback 的一部分
-    // 条件：前一条是 error/warning 级别，且当前行满足续行特征
-    if (
-      last &&
-      (last.level === 'error' || last.level === 'warning') &&
-      (line.level === 'error' || line.level === 'warning') &&
-      line.levelTag === last.levelTag &&
-      _isTraceContinuation(line.body, last.extra.length > 0 ? last.extra[last.extra.length - 1] : last.body)
-    ) {
-      last.extra.push(line.body)
-      continue
-    }
-
-    result.push({ ...line, extra: [] })
-  }
-  return result
 }
 
 // ── 颜色表 ────────────────────────────────────────────
@@ -849,6 +716,7 @@ function LogRow({ line, isDark, isSystemFile }: LogRowProps) {
   }
 
   const levelBg = getLevelBg(line.level)
+  const headerMetadata = getLogHeaderMetadata(line, isSystemFile)
 
   const tagEl = (
     <span style={{
@@ -874,70 +742,46 @@ function LogRow({ line, isDark, isSystemFile }: LogRowProps) {
   )
 
   return (
-    <>
-      {/* 桌面端：两行格式 */}
-      {/* 第一行：日期行（时间 + 级别标签），独立展示，支持框选复制 */}
+    <div className="log-entry">
+      {/* 桌面端：时间与扩展元数据；不重复正文。 */}
       {line.fullTime && (
-        <div className="log-row-desktop" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
+        <div className="log-row-desktop log-entry__header" style={{
           background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
-          borderLeft: `3px solid ${levelTagColor}`,
-          padding: '4px 12px',
-          fontSize: 13,
+          borderLeftColor: levelTagColor,
           color: isDark ? '#9ca3af' : '#4b5563',
-          fontFamily: 'var(--font-mono)',
-          userSelect: 'text',
-          marginBottom: 2,
-          whiteSpace: 'nowrap',
-          letterSpacing: '0.02em',
-          borderRadius: 2,
         }}>
-          <span style={{ opacity: 0.8 }}>{formatFullTime(line.fullTime)}</span>
-          <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+          <span className="log-entry__timestamp">{formatFullTime(line.fullTime)}</span>
+          <span className="log-entry__separator" aria-hidden="true" />
           {tagEl}
-          <span style={{ width: 1, height: 14, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>
-            {line.body.length > 80 ? line.body.slice(0, 80) + '…' : line.body}
+          <span className="log-entry__metadata">
+            {headerMetadata.map((item, index) => (
+              <span className="log-entry__meta-item" key={`${item}-${index}`}>{item}</span>
+            ))}
           </span>
         </div>
       )}
-      {/* 第二行：日志内容 */}
-      <div className="log-row-desktop" style={{
-        padding: '2px 0 5px 10px',
-        paddingBottom: hasExtra ? 0 : '5px',
-        borderBottom: hasExtra ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)'),
-        minWidth: 0,
-        userSelect: 'text',
+
+      {/* 桌面端：正文与真实 traceback 续行共享同一左边界。 */}
+      <div className="log-row-desktop log-entry__body" style={{
+        borderBottomColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.055)',
       }}>
-        {bodyEl}
+        <div>{bodyEl}</div>
+        {hasExtra && line.extra.map((ext, i) => (
+          <div key={i} className="log-entry__continuation" style={{ color: extraColor }}>
+            {highlightBody(ext, isSystemFile ? 'info' : line.level, isDark)}
+          </div>
+        ))}
       </div>
 
-      {/* 桌面端：追加行（堆栈行） */}
-      {hasExtra && (
-        <div className="log-row-desktop" style={{
-          paddingLeft: 52,
-          paddingBottom: '4px',
-          borderBottom: isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)',
-        }}>
-          {line.extra.map((ext, i) => (
-            <div key={i} style={{ color: extraColor, fontSize: 11, lineHeight: 1.5, wordBreak: 'break-word' }}>
-              {highlightBody(ext, isSystemFile ? 'info' : line.level, isDark)}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 移动端：两行（时间+级别 / 内容） */}
+      {/* 移动端：时间保留到秒，正文独立换行。 */}
       <div className="log-row-mobile" style={{
-        padding: '4px 0',
-        borderBottom: isDark ? '1px solid rgba(255,255,255,0.015)' : '1px solid rgba(0,0,0,0.04)',
+        padding: '5px 0 7px',
+        borderBottom: isDark ? '1px solid rgba(255,255,255,0.025)' : '1px solid rgba(0,0,0,0.055)',
         minWidth: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
           <span style={{
-            fontSize: 13,
+            fontSize: 12,
             color: isDark ? '#6b7280' : '#64748b',
             fontFamily: 'var(--font-mono)',
             whiteSpace: 'nowrap',
@@ -953,12 +797,12 @@ function LogRow({ line, isDark, isSystemFile }: LogRowProps) {
           {highlightBody(line.body, isSystemFile ? 'info' : line.level, isDark)}
         </div>
         {hasExtra && line.extra.map((ext, i) => (
-          <div key={i} style={{ color: extraColor, fontSize: 11, lineHeight: 1.5, wordBreak: 'break-word', marginTop: 1 }}>
+          <div key={i} style={{ color: extraColor, fontSize: 11, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap', marginTop: 1 }}>
             {highlightBody(ext, isSystemFile ? 'info' : line.level, isDark)}
           </div>
         ))}
       </div>
-    </>
+    </div>
   )
 }
 

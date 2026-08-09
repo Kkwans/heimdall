@@ -36,38 +36,6 @@
   letter-spacing: -0.02em;
 }
 
-.collapseBtn {
-  position: absolute;
-  top: 76px;
-  right: -14px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--text-muted);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: 50%;
-  box-shadow: var(--shadow-xs);
-  cursor: pointer;
-  transition: color var(--duration-base) var(--ease-default),
-              border-color var(--duration-base) var(--ease-default),
-              background var(--duration-base) var(--ease-default);
-}
-
-.collapseBtn:hover {
-  color: var(--accent-blue);
-  border-color: var(--accent-blue);
-}
-
-.collapseBtn:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-
 /* ── 导航 ── */
 .nav {
   flex: 1;
@@ -125,11 +93,14 @@
 
 /* ── 底部 ── */
 .footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 12px 10px 16px;
   border-top: 1px solid var(--border-subtle);
 }
 
-.themeBtn {
+.utilityBtn {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -147,17 +118,24 @@
               background var(--duration-base) var(--ease-default);
 }
 
-.themeBtn:hover {
+.utilityBtn:hover {
   color: var(--text-secondary);
   background: var(--bg-secondary);
 }
 
-.themeBtnIcon {
-  display: flex;
-  align-items: center;
+.utilityBtn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
-.themeBtnLabel {
+.utilityBtnIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.utilityBtnLabel {
   font-size: 14px;
 }
 
@@ -168,7 +146,7 @@
 
 .sidebarCollapsed .logoText,
 .sidebarCollapsed .navLabel,
-.sidebarCollapsed .themeBtnLabel {
+.sidebarCollapsed .utilityBtnLabel {
   display: none;
 }
 
@@ -187,12 +165,12 @@
   padding-inline: 8px;
 }
 
-.sidebarCollapsed .themeBtn {
+.sidebarCollapsed .utilityBtn {
   justify-content: center;
   padding-inline: 0;
 }
 
-.sidebarCollapsed .themeBtnIcon svg {
+.sidebarCollapsed .utilityBtnIcon svg {
   width: 19px;
   height: 19px;
 }

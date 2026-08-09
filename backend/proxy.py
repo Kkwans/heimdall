@@ -47,7 +47,7 @@ class CSTFormatter(logging.Formatter):
         dt = datetime.fromtimestamp(record.created, tz=CST)
         if datefmt:
             return dt.strftime(datefmt)
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
+        return f"{dt.strftime('%Y-%m-%d %H:%M:%S')},{int(record.msecs):03d}"
 
 def setup_logger(name, log_file, level=logging.INFO):
     log_path = os.path.join(config.LOG_DIR, log_file)

@@ -458,13 +458,11 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
       className="hd-request-detail-modal"
       centered={true}
       style={mobile ? { marginTop: MOBILE_V_MARGIN, marginBottom: MOBILE_V_MARGIN, marginLeft: 12, marginRight: 12 } : undefined}
-      styles={{
-        body: {
-          maxHeight: mobile
-            ? `calc(100svh - ${MOBILE_V_MARGIN * 2 + 44 + 20}px)`
-            : 'calc(80vh - 56px)',
-          overflowY: 'auto',
-        },
+      contentStyle={{
+        maxHeight: mobile
+          ? `calc(100svh - ${MOBILE_V_MARGIN * 2 + 44 + 20}px)`
+          : 'calc(80vh - 56px)',
+        overflowY: 'auto',
       }}
     >
       {loading && <div style={{ textAlign: 'center', padding: '40px 0' }}><SpinRing size={28} /></div>}
@@ -851,26 +849,18 @@ export default function Requests() {
       ),
     },
     {
-      title: '请求模型',
+      title: '模型',
       dataIndex: 'model',
       key: 'model',
-      width: isMobile ? 176 : 210,
+      width: isMobile ? 100 : 140,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
-      render: (v: string, record) => {
+      render: (v: string) => {
         return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: '100%', minWidth: 0 }}>
-            {record.provider && (
-              <>
-                <Tooltip title={record.provider}>
-                  <VendorTag name={record.provider} style={{ flexShrink: 0, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }} />
-                </Tooltip>
-                <span aria-hidden="true" style={{ color: 'var(--text-disabled)', fontSize: 11 }}>/</span>
-              </>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Tooltip title={v}>
-              <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: isMobile ? 94 : 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
+              <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
             </Tooltip>
           </div>
         )
@@ -890,16 +880,27 @@ export default function Requests() {
       ),
     },
     {
-      title: '请求类型',
+      title: '厂商',
+      dataIndex: 'provider',
+      key: 'provider',
+      width: isMobile ? 80 : 100,
+      align: 'center' as const,
+      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
+      onCell: () => ({ style: cellStyle }),
+      render: (value: string | null) => value
+        ? <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis' }} />
+        : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
+    },
+    {
+      title: '模式',
       dataIndex: 'stream',
-      key: 'request_type',
-      width: 94,
+      width: 56,
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
       render: (v: number) => (
-        <Tag color={v ? 'purple' : 'default'} style={{ fontSize: 11, borderRadius: 3, margin: 0, padding: '0 5px', whiteSpace: 'nowrap' }}>
-          {formatRequestType(v)}
+        <Tag color={v ? 'purple' : 'default'} style={{ fontSize: 10, borderRadius: 2, margin: 0, padding: '0 4px' }}>
+          {v ? 'SSE' : 'JSON'}
         </Tag>
       ),
     },
@@ -1079,7 +1080,7 @@ export default function Requests() {
   const mobileColumnKeys = new Set([
     'created_at',
     'model',
-    'request_type',
+    'provider',
     'total_tokens',
     'estimated_cost',
     'success',

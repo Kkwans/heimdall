@@ -108,19 +108,6 @@ export default function Sidebar({ collapsed = false, onToggleCollapsed }: Sideba
         <span className={styles.logoText}>Heimdall</span>
       </div>
 
-      {onToggleCollapsed && (
-        <button
-          type="button"
-          className={styles.collapseBtn}
-          onClick={onToggleCollapsed}
-          title={collapsed ? '展开侧边栏' : '收起侧边栏'}
-          aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
-          aria-expanded={!collapsed}
-        >
-          <MenuIcon />
-        </button>
-      )}
-
       {/* 导航菜单 */}
       <nav className={styles.nav}>
         {navItems.map(item => (
@@ -139,19 +126,32 @@ export default function Sidebar({ collapsed = false, onToggleCollapsed }: Sideba
         ))}
       </nav>
 
-      {/* 底部：主题切换 */}
+      {/* 底部：侧栏折叠与主题切换 */}
       <div className={styles.footer}>
+        {onToggleCollapsed && (
+          <button
+            type="button"
+            className={styles.utilityBtn}
+            onClick={onToggleCollapsed}
+            title={collapsed ? '展开侧边栏' : '收起侧边栏'}
+            aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+            aria-expanded={!collapsed}
+          >
+            <span className={styles.utilityBtnIcon}><MenuIcon /></span>
+            <span className={styles.utilityBtnLabel}>{collapsed ? '展开侧边栏' : '收起侧边栏'}</span>
+          </button>
+        )}
         <button
           type="button"
-          className={styles.themeBtn}
+          className={styles.utilityBtn}
           onClick={toggleTheme}
           title={theme === 'light' ? '切换深色模式' : '切换浅色模式'}
           aria-label={theme === 'light' ? '切换深色模式' : '切换浅色模式'}
         >
-          <span className={styles.themeBtnIcon}>
+          <span className={styles.utilityBtnIcon}>
             {theme === 'light' ? <MoonIcon /> : <SunIcon />}
           </span>
-          <span className={styles.themeBtnLabel}>
+          <span className={styles.utilityBtnLabel}>
             {theme === 'light' ? '深色模式' : '浅色模式'}
           </span>
         </button>

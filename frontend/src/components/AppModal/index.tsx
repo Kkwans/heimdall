@@ -1,10 +1,13 @@
 import React from 'react'
 import { Modal } from 'antd'
+import { CloseOutlined } from '@ant-design/icons'
 import type { ModalProps } from 'antd'
 
-interface AppModalProps extends Omit<ModalProps, 'title'> {
+interface AppModalProps extends Omit<ModalProps, 'title' | 'closable' | 'closeIcon'> {
   title: React.ReactNode
   titleMeta?: React.ReactNode
+  closable?: boolean
+  contentStyle?: React.CSSProperties
 }
 
 /**
@@ -18,6 +21,9 @@ export default function AppModal({
   titleMeta,
   className,
   children,
+  closable = true,
+  contentStyle,
+  onCancel,
   ...props
 }: AppModalProps) {
   const modalClassName = ['hd-app-modal', className].filter(Boolean).join(' ')
@@ -26,14 +32,30 @@ export default function AppModal({
     <Modal
       {...props}
       className={modalClassName}
-      title={(
+      title={null}
+      closable={false}
+      onCancel={onCancel}
+    >
+      <div className="hd-modal-header">
         <div className="hd-modal-title">
           <div className="hd-modal-title__text">{title}</div>
           {titleMeta != null && <span className="hd-modal-title__meta">{titleMeta}</span>}
         </div>
-      )}
-    >
-      {children}
+        {closable && (
+          <button
+            type="button"
+            className="hd-modal-close"
+            onClick={onCancel}
+            aria-label="关闭弹窗"
+            title="关闭"
+          >
+            <CloseOutlined />
+          </button>
+        )}
+      </div>
+      <div className="hd-modal-body-content" style={contentStyle}>
+        {children}
+      </div>
     </Modal>
   )
 }
