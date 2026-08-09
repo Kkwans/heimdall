@@ -11,7 +11,7 @@ import {
   TooltipComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { getCategoryAxisLayout } from './chartLayout'
+import { getCategoryAxisLayout, getDateAxisLayout } from './chartLayout'
 
 echarts.use([
   BarChart,
@@ -72,6 +72,30 @@ function adaptCategoryAxis(option: ChartOptionRecord, containerWidth: number): C
       ? axisRecord.axisLabel as ChartOptionRecord
       : {}
     const fontSize = numericGridValue(axisLabel.fontSize, 10)
+    const isDateAxis = axisRecord.heimdallAxisType === 'date'
+    const cleanAxisRecord = { ...axisRecord }
+    delete cleanAxisRecord.heimdallAxisType
+
+    if (isDateAxis) {
+      const dateLayout = getDateAxisLayout(
+        labels,
+        containerWidth,
+        numericGridValue(gridRecord.left, 52),
+        numericGridValue(gridRecord.right, 20),
+      )
+      changed = true
+      return {
+        ...cleanAxisRecord,
+        axisLabel: {
+          ...axisLabel,
+          ...dateLayout,
+          hideOverlap: false,
+          overflow: undefined,
+          width: undefined,
+        },
+      }
+    }
+
     const layout = getCategoryAxisLayout({
       labels,
       containerWidth,
@@ -97,7 +121,7 @@ function adaptCategoryAxis(option: ChartOptionRecord, containerWidth: number): C
       delete nextAxisLabel.overflow
     }
 
-    return { ...axisRecord, axisLabel: nextAxisLabel }
+    return { ...cleanAxisRecord, axisLabel: nextAxisLabel }
   })
 
   if (!changed) return option

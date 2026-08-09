@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getCategoryAxisLayout } from './chartLayout'
+import { getCategoryAxisLayout, getDateAxisLayout } from './chartLayout'
 
 describe('分类轴自适应布局', () => {
   it('宽屏少量短标签保持水平展示', () => {
@@ -56,5 +56,31 @@ describe('分类轴自适应布局', () => {
     })
 
     expect(withLegend.gridBottom).toBeGreaterThan(withoutLegend.gridBottom)
+  })
+})
+
+describe('连续日期轴自适应布局', () => {
+  it('同一年只显示月日并在宽屏保留全部七个日期', () => {
+    const labels = Array.from({ length: 7 }, (_, index) => `2026-08-${String(index + 1).padStart(2, '0')}`)
+    const layout = getDateAxisLayout(labels, 960)
+
+    expect(layout.rotate).toBe(0)
+    expect(layout.formatter(labels[0])).toBe('08-01')
+    expect(labels.map((_, index) => layout.interval(index))).toEqual(Array(7).fill(true))
+  })
+
+  it('长日期范围只抽取少量等距节点并保留首尾', () => {
+    const labels = Array.from({ length: 30 }, (_, index) => `2026-07-${String(index + 1).padStart(2, '0')}`)
+    const layout = getDateAxisLayout(labels, 960)
+    const visible = labels.map((_, index) => layout.interval(index))
+
+    expect(visible.filter(Boolean).length).toBeLessThanOrEqual(8)
+    expect(visible[0]).toBe(true)
+    expect(visible[visible.length - 1]).toBe(true)
+  })
+
+  it('跨年时才保留年份', () => {
+    const layout = getDateAxisLayout(['2025-12-31', '2026-01-01'], 420)
+    expect(layout.formatter('2025-12-31')).toBe('2025-12-31')
   })
 })

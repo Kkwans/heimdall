@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
-import dayjs from 'dayjs'
 import type { DatePreset, DateRange } from '../types'
+import { getDateRange } from './dateRange'
 
 interface FilterContextValue {
   datePreset: DatePreset
@@ -20,23 +20,6 @@ interface FilterContextValue {
 }
 
 const FilterContext = createContext<FilterContextValue | null>(null)
-
-function getDateRange(preset: DatePreset): DateRange {
-  const today = dayjs().format('YYYY-MM-DD')
-  switch (preset) {
-    case 'today':
-      return { start: today, end: today }
-    case '7days':
-      return { start: dayjs().subtract(6, 'day').format('YYYY-MM-DD'), end: today }
-    case '30days':
-      return { start: dayjs().subtract(29, 'day').format('YYYY-MM-DD'), end: today }
-    case 'all':
-      // 全部：不传日期，后端返回全量
-      return { start: undefined, end: undefined }
-    default:
-      return { start: dayjs().subtract(6, 'day').format('YYYY-MM-DD'), end: today }
-  }
-}
 
 export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [datePreset, setDatePresetState] = useState<DatePreset>('7days')

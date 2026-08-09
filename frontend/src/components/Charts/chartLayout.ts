@@ -16,6 +16,12 @@ export interface CategoryAxisLayout {
   gridBottom: number
 }
 
+export interface DateAxisLayout {
+  formatter: (value: string) => string
+  interval: (index: number) => boolean
+  rotate: 0
+}
+
 function estimateTextWidth(text: string, fontSize: number): number {
   return Array.from(text).reduce((width, character) => {
     const isWide = (character.codePointAt(0) ?? 0) > 0xff
@@ -73,4 +79,44 @@ export function getCategoryAxisLayout({
     : undefined
 
   return { rotate, labelWidth, gridBottom }
+}
+
+function dateYear(value: string): string | null {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value)
+  return match?.[1] ?? null
+}
+
+/**
+ * 连续日期轴始终水平展示，并根据真实容器宽度抽取少量等距节点。
+ * 同一年仅显示 MM-DD；跨年才保留 YYYY，避免 PC 端也被无意义年份挤占。
+ */
+export function getDateAxisLayout(
+  labels: string[],
+  containerWidth: number,
+  gridLeft = 52,
+  gridRight = 20,
+): DateAxisLayout {
+  const years = new Set(labels.map(dateYear).filter((year): year is string => year !== null))
+  const crossesYear = years.size > 1
+  const count = labels.length
+  const usableWidth = Math.max(containerWidth - gridLeft - gridRight, 120)
+  const maxLabels = Math.max(2, Math.min(8, Math.floor(usableWidth / 110) + 1))
+  const visibleIndices = new Set<number>()
+
+  if (count <= maxLabels) {
+    labels.forEach((_, index) => visibleIndices.add(index))
+  } else {
+    for (let slot = 0; slot < maxLabels; slot += 1) {
+      visibleIndices.add(Math.round(slot * (count - 1) / (maxLabels - 1)))
+    }
+  }
+
+  return {
+    rotate: 0,
+    interval: (index: number) => visibleIndices.has(index),
+    formatter: (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+      return crossesYear ? value : value.slice(5)
+    },
+  }
 }

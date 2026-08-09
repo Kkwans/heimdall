@@ -63,6 +63,7 @@ const TokenTrend = memo(function TokenTrend() {
     },
     xAxis: {
       type: 'category',
+      heimdallAxisType: 'date',
       data: data.map(d => d.date),
       axisLine: getAxisForTheme(isDark).line,
       axisLabel: getAxisForTheme(isDark).label,

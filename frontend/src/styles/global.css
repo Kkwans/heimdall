@@ -191,7 +191,7 @@ body {
 .route-skeleton__card {
   background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-surface) 50%, var(--bg-secondary) 75%);
   background-size: 200% 100%;
-  animation: hd-shimmer 1.4s var(--ease-default) infinite;
+  animation: hd-shimmer 2.2s linear infinite;
 }
 
 .route-skeleton__header {
@@ -916,7 +916,7 @@ body {
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-surface) 50%, var(--bg-secondary) 75%);
   background-size: 200% 100%;
-  animation: hd-shimmer 1.4s var(--ease-default) infinite;
+  animation: hd-shimmer 2.2s linear infinite;
 }
 
 .hd-table-skeleton {
@@ -1512,8 +1512,8 @@ body {
 
 /* ── Shimmer 骨架卡片（产品额度加载占位） ── */
 @keyframes hd-shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .hd-shimmer-card {
@@ -1526,7 +1526,7 @@ body {
     var(--bg-card, #fff) 75%
   );
   background-size: 800px 100%;
-  animation: hd-shimmer 1.4s ease-in-out infinite;
+  animation: hd-shimmer 2.2s linear infinite;
   border: 1px solid var(--border-subtle, #e7e5e4);
 }
 

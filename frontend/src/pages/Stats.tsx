@@ -10,8 +10,9 @@
  */
 import React, { useEffect, useState, useCallback } from 'react'
 import {
-  Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker, Tag
+  Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker, Tag, Tooltip
 } from 'antd'
+import { InfoCircleOutlined } from '@ant-design/icons'
 import { TableSkeleton } from '../components/LoadingSkeleton'
 import type { ColumnsType } from 'antd/es/table'
 import ReactECharts, { type ChartTooltipParam, type EChartRef } from '../components/Charts/EChart'
@@ -278,6 +279,7 @@ function DailyRequestChart({ data, isDark }: { data: DailyData[]; isDark: boolea
     grid: gridWithLegend,
     xAxis: {
       type: 'category',
+      heimdallAxisType: 'date',
       data: data.map(d => d.date),
       axisLabel: { fontSize: 10 },
     },
@@ -316,6 +318,7 @@ function DailyTokenChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     grid: gridWithLegend,
     xAxis: {
       type: 'category',
+      heimdallAxisType: 'date',
       data: data.map(d => d.date),
       axisLabel: { fontSize: 10 },
     },
@@ -351,6 +354,7 @@ function DailyLatencyChart({ data, isDark }: { data: DailyData[]; isDark: boolea
     grid: gridNoLegend,
     xAxis: {
       type: 'category',
+      heimdallAxisType: 'date',
       data: data.map(d => d.date),
       axisLabel: { fontSize: 10 },
     },
@@ -700,6 +704,7 @@ function DailyCacheChart({ data, isDark }: { data: DailyData[]; isDark: boolean 
     grid: gridNoLegend,
     xAxis: {
       type: 'category',
+      heimdallAxisType: 'date',
       data: data.map(d => d.date),
       axisLabel: { fontSize: 10 },
     },
@@ -1025,8 +1030,8 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
     tooltip: { trigger: 'item', formatter: (p: ChartTooltipParam) => `${p.name}: ${fmtTokens(p.value)} (${p.percent}%)` },
     series: [{
       type: 'pie',
-      radius: isMobile ? ['38%', '66%'] : ['36%', '64%'],
-      center: isMobile ? ['50%', '50%'] : ['28%', '50%'],
+      radius: isMobile ? ['38%', '66%'] : ['38%', '68%'],
+      center: isMobile ? ['50%', '50%'] : ['36%', '50%'],
       data: chartData,
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 12 } },
@@ -1034,7 +1039,7 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
     legend: isMobile ? undefined : {
       type: 'scroll',
       orient: 'vertical',
-      left: '52%',
+      left: '58%',
       right: '4%',
       top: 'middle',
       itemWidth: 10,
@@ -1064,8 +1069,13 @@ function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
       title: 'API Key',
       dataIndex: 'api_key_name',
       key: 'name',
-      align: 'left',
-      render: (v: string, row) => <ApiKeyName name={v} deleted={row.api_key_deleted} />,
+      align: 'center',
+      width: '28%',
+      render: (v: string, row) => (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <ApiKeyName name={v} deleted={row.api_key_deleted} />
+        </div>
+      ),
     },
     { title: '请求数', dataIndex: 'total_requests', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
     { title: '成功', dataIndex: 'success_requests', key: 'ok', align: 'center', render: (v: number) => <span style={{ ...mono, color: 'var(--color-success)' }}>{v}</span> },
@@ -1096,13 +1106,18 @@ function ApiKeyModelStatsTable({ data }: { data: ApiKeyModelStat[] }) {
       title: 'API Key',
       dataIndex: 'api_key_name',
       key: 'name',
-      align: 'left',
-      render: (v: string, row) => <ApiKeyName name={v} deleted={row.api_key_deleted} />,
+      align: 'center',
+      width: '24%',
+      render: (v: string, row) => (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <ApiKeyName name={v} deleted={row.api_key_deleted} />
+        </div>
+      ),
     },
-    { title: '模型', dataIndex: 'model', key: 'model', align: 'center', render: (v: string) => <ModelTag name={v} /> },
-    { title: '请求数', dataIndex: 'request_count', key: 'req', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
-    { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
-    { title: '均延迟', dataIndex: 'avg_latency_ms', key: 'lat', align: 'center', render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span> },
+    { title: '模型', dataIndex: 'model', key: 'model', width: '24%', align: 'center', render: (v: string) => <ModelTag name={v} /> },
+    { title: '请求数', dataIndex: 'request_count', key: 'req', width: '17%', align: 'center', render: (v: number) => <span style={mono}>{v}</span> },
+    { title: '总 Token', dataIndex: 'total_tokens', key: 'tokens', width: '17%', align: 'center', render: (v: number) => <span style={mono}>{fmtTokens(v)}</span> },
+    { title: '均延迟', dataIndex: 'avg_latency_ms', key: 'lat', width: '18%', align: 'center', render: (v: number) => <span style={{ ...mono, color: latencyColor(v) }}>{fmtMs(v)}</span> },
   ]
   
   return (
@@ -1117,6 +1132,11 @@ function ApiKeyModelStatsTable({ data }: { data: ApiKeyModelStat[] }) {
 }
 
 function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'key' | 'model' }) {
+  const numericText: React.CSSProperties = {
+    fontFamily: 'inherit',
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 12,
+  }
   const columns: ColumnsType<CostGroup> = [
     {
       title: dimension === 'key' ? '客户端 API Key' : '模型',
@@ -1132,28 +1152,35 @@ function CostGroupTable({ data, dimension }: { data: CostGroup[]; dimension: 'ke
       dataIndex: 'total_cost',
       width: 112,
       align: 'left',
-      render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-warning)' }}>{fmtCny(value)}</span>,
+      render: (value: number) => <span style={{ ...numericText, color: 'var(--color-warning)' }}>{fmtCny(value)}</span>,
     },
     {
       title: '占比',
       dataIndex: 'cost_share',
       width: 78,
       align: 'left',
-      render: (value: number) => <span style={{ fontFamily: 'var(--font-mono)' }}>{pctStr(value)}</span>,
+      render: (value: number) => <span style={numericText}>{pctStr(value)}</span>,
     },
     {
-      title: '平均单价（￥/百万 Token）',
+      title: (
+        <Space size={4}>
+          <span>平均单价</span>
+          <Tooltip title="人民币/百万 Token">
+            <InfoCircleOutlined tabIndex={0} aria-label="平均单价单位：人民币/百万 Token" style={{ color: 'var(--text-muted)' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'avg_cost_per_million_tokens',
-      width: 154,
+      width: 112,
       align: 'left',
-      render: (value: number | null) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{fmtCnyPerMillionValue(value)}</span>,
+      render: (value: number | null) => <span style={numericText}>{fmtCnyPerMillionValue(value)}</span>,
     },
     {
       title: '覆盖率',
       dataIndex: 'coverage_rate',
       width: 78,
       align: 'left',
-      render: (value: number) => <span style={{ color: value < 1 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>{pctStr(value)}</span>,
+      render: (value: number) => <span style={{ ...numericText, color: value < 1 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>{pctStr(value)}</span>,
     },
   ]
   return (
@@ -1442,16 +1469,27 @@ export default function Stats() {
               <>
                 <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
                   {[
-                    { title: '总花费', value: fmtCny(costStats.summary.total_cost) },
-                    { title: '价格覆盖率', value: pctStr(costStats.summary.coverage_rate) },
-                    { title: '综合平均单价（￥/百万 Token）', value: fmtCnyPerMillionValue(costStats.summary.avg_cost_per_million_tokens) },
-                    { title: '历史估算请求', value: costStats.summary.historical_estimate_requests.toLocaleString() },
+                    { key: 'cost', title: '总花费', value: fmtCny(costStats.summary.total_cost) },
+                    { key: 'coverage', title: '价格覆盖率', value: pctStr(costStats.summary.coverage_rate) },
+                    {
+                      key: 'unit-price',
+                      title: (
+                        <Space size={4}>
+                          <span>综合平均单价</span>
+                          <Tooltip title="人民币/百万 Token">
+                            <InfoCircleOutlined tabIndex={0} aria-label="综合平均单价单位：人民币/百万 Token" />
+                          </Tooltip>
+                        </Space>
+                      ),
+                      value: fmtCnyPerMillionValue(costStats.summary.avg_cost_per_million_tokens),
+                    },
+                    { key: 'historical', title: '历史估算请求', value: costStats.summary.historical_estimate_requests.toLocaleString() },
                   ].map(item => (
-                    <Col key={item.title} xs={12} md={6}>
+                    <Col key={item.key} xs={12} md={6}>
                       <Statistic
                         title={<span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.title}</span>}
                         value={item.value}
-                        valueStyle={{ fontSize: 17, fontWeight: 700, fontFamily: 'var(--font-mono)' }}
+                        valueStyle={{ fontSize: 17, fontWeight: 700, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}
                       />
                     </Col>
                   ))}
