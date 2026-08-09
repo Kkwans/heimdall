@@ -78,6 +78,8 @@
   align-items: center;
   opacity: 0.8;
   flex-shrink: 0;
+  transform: translateX(0);
+  transition: transform var(--duration-slow) var(--ease-default);
 }
 
 .navIcon svg {
@@ -147,6 +149,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transform: translateX(0);
+  transition: transform var(--duration-slow) var(--ease-default);
 }
 
 .utilityBtnLabel {
@@ -167,4 +171,14 @@
 .sidebarCollapsed .utilityBtnIcon svg {
   width: 19px;
   height: 19px;
+}
+
+/* 折叠态仍保留左对齐布局，避免宽度动画期间图标横穿侧栏。
+   仅补偿隐藏标签残留 gap 造成的视觉偏移，使图标与按钮背景同轴。 */
+.sidebarCollapsed .navIcon {
+  transform: translateX(3px);
+}
+
+.sidebarCollapsed .utilityBtnIcon {
+  transform: translateX(4px);
 }
