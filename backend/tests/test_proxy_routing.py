@@ -210,6 +210,63 @@ def test_six_protocol_modes_create_one_complete_record(
     assert record["response_body"]
 
 
+@pytest.mark.parametrize(
+    ("endpoint", "auth_header", "usage", "expected"),
+    [
+        (
+            "/v1/responses",
+            "Authorization",
+            {
+                "input_tokens": 10,
+                "output_tokens": 3,
+                "total_tokens": 13,
+                "input_tokens_details": {"cached_tokens": 6},
+            },
+            (10, 3, 13, 6, 0),
+        ),
+        (
+            "/v1/messages",
+            "x-api-key",
+            {
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "cache_read_input_tokens": 5,
+                "cache_creation_input_tokens": 3,
+            },
+            (10, 1, 11, 5, 3),
+        ),
+    ],
+)
+def test_cache_usage_survives_proxy_recording_normalization(
+    proxy_env, monkeypatch, endpoint, auth_header, usage, expected
+) -> None:
+    monkeypatch.setattr(
+        proxy.http_requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(payload={"usage": usage}),
+    )
+    headers = {auth_header: proxy_env["client_secret"]}
+    if auth_header == "Authorization":
+        headers[auth_header] = f"Bearer {proxy_env['client_secret']}"
+
+    response = proxy_env["app"].test_client().post(
+        endpoint,
+        json={"model": "fixture/gateway-model", "messages": []},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    record = proxy_env["records"][0]
+    actual = (
+        record["prompt_tokens"],
+        record["completion_tokens"],
+        record["total_tokens"],
+        record["cache_hit_tokens"],
+        record["cache_miss_tokens"],
+    )
+    assert actual == expected
+
+
 def test_retryable_status_switches_key_and_records_attempts(proxy_env, monkeypatch) -> None:
     used_secrets = []
 

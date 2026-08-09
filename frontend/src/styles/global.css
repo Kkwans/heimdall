@@ -476,21 +476,21 @@ body {
 
 .hd-app-modal .ant-modal-footer {
   margin-top: 0 !important;
-  padding: 8px 12px 12px !important;
+  padding: 8px 16px 16px !important;
 }
 
 .hd-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 52px;
-  padding: 12px;
+  gap: 16px;
+  min-height: 60px;
+  padding: 16px;
 }
 
 .hd-modal-body-content {
   box-sizing: border-box;
-  padding: 0 12px 12px;
+  padding: 0 16px 16px;
 }
 
 .hd-modal-title {
@@ -564,7 +564,7 @@ body {
 /* Ant Design Modal：移动端样式优化 */
 @media (max-width: 768px) {
   .hd-app-modal .ant-modal-footer {
-    padding: 8px 12px 12px !important;
+    padding: 8px 16px 16px !important;
   }
   /* 移动端弹窗：左右留有间距，不贴边 */
   .ant-modal {

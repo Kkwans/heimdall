@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
 import AppModal from '../components/AppModal'
+import MobileTooltip from '../components/MobileTooltip'
 import { fmtCny, fmtCnyPerMillion, fmtTokens, fmtMs, latencyColor } from '../utils/format'
 import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
@@ -416,6 +417,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
   const cacheRate = rec && rec.prompt_tokens > 0
     ? `${((rec.cache_hit_tokens / rec.prompt_tokens) * 100).toFixed(1)}%`
     : '0%'
+  const cacheWriteTokens = rec?.cache_write_tokens ?? rec?.cache_miss_tokens ?? 0
   const outputMs = rec ? (rec.latency_ms - rec.ttfb_ms) : 0
 
   const mobile = isMobileCheck()
@@ -587,7 +589,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                 <SectionTitle>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     Token 统计
-                    <Tooltip title="缓存读取与缓存写入已包含在输入总量中；总计为输入总量与输出的合计。">
+                    <Tooltip title="输入总量按统一口径包含普通输入、缓存读取和缓存写入。OpenAI 通常仅返回缓存读取，Anthropic 可返回读取和写入；输出不提供缓存字段。“—”表示上游未返回或本次为 0。">
                       <span aria-label="Token 统计说明" style={{ color: 'var(--text-muted)', cursor: 'help', fontSize: 11 }}>ⓘ</span>
                     </Tooltip>
                   </span>
@@ -600,8 +602,8 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
                       : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
                   </GridCell>
                   <GridCell label="其中缓存写入">
-                    {(rec.cache_write_tokens ?? 0) > 0
-                      ? <span style={{ color: 'var(--color-warning)' }}>{rec.cache_write_tokens?.toLocaleString()}</span>
+                    {cacheWriteTokens > 0
+                      ? <span style={{ color: 'var(--color-warning)' }}>{cacheWriteTokens.toLocaleString()}</span>
                       : <span style={{ color: 'var(--text-disabled)' }}>—</span>}
                   </GridCell>
                   <GridCell label="输出">{rec.completion_tokens.toLocaleString()}</GridCell>
@@ -859,9 +861,9 @@ export default function Requests() {
       render: (v: string) => {
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <Tooltip title={v}>
+            <MobileTooltip title={v}>
               <ModelTag name={v} style={{ fontFamily: 'var(--font-mono)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
-            </Tooltip>
+            </MobileTooltip>
           </div>
         )
       },
@@ -888,7 +890,11 @@ export default function Requests() {
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
       render: (value: string | null) => value
-        ? <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis' }} />
+        ? (
+          <MobileTooltip title={value}>
+            <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
+          </MobileTooltip>
+        )
         : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
     },
     {
