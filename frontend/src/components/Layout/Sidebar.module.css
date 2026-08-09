@@ -153,11 +153,6 @@
   font-size: 14px;
 }
 
-.sidebarCollapsed .logo {
-  justify-content: center;
-  padding-inline: 12px;
-}
-
 .sidebarCollapsed .logoText,
 .sidebarCollapsed .navLabel,
 .sidebarCollapsed .utilityBtnLabel {
@@ -167,24 +162,6 @@
   transform: translateX(-4px);
   pointer-events: none;
   transition-delay: 0ms;
-}
-
-.sidebarCollapsed .nav {
-  padding-inline: 8px;
-}
-
-.sidebarCollapsed .navItem {
-  justify-content: center;
-  padding-inline: 0;
-}
-
-.sidebarCollapsed .footer {
-  padding-inline: 8px;
-}
-
-.sidebarCollapsed .utilityBtn {
-  justify-content: center;
-  padding-inline: 0;
 }
 
 .sidebarCollapsed .utilityBtnIcon svg {
