@@ -416,6 +416,40 @@ def _migrate_client_key_name_snapshots(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_stats_covering_index(connection: sqlite3.Connection) -> None:
+    """Keep aggregate statistics off the large request/response body pages."""
+    if not _table_exists(connection, "requests"):
+        return
+
+    available_columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(requests)")
+    }
+    if "stat_eligible" not in available_columns or "date" not in available_columns:
+        return
+
+    # vNext defines stat_eligible as NOT NULL. Normalize databases created by
+    # older hand-written schemas before statistics switch to strict equality.
+    connection.execute(
+        "UPDATE requests SET stat_eligible = 1 WHERE stat_eligible IS NULL"
+    )
+    preferred_columns = (
+        "stat_eligible", "date", "model", "provider",
+        "success", "stream", "latency_ms", "ttfb_ms",
+        "prompt_tokens", "completion_tokens", "total_tokens",
+        "cache_hit_tokens", "reasoning_tokens", "status_code", "created_at",
+        "billable_tokens", "estimated_cost", "cost_source",
+        "client_api_key_id", "api_key_id", "client_api_key_name",
+    )
+    index_columns = [
+        column for column in preferred_columns if column in available_columns
+    ]
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_stats_covering ON requests("
+        + ", ".join(index_columns)
+        + ")"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initialize_schema_versions", _baseline_schema_versions),
     Migration(2, "admin_secrets_and_pricing", _migrate_admin_secrets_and_pricing),
@@ -423,6 +457,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(4, "request_retention", _migrate_request_retention),
     Migration(5, "request_costs", _migrate_request_costs),
     Migration(6, "client_key_name_snapshots", _migrate_client_key_name_snapshots),
+    Migration(7, "stats_covering_index", _migrate_stats_covering_index),
 )
 
 

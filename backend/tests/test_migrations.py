@@ -35,10 +35,10 @@ def test_empty_database_migration_is_idempotent(tmp_path: Path) -> None:
     second = apply_migrations(database)
 
     assert first.previous_version == 0
-    assert first.current_version == 6
-    assert first.applied_versions == (1, 2, 3, 4, 5, 6)
-    assert second.previous_version == 6
-    assert second.current_version == 6
+    assert first.current_version == 7
+    assert first.applied_versions == (1, 2, 3, 4, 5, 6, 7)
+    assert second.previous_version == 7
+    assert second.current_version == 7
     assert second.applied_versions == ()
     assert inspect_database(database).integrity == "ok"
 
@@ -53,7 +53,7 @@ def test_legacy_database_is_backed_up_before_migration(tmp_path: Path) -> None:
 
     assert backup.integrity == "ok"
     assert Path(backup.database).parent == backup_dir
-    assert result.current_version == 6
+    assert result.current_version == 7
     with sqlite3.connect(database) as connection:
         row = connection.execute("SELECT model FROM requests").fetchone()
         migrated_key = connection.execute(
@@ -71,7 +71,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         connection.execute("CREATE TABLE must_be_rolled_back (id INTEGER)")
         raise RuntimeError("injected migration failure")
 
-    migrations = (*MIGRATIONS, Migration(7, "injected_failure", fail_after_schema_change))
+    migrations = (*MIGRATIONS, Migration(8, "injected_failure", fail_after_schema_change))
     with pytest.raises(RuntimeError, match="injected migration failure"):
         apply_migrations(database, migrations=migrations)
 
@@ -81,7 +81,7 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         ).fetchone()
         version = connection.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0]
     assert table is None
-    assert version == 6
+    assert version == 7
 
 
 def test_backup_never_overwrites_existing_file(tmp_path: Path) -> None:
@@ -178,7 +178,7 @@ def test_admin_migration_deduplicates_encrypted_legacy_key_and_backfills_pricing
 
     result = apply_migrations(database)
 
-    assert result.current_version == 6
+    assert result.current_version == 7
     with sqlite3.connect(database) as connection:
         key_count = connection.execute(
             "SELECT COUNT(*) FROM provider_api_keys WHERE provider_id = 1"
@@ -218,7 +218,7 @@ def test_routing_record_migration_backfills_legacy_client_key_and_indexes(
 
     result = apply_migrations(database)
 
-    assert result.current_version == 6
+    assert result.current_version == 7
     with sqlite3.connect(database) as connection:
         row = connection.execute(
             "SELECT client_api_key_id, stat_eligible, protocol, route_attempts "
@@ -233,6 +233,66 @@ def test_routing_record_migration_backfills_legacy_client_key_and_indexes(
     assert row == (7, 1, None, None)
     assert "idx_requests_stat_date" in indexes
     assert "idx_requests_provider_api_key_id" in indexes
+
+
+def test_stats_covering_index_avoids_large_request_body_table_scans(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "stats-covering.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                provider TEXT,
+                success BOOLEAN DEFAULT 1,
+                stream BOOLEAN DEFAULT 0,
+                latency_ms INTEGER DEFAULT 0,
+                ttfb_ms INTEGER DEFAULT 0,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                cache_hit_tokens INTEGER DEFAULT 0,
+                reasoning_tokens INTEGER DEFAULT 0,
+                status_code INTEGER DEFAULT 200,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                api_key_id INTEGER,
+                stat_eligible BOOLEAN,
+                request_body TEXT,
+                response_body TEXT
+            );
+            INSERT INTO requests (
+                date, model, stat_eligible, total_tokens,
+                request_body, response_body
+            ) VALUES (
+                '2026-08-09', 'fixture-model', NULL, 6,
+                'large request body', 'large response body'
+            );
+            """
+        )
+
+    result = apply_migrations(database)
+
+    assert result.current_version == 7
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT stat_eligible FROM requests"
+        ).fetchone() == (1,)
+        plan = connection.execute(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT COUNT(*), SUM(total_tokens), AVG(latency_ms)
+            FROM requests
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
+            """,
+            ("0001-01-01", "9999-12-31"),
+        ).fetchall()
+    assert any(
+        "COVERING INDEX idx_requests_stats_covering" in str(row[3])
+        for row in plan
+    )
 
 
 def test_request_retention_migration_defaults_off_and_is_idempotent(tmp_path: Path) -> None:
@@ -251,7 +311,7 @@ def test_request_retention_migration_defaults_off_and_is_idempotent(tmp_path: Pa
     first = apply_migrations(database)
     second = apply_migrations(database)
 
-    assert first.current_version == 6
+    assert first.current_version == 7
     assert second.applied_versions == ()
     with sqlite3.connect(database) as connection:
         config_row = connection.execute(
@@ -296,7 +356,7 @@ def test_client_key_name_snapshot_migration_backfills_existing_requests(
     first = apply_migrations(database)
     second = apply_migrations(database)
 
-    assert first.current_version == 6
+    assert first.current_version == 7
     assert second.applied_versions == ()
     with sqlite3.connect(database) as connection:
         snapshot = connection.execute(

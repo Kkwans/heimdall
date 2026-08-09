@@ -122,7 +122,7 @@ def test_v5_backfills_only_unambiguous_priced_history(tmp_path) -> None:
     first = apply_migrations(database)
     second = apply_migrations(database)
 
-    assert first.applied_versions == (5, 6)
+    assert first.applied_versions == (5, 6, 7)
     assert second.applied_versions == ()
     with sqlite3.connect(database) as connection:
         rows = connection.execute(

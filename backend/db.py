@@ -148,6 +148,16 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_stat_date ON requests(stat_eligible, date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_retention_date_id ON requests(date, id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_requests_cost_date ON requests(stat_eligible, date, estimated_cost)")
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_requests_stats_covering ON requests(
+                stat_eligible, date, model, provider,
+                success, stream, latency_ms, ttfb_ms,
+                prompt_tokens, completion_tokens, total_tokens,
+                cache_hit_tokens, reasoning_tokens, status_code, created_at,
+                billable_tokens, estimated_cost, cost_source,
+                client_api_key_id, api_key_id, client_api_key_name
+            )
+        """)
 
         conn.commit()
     except Exception as e:
@@ -224,7 +234,7 @@ def _update_daily_stats(target_date: str):
                 SUM(cache_hit_tokens) as total_cache_hit_tokens,
                 AVG(latency_ms) as avg_latency_ms
             FROM requests
-            WHERE date = ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date = ?
         """, (target_date,)).fetchone()
 
         if not row or row["total_requests"] == 0:
@@ -232,7 +242,7 @@ def _update_daily_stats(target_date: str):
 
         # 计算延迟百分位
         latencies = [r[0] for r in conn.execute(
-            "SELECT latency_ms FROM requests WHERE date = ? AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
+            "SELECT latency_ms FROM requests WHERE stat_eligible = 1 AND date = ? AND latency_ms > 0 ORDER BY latency_ms",
             (target_date,)
         ).fetchall()]
 
@@ -317,7 +327,7 @@ def query_overview(start_date: str, end_date: str) -> dict:
                               AND estimated_cost IS NOT NULL
                          THEN billable_tokens ELSE 0 END) as priced_billable_tokens
             FROM requests
-            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
         """, (start_date, end_date)).fetchone()
 
         if not row:
@@ -330,7 +340,7 @@ def query_overview(start_date: str, end_date: str) -> dict:
 
         # 计算 p99 延迟
         latencies = [r[0] for r in conn.execute(
-            "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
+            "SELECT latency_ms FROM requests WHERE stat_eligible = 1 AND date BETWEEN ? AND ? AND latency_ms > 0 ORDER BY latency_ms",
             (start_date, end_date)
         ).fetchall()]
 
@@ -405,7 +415,7 @@ def query_daily(start_date: str, end_date: str) -> list:
                     ELSE 0
                 END as cache_hit_rate
             FROM requests
-            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
             GROUP BY date
             ORDER BY date ASC
         """, (start_date, end_date)).fetchall()
@@ -436,7 +446,7 @@ def query_models(start_date: str, end_date: str) -> list:
                 END as cache_hit_rate,
                 ROUND(CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) as success_rate
             FROM requests
-            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
             GROUP BY model
             ORDER BY total_requests DESC
         """, (start_date, end_date)).fetchall()
@@ -590,7 +600,7 @@ def query_latency_distribution(start_date: str, end_date: str, model: str = "all
         rows = conn.execute(f"""
             SELECT latency_ms FROM requests
             WHERE date BETWEEN ? AND ? {model_clause}
-              AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0
+              AND stat_eligible = 1 AND latency_ms > 0
         """, params).fetchall()
 
         # LLM 适配分桶：< 1s / 1-3s / 3-10s / 10-30s / > 30s
@@ -625,7 +635,7 @@ def query_available_models() -> list:
         conn = _get_conn()
         rows = conn.execute(
             "SELECT DISTINCT model FROM requests "
-            "WHERE COALESCE(stat_eligible, 1) = 1 ORDER BY model"
+            "WHERE stat_eligible = 1 ORDER BY model"
         ).fetchall()
         return [r[0] for r in rows]
     except Exception as e:
@@ -675,7 +685,7 @@ def query_model_stats(start_date: str, end_date: str) -> list:
                 ROUND(CAST(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*), 4) AS success_rate
 
             FROM requests
-            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
             GROUP BY model
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -686,7 +696,7 @@ def query_model_stats(start_date: str, end_date: str) -> list:
             # 计算 P50/P90/P99（单独查询该模型的延迟分布）
             latencies = [x[0] for x in conn.execute(
                 "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? AND model = ? "
-                "AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 ORDER BY latency_ms",
+                "AND stat_eligible = 1 AND latency_ms > 0 ORDER BY latency_ms",
                 (start_date, end_date, row["model"])
             ).fetchall()]
 
@@ -718,7 +728,7 @@ def query_error_analysis(start_date: str, end_date: str) -> list:
         conn = _get_conn()
         total_errors = conn.execute(
             "SELECT COUNT(*) FROM requests WHERE date BETWEEN ? AND ? AND success = 0 "
-            "AND COALESCE(stat_eligible, 1) = 1",
+            "AND stat_eligible = 1",
             (start_date, end_date)
         ).fetchone()[0] or 1  # 避免除零
 
@@ -729,7 +739,7 @@ def query_error_analysis(start_date: str, end_date: str) -> list:
                 GROUP_CONCAT(DISTINCT model)                AS models
             FROM requests
             WHERE date BETWEEN ? AND ? AND success = 0
-              AND COALESCE(stat_eligible, 1) = 1
+              AND stat_eligible = 1
             GROUP BY status_code
             ORDER BY count DESC
         """, (start_date, end_date)).fetchall()
@@ -759,7 +769,7 @@ def query_hourly(target_date: str) -> list:
                 SUM(total_tokens)                             AS total_tokens,
                 AVG(latency_ms)                               AS avg_latency_ms
             FROM requests
-            WHERE date = ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date = ?
             GROUP BY hour
             ORDER BY hour ASC
         """, (target_date,)).fetchall()
@@ -826,7 +836,7 @@ def query_provider_stats(start_date: str, end_date: str) -> list:
                 GROUP_CONCAT(DISTINCT model)                                     AS models
 
             FROM requests
-            WHERE date BETWEEN ? AND ? AND COALESCE(stat_eligible, 1) = 1
+            WHERE stat_eligible = 1 AND date BETWEEN ? AND ?
             GROUP BY provider
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -838,7 +848,7 @@ def query_provider_stats(start_date: str, end_date: str) -> list:
             latencies = [x[0] for x in conn.execute(
                 "SELECT latency_ms FROM requests WHERE date BETWEEN ? AND ? "
                 "AND COALESCE(NULLIF(provider, ''), 'default') = ? "
-                "AND COALESCE(stat_eligible, 1) = 1 AND latency_ms > 0 "
+                "AND stat_eligible = 1 AND latency_ms > 0 "
                 "ORDER BY latency_ms",
                 (start_date, end_date, row["provider"])
             ).fetchall()]
@@ -897,7 +907,7 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
         conn = _get_conn()
         filter_sql = """
             r.date BETWEEN ? AND ?
-            AND COALESCE(r.stat_eligible, 1) = 1
+            AND r.stat_eligible = 1
             AND r.success = 1
             AND COALESCE(r.billable_tokens, 0) > 0
         """
@@ -1040,7 +1050,7 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
             FROM requests r
             LEFT JOIN api_keys ak
               ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
-            WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
+            WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
               AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
             GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name, api_key_deleted
             ORDER BY total_tokens DESC
@@ -1074,7 +1084,7 @@ def query_api_key_model_stats(start_date: str, end_date: str) -> list:
             FROM requests r
             LEFT JOIN api_keys ak
               ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
-            WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
+            WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
               AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
             GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name,
                      api_key_deleted, r.model
@@ -1113,7 +1123,7 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
                   ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
                 WHERE r.date >= ? AND r.date <= ?
                   AND COALESCE(r.client_api_key_id, r.api_key_id) = ?
-                  AND COALESCE(r.stat_eligible, 1) = 1
+                  AND r.stat_eligible = 1
                 GROUP BY r.date, api_key_name, api_key_deleted
                 ORDER BY r.date
             """, (start_date, end_date, api_key_id)).fetchall()
@@ -1136,7 +1146,7 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
                 FROM requests r
                 LEFT JOIN api_keys ak
                   ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
-                WHERE r.date >= ? AND r.date <= ? AND COALESCE(r.stat_eligible, 1) = 1
+                WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
                   AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
                 GROUP BY r.date, COALESCE(r.client_api_key_id, r.api_key_id),
                          api_key_name, api_key_deleted
