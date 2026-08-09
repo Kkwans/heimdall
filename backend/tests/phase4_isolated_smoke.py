@@ -52,14 +52,22 @@ def main() -> int:
 
     config = request("/api/proxy/config")
     assert config["proxy_port"] == 19888
+    assert config["active_proxy_port"] == 19888
     assert config["dashboard_port"] == 18889
-    assert "proxy_port" in config["deployment_readonly"]
+    assert "proxy_port" in config["editable_fields"]
+    assert "public_base_url" in config["editable_fields"]
     request(
         "/api/proxy/config",
         method="PUT",
-        payload={"proxy_port": 29999},
+        payload={"proxy_port": 80},
         expected=400,
     )
+    unchanged = request(
+        "/api/proxy/config",
+        method="PUT",
+        payload={"proxy_port": 19888, "public_base_url": ""},
+    )
+    assert unchanged["success"] is True and unchanged["restart_required"] is False
 
     restart = request("/api/proxy/restart", method="POST")
     assert restart["success"] and restart["state"]["ready"]
@@ -99,7 +107,7 @@ def main() -> int:
     print("proxy_allowlist=passed")
     print("proxy_restart_stop_start=passed")
     print("proxy_readiness=passed")
-    print("deployment_ports_readonly=passed")
+    print("proxy_connection_config=passed")
     print("retention_preview_confirmation=passed")
     print("retention_save_without_delete=passed")
     return 0

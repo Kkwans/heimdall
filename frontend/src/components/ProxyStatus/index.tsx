@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  Card, Button, Modal, Form, InputNumber,
+  Card, Button, Modal, Form, Input, InputNumber,
   message, Divider, Tooltip,
 } from 'antd'
 import {
@@ -38,12 +38,14 @@ interface ProxyStatus {
 
 interface ProxyConfig {
   proxy_port: number
+  active_proxy_port?: number
   dashboard_port: number
   proxy_path: string
   upstream_url: string
   request_timeout: number
   autostart_enabled: boolean
   public_base_url?: string
+  restart_pending?: boolean
   deployment_readonly?: string[]
   editable_fields?: string[]
 }
@@ -222,7 +224,7 @@ export default function ProxyStatusCard() {
       const { data } = await axios.post('/api/proxy/restart')
       if (data.success) {
         message.success(data.message || '代理已重启')
-        await fetchStatus()
+        await Promise.all([fetchStatus(), fetchConfig()])
       } else {
         message.error(data.message || '重启失败')
       }
@@ -258,19 +260,14 @@ export default function ProxyStatusCard() {
   // ── 编辑弹窗 ──────────────────────────────
   const openEdit = () => {
     editForm.setFieldsValue({
+      proxy_port: cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888,
+      public_base_url: cfg?.public_base_url ?? '',
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)
   }
 
-  const handleEditSave = async () => {
-    let values: Record<string, unknown>
-    try {
-      values = await editForm.validateFields()
-    } catch {
-      return // 表单校验失败，不继续
-    }
-
+  const saveConfig = async (values: Record<string, unknown>) => {
     setEditSaving(true)
     try {
       const { data } = await axios.put('/api/proxy/config', values)
@@ -282,10 +279,14 @@ export default function ProxyStatusCard() {
       setEditOpen(false)
 
       if (data.restart_required && isRunning) {
+        const changedFields = new Set<string>(data.changed_fields ?? [])
+        const portChanged = changedFields.has('proxy_port')
         Modal.confirm({
           centered: true,
           title: '需要重启代理',
-          content: '超时时间已保存，需重启代理才能生效。是否立即重启？',
+          content: portChanged
+            ? `端口配置已保存。重启会短暂中断代理，并将监听端口从 ${cfg?.active_proxy_port ?? cfg?.proxy_port ?? status?.port ?? '当前端口'} 切换到 ${String(values.proxy_port)}；使用旧端口的客户端随后将无法连接。是否立即重启？`
+            : '运行配置已保存，需重启代理才能生效。是否立即重启？',
           okText: '立即重启',
           cancelText: '稍后手动重启',
           onOk: () => handleRestart(),
@@ -303,11 +304,57 @@ export default function ProxyStatusCard() {
     }
   }
 
+  const handleEditSave = async () => {
+    let values: Record<string, unknown>
+    try {
+      values = await editForm.validateFields()
+    } catch {
+      return
+    }
+
+    const currentPort = cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888
+    const nextPort = Number(values.proxy_port)
+    const currentBaseUrl = (cfg?.public_base_url ?? '').trim().replace(/\/+$/, '')
+    const nextBaseUrl = String(values.public_base_url ?? '').trim().replace(/\/+$/, '')
+    const portChanged = currentPort !== nextPort
+    const baseUrlChanged = currentBaseUrl !== nextBaseUrl
+
+    if (!portChanged && !baseUrlChanged) {
+      await saveConfig(values)
+      return
+    }
+
+    Modal.confirm({
+      centered: true,
+      title: '确认修改代理连接配置',
+      width: 480,
+      content: (
+        <div style={{ lineHeight: 1.75 }}>
+          {portChanged && (
+            <p style={{ margin: '0 0 10px' }}>
+              代理端口将从 <strong>{currentPort}</strong> 修改为 <strong>{nextPort}</strong>。保存后需重启 Proxy，重启期间请求会短暂中断；重启完成后，仍使用旧端口的客户端将无法连接。
+            </p>
+          )}
+          {baseUrlChanged && (
+            <p style={{ margin: 0 }}>
+              Base URL 将更新 Dashboard 中展示和复制的 OpenAI、Anthropic 地址。请确认该地址能从客户端网络实际访问；它不会修改上游厂商地址。
+            </p>
+          )}
+        </div>
+      ),
+      okText: '确认保存',
+      cancelText: '返回修改',
+      okButtonProps: { danger: portChanged },
+      onOk: () => saveConfig(values),
+    })
+  }
+
   const isRunning = status?.running ?? false
   const autostart = cfg?.autostart_enabled ?? false
+  const activeProxyPort = cfg?.active_proxy_port ?? status?.port ?? cfg?.proxy_port ?? 9888
   const proxyUrls = buildProxyBaseUrls(
     {
-      proxy_port: cfg?.proxy_port ?? status?.port ?? 9888,
+      proxy_port: activeProxyPort,
       public_base_url: cfg?.public_base_url,
     },
     window.location,
@@ -448,7 +495,11 @@ export default function ProxyStatusCard() {
             <VSep />
             <InfoCell
               label="代理端口"
-              value={cfg ? String(cfg.proxy_port) : '—'}
+              value={cfg
+                ? cfg.restart_pending
+                  ? <span>{activeProxyPort} <small style={{ color: 'var(--color-warning)' }}>待切换至 {cfg.proxy_port}</small></span>
+                  : String(activeProxyPort)
+                : '—'}
               className={styles.portCell}
             />
             <VSep />
@@ -484,20 +535,60 @@ export default function ProxyStatusCard() {
           requiredMark={false}
           style={{ marginTop: 4 }}
         >
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item
+              label="代理端口"
+              name="proxy_port"
+              rules={[
+                { required: true, message: '请输入代理端口' },
+                { type: 'number', min: 1024, max: 65535, message: '端口范围 1024–65535' },
+              ]}
+              style={{ flex: 1 }}
+            >
+              <InputNumber min={1024} max={65535} style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item
+              label="超时时间"
+              name="request_timeout"
+              rules={[
+                { required: true, message: '请输入超时时间' },
+                { type: 'number', min: 10, max: 600, message: '范围 10–600 秒' },
+              ]}
+              style={{ flex: 1 }}
+            >
+              <InputNumber
+                min={10}
+                max={600}
+                addonAfter="秒"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </div>
+
           <Form.Item
-            label="超时时间"
-            name="request_timeout"
+            label="Base URL"
+            name="public_base_url"
+            tooltip="用于 Dashboard 展示和复制客户端连接地址，不会修改上游厂商地址。"
             rules={[
-              { required: true, message: '请输入超时时间' },
-              { type: 'number', min: 10, max: 600, message: '范围 10–600 秒' },
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve()
+                  try {
+                    const url = new URL(String(value))
+                    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+                      throw new Error('invalid')
+                    }
+                    return Promise.resolve()
+                  } catch {
+                    return Promise.reject(new Error('请输入有效的 http:// 或 https:// 地址，且不要包含账号、查询参数或锚点'))
+                  }
+                },
+              },
             ]}
+            extra="留空时根据当前浏览器主机名、协议和实际代理端口自动生成。"
           >
-            <InputNumber
-              min={10}
-              max={600}
-              addonAfter="秒"
-              style={{ width: '100%' }}
-            />
+            <Input placeholder="例如：https://gateway.example.com:9888" allowClear />
           </Form.Item>
 
           {/* 提示信息 */}
@@ -512,7 +603,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: 'var(--color-info)', fontWeight: 500 }}>💡</span>
-            {' '}超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；代理端口和系统端口由部署配置管理，此处只读。
+            {' '}代理端口和超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；Base URL 仅更新展示和复制地址并立即生效；系统端口仍由部署配置管理。
           </div>
         </Form>
       </AppModal>

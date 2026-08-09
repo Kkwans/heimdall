@@ -25,6 +25,7 @@ class FakeDockerService:
     def __init__(self):
         self.actions = []
         self.policy = "unless-stopped"
+        self.active_port = 19888
 
     def get_status(self):
         return {
@@ -38,6 +39,22 @@ class FakeDockerService:
     def control(self, action):
         self.actions.append(action)
         return {"action": action, "running": action != "stop", "ready": action != "stop"}
+
+    def external_port(self):
+        return self.active_port
+
+    def reconfigure_external_port(self, port):
+        previous = self.active_port
+        self.active_port = int(port)
+        self.actions.append(("reconfigure", self.active_port))
+        return {
+            "action": "restart",
+            "running": True,
+            "ready": True,
+            "external_port": self.active_port,
+            "previous_external_port": previous,
+            "port_changed": True,
+        }
 
     def restart_policy(self):
         return self.policy
@@ -88,18 +105,46 @@ def runtime_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _close_thread_connection()
 
 
-def test_proxy_config_exposes_ports_as_readonly(runtime_app) -> None:
-    app, _database, runtime_config, _docker = runtime_app
+def test_proxy_config_allows_port_and_public_base_url_with_explicit_restart(runtime_app) -> None:
+    app, _database, runtime_config, docker = runtime_app
     client = app.test_client()
 
     config_response = client.get("/api/proxy/config")
-    rejected = client.put("/api/proxy/config", json={"proxy_port": 29999})
+    saved = client.put("/api/proxy/config", json={
+        "proxy_port": 29999,
+        "public_base_url": "https://gateway.example.com///",
+    })
+    pending = client.get("/api/proxy/config")
 
     assert config_response.status_code == 200
     assert config_response.get_json()["proxy_port"] == 19888
-    assert "proxy_port" in config_response.get_json()["deployment_readonly"]
-    assert rejected.status_code == 400
-    assert rejected.get_json()["readonly_fields"] == ["proxy_port"]
+    assert config_response.get_json()["active_proxy_port"] == 19888
+    assert config_response.get_json()["editable_fields"] == [
+        "proxy_port", "public_base_url", "request_timeout",
+    ]
+    assert saved.status_code == 200
+    assert saved.get_json()["changed_fields"] == ["proxy_port", "public_base_url"]
+    assert saved.get_json()["restart_required"] is True
+    assert pending.get_json()["proxy_port"] == 29999
+    assert pending.get_json()["active_proxy_port"] == docker.active_port == 19888
+    assert pending.get_json()["public_base_url"] == "https://gateway.example.com"
+    assert pending.get_json()["restart_pending"] is True
+    persisted = json.loads(runtime_config.read_text(encoding="utf-8"))
+    assert persisted["proxy_port"] == 29999
+    assert persisted["public_base_url"] == "https://gateway.example.com"
+
+
+@pytest.mark.parametrize("payload", [
+    {"proxy_port": 80},
+    {"proxy_port": 18889},
+    {"public_base_url": "ftp://gateway.example.com"},
+    {"public_base_url": "https://user:secret@gateway.example.com"},
+    {"public_base_url": "https://gateway.example.com?token=secret"},
+])
+def test_proxy_config_rejects_unsafe_connection_settings(runtime_app, payload) -> None:
+    app, _database, runtime_config, _docker = runtime_app
+    response = app.test_client().put("/api/proxy/config", json=payload)
+    assert response.status_code == 400
     assert not runtime_config.exists()
 
 
@@ -129,6 +174,34 @@ def test_control_endpoint_ignores_request_target_and_uses_bound_service(runtime_
     assert response.status_code == 200
     assert response.get_json()["success"] is True
     assert docker.actions == ["restart"]
+
+
+def test_restart_applies_pending_proxy_port(runtime_app) -> None:
+    app, _database, _runtime_config, docker = runtime_app
+    client = app.test_client()
+    saved = client.put("/api/proxy/config", json={"proxy_port": 29999})
+    restarted = client.post("/api/proxy/restart")
+
+    assert saved.get_json()["restart_required"] is True
+    assert restarted.status_code == 200
+    assert restarted.get_json()["state"]["port_changed"] is True
+    assert docker.actions == [("reconfigure", 29999)]
+    assert client.get("/api/proxy/status").get_json()["port"] == 29999
+    config_payload = client.get("/api/proxy/config").get_json()
+    assert config_payload["active_proxy_port"] == 29999
+    assert config_payload["restart_pending"] is False
+
+
+def test_start_applies_pending_proxy_port(runtime_app) -> None:
+    app, _database, _runtime_config, docker = runtime_app
+    client = app.test_client()
+    client.put("/api/proxy/config", json={"proxy_port": 29998})
+
+    started = client.post("/api/proxy/start")
+
+    assert started.status_code == 200
+    assert started.get_json()["state"]["port_changed"] is True
+    assert docker.actions == [("reconfigure", 29998)]
 
 
 def test_control_timeout_returns_gateway_timeout(runtime_app, monkeypatch) -> None:

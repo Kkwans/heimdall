@@ -4,6 +4,7 @@ import signal
 import tempfile
 import threading
 import time
+from urllib.parse import urlsplit, urlunsplit
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -825,10 +826,13 @@ def proxy_status():
         return _cors_response({})
 
     try:
-        status = get_docker_service().get_status()
+        docker_service = get_docker_service()
+        status = docker_service.get_status()
+        active_port = docker_service.external_port()
         status["control_available"] = True
     except DockerControlError:
         running = _proxy_socket_ready()
+        active_port = getattr(config, "PROXY_EXTERNAL_PORT", 9888)
         status = {
             "running": running,
             "ready": running,
@@ -837,7 +841,7 @@ def proxy_status():
             "control_available": False,
         }
     status.update({
-        "port": getattr(config, "PROXY_EXTERNAL_PORT", 9888),
+        "port": active_port,
         "pid": None,
     })
     return _cors_response(status)
@@ -872,18 +876,61 @@ def proxy_stop():
 
 @stats_bp.route("/api/proxy/start", methods=["POST", "OPTIONS"])
 def proxy_start():
-    """Start only the fixed allowlisted Heimdall Proxy container."""
+    """Start the fixed Proxy and apply a pending host port change if needed."""
     if request.method == "OPTIONS":
         return _cors_response({})
-    return _control_proxy("start")
+    try:
+        docker_service = get_docker_service()
+        runtime_cfg = _load_runtime_config()
+        active_port = docker_service.external_port()
+        desired_port = int(runtime_cfg.get("proxy_port", active_port))
+        if desired_port != active_port:
+            result = docker_service.reconfigure_external_port(desired_port)
+            config.PROXY_EXTERNAL_PORT = desired_port
+            message = f"代理已切换到端口 {desired_port} 并通过健康检查"
+        else:
+            result = docker_service.control("start")
+            message = "代理服务已启动并通过健康检查"
+        return _cors_response({
+            "success": True,
+            "message": message,
+            "state": result,
+        })
+    except DockerControlTimeout as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 504)
+    except (DockerControlError, TypeError, ValueError) as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 500)
 
 
 @stats_bp.route("/api/proxy/restart", methods=["POST", "OPTIONS"])
 def proxy_restart():
-    """Restart only the fixed allowlisted Heimdall Proxy container."""
+    """Restart the fixed Proxy and atomically apply a pending host port change."""
     if request.method == "OPTIONS":
         return _cors_response({})
-    return _control_proxy("restart")
+    try:
+        docker_service = get_docker_service()
+        runtime_cfg = _load_runtime_config()
+        desired_port = int(runtime_cfg.get(
+            "proxy_port",
+            docker_service.external_port(),
+        ))
+        active_port = docker_service.external_port()
+        if desired_port != active_port:
+            result = docker_service.reconfigure_external_port(desired_port)
+            config.PROXY_EXTERNAL_PORT = desired_port
+            message = f"代理已切换到端口 {desired_port} 并通过健康检查"
+        else:
+            result = docker_service.control("restart")
+            message = "代理服务已重启并通过健康检查"
+        return _cors_response({
+            "success": True,
+            "message": message,
+            "state": result,
+        })
+    except DockerControlTimeout as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 504)
+    except (DockerControlError, TypeError, ValueError) as exc:
+        return _cors_response({"success": False, "message": str(exc)}, 500)
 
 
 # ==========================================
@@ -922,13 +969,18 @@ def _load_runtime_config() -> dict:
         "upstream_url": getattr(config, 'TARGET_BASE_URL', ''),
         "proxy_path": getattr(config, 'PROXY_PATH', '/v1/openai/native'),
         "request_timeout": config.REQUEST_TIMEOUT,
+        "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
+        "public_base_url": getattr(config, 'PUBLIC_BASE_URL', ''),
     }
     if os.path.isfile(cfg_path):
         try:
             import json
             with open(cfg_path, 'r') as f:
                 saved = json.load(f)
-            for field in ("upstream_url", "proxy_path", "request_timeout", "log_retention_days"):
+            for field in (
+                "upstream_url", "proxy_path", "request_timeout", "log_retention_days",
+                "proxy_port", "public_base_url",
+            ):
                 if field in saved:
                     defaults[field] = saved[field]
         except Exception:
@@ -965,9 +1017,31 @@ def _save_runtime_config(data: dict):
             os.unlink(temporary_path)
 
 
+def _normalize_public_base_url(value) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Base URL 必须为字符串")
+    normalized = value.strip().rstrip("/")
+    if not normalized:
+        return ""
+    if len(normalized) > 512:
+        raise ValueError("Base URL 最多 512 个字符")
+    parsed = urlsplit(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Base URL 必须是有效的 http:// 或 https:// 地址")
+    if parsed.username or parsed.password:
+        raise ValueError("Base URL 不允许包含用户名或密码")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL 不允许包含查询参数或锚点")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("Base URL 端口无效") from exc
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
 @stats_bp.route("/api/proxy/config", methods=["GET", "OPTIONS"])
 def proxy_config_get():
-    """Return runtime settings and deployment-only port/public URL metadata."""
+    """Return configured and active Proxy connection settings."""
     if request.method == "OPTIONS":
         return _cors_response({})
     cfg = _load_runtime_config()
@@ -979,40 +1053,49 @@ def proxy_config_get():
     except DockerControlError:
         pass
 
+    try:
+        active_proxy_port = get_docker_service().external_port()
+    except DockerControlError:
+        active_proxy_port = getattr(config, 'PROXY_EXTERNAL_PORT', 9888)
+    configured_proxy_port = int(cfg.get("proxy_port", active_proxy_port))
+
     return _cors_response({
-        "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
+        "proxy_port": configured_proxy_port,
+        "active_proxy_port": active_proxy_port,
         "dashboard_port": getattr(config, 'DASHBOARD_EXTERNAL_PORT', 8889),
         "proxy_path": cfg.get("proxy_path", getattr(config, 'PROXY_PATH', '/v1/chat/completions')),
         "upstream_url": cfg.get("upstream_url", ""),
         "request_timeout": int(cfg.get("request_timeout", config.REQUEST_TIMEOUT)),
         "autostart_enabled": autostart_enabled,
-        "public_base_url": getattr(config, "PUBLIC_BASE_URL", ""),
-        "deployment_readonly": ["proxy_port", "dashboard_port", "public_base_url"],
-        "editable_fields": ["request_timeout"],
+        "public_base_url": cfg.get("public_base_url", ""),
+        "restart_pending": configured_proxy_port != active_proxy_port,
+        "deployment_readonly": ["dashboard_port"],
+        "editable_fields": ["proxy_port", "public_base_url", "request_timeout"],
     })
 
 
 @stats_bp.route("/api/proxy/config", methods=["PUT", "OPTIONS"])
 def proxy_config_put():
-    """Save runtime-safe fields and state restart semantics explicitly."""
+    """Save validated Proxy connection settings and explicit restart semantics."""
     if request.method == "OPTIONS":
         return _cors_response({})
     try:
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict):
             return _cors_response({"success": False, "message": "请求体必须为 JSON 对象"}, 400)
-        deployment_only = {
-            "proxy_port", "dashboard_port", "public_base_url",
-        }
+        deployment_only = {"dashboard_port"}
         attempted = sorted(deployment_only.intersection(body))
         if attempted:
             return _cors_response({
                 "success": False,
-                "message": "部署端口和公共地址为只读，请通过 Compose 或部署配置修改",
+                "message": "系统端口由部署配置管理，不能在应用内修改",
                 "readonly_fields": attempted,
             }, 400)
 
-        allowed = {"request_timeout", "upstream_url", "proxy_path"}
+        allowed = {
+            "request_timeout", "upstream_url", "proxy_path",
+            "proxy_port", "public_base_url",
+        }
         unknown = sorted(set(body) - allowed)
         if unknown:
             return _cors_response({
@@ -1023,6 +1106,21 @@ def proxy_config_put():
 
         current = _load_runtime_config()
         to_save = {}
+        if "proxy_port" in body:
+            try:
+                proxy_port = int(body["proxy_port"])
+            except (TypeError, ValueError):
+                return _cors_response({"success": False, "message": "代理端口必须为整数"}, 400)
+            if not 1024 <= proxy_port <= 65535:
+                return _cors_response({"success": False, "message": "代理端口范围 1024-65535"}, 400)
+            if proxy_port == getattr(config, "DASHBOARD_EXTERNAL_PORT", 8889):
+                return _cors_response({"success": False, "message": "代理端口不能与系统端口相同"}, 400)
+            to_save["proxy_port"] = proxy_port
+        if "public_base_url" in body:
+            try:
+                to_save["public_base_url"] = _normalize_public_base_url(body["public_base_url"])
+            except ValueError as exc:
+                return _cors_response({"success": False, "message": str(exc)}, 400)
         if "request_timeout" in body:
             try:
                 timeout = int(body["request_timeout"])
@@ -1046,7 +1144,10 @@ def proxy_config_put():
         )
         if changed_fields:
             _save_runtime_config(to_save)
-        restart_required = bool(changed_fields)
+        restart_fields = {"proxy_port", "request_timeout", "upstream_url", "proxy_path"}
+        restart_required = bool(restart_fields.intersection(changed_fields))
+        if "public_base_url" in changed_fields:
+            config.PUBLIC_BASE_URL = to_save["public_base_url"]
         return _cors_response({
             "success": True,
             "changed_fields": changed_fields,
@@ -1054,6 +1155,8 @@ def proxy_config_put():
             "message": (
                 "配置已保存，重启代理后生效"
                 if restart_required
+                else "配置已保存并立即生效"
+                if changed_fields
                 else "配置未变化"
             ),
         })
