@@ -1,37 +1,39 @@
-# Design QA — 请求详情间距、缓存 Token 与列表 Tooltip
+# Design QA — 已删除 Key 统计与全局弹窗留白
 
-- Source visual truth: `/home/Kkwans/.codex/attachments/1f29e634-79ef-467c-954c-3966f13df059/codex-clipboard-d89b15c2-2808-4315-a943-56b02c02f347.png`
-- Implementation: `/volume2/Project/Heimdall/.phase1-artifacts/cache-tooltip-browser/cache-tooltip-r1/request-detail-cache-1440.jpg`
-- Full comparison: `/volume2/Project/Heimdall/.phase1-artifacts/cache-tooltip-browser/cache-tooltip-r1/reference-vs-implementation.jpg`
-- Additional evidence: `requests-tooltip-1440.jpg`, `admin-modal-spacing-1440.jpg`, `request-detail-cache-390.jpg`
-- Source pixels: `2222 x 1403`; source CSS viewport and density are unknown.
-- Implementation pixels: `1440 x 1010`; CSS viewport `1440 x 1000`; device scale factor `1`.
-- State: light theme; Requests list, request detail modal, provider form modal; desktop and `390 x 844` mobile.
-- Normalization: the source and implementation were scaled to a common width for the combined visual comparison. Because the source viewport metadata is unavailable and the fixture data differs, exact whole-page pixel comparison is not asserted; the annotated modal spacing and truncation surfaces were compared directly and verified with browser geometry.
+- Source visuals:
+  - `/home/Kkwans/.codex/attachments/73191ea9-003d-402f-a13d-79b5961313c7/codex-clipboard-bcb28a84-3d18-405e-b578-5911a0a6a08b.png`
+  - `/home/Kkwans/.codex/attachments/6119b8b4-1da6-4d08-a037-7d9e9fe11eeb/codex-clipboard-9bc8b62a-f059-404e-afd9-33e69acf42b5.png`
+- Implementation root: `/volume2/Project/Heimdall/.phase1-artifacts/stats-key-name-browser/stats-key-name-f366ba6/`
+- Browser: TX5pro Chrome, Playwright headless, `zh-CN`, Asia/Shanghai.
+- Target: isolated Dashboard `http://192.168.5.110:18889`, commit `f366ba6`.
+- Viewports: desktop `1440 x 1000`; mobile `390 x 844`.
+- Theme: light.
 
-## Fidelity surfaces
+## Verified visual and data behavior
 
-- Fonts and typography: existing Heimdall font stack, sizes, weights and hierarchy are unchanged. Long model/provider text remains in the existing tag style and truncates without changing row height.
-- Spacing and layout rhythm: title header padding is `16px` on all four sides; title-left and close-right gaps are both `16px`; title and close centers differ by less than `0.01px`. Body padding is `0 16px 16px` and no Ant Design container padding remains. The same measurements passed for request detail, provider form and mobile request detail.
-- Colors and tokens: existing semantic tag, text, border and status colors are unchanged.
-- Image quality and assets: this change introduces no image or icon assets; existing Ant Design icons remain unchanged.
-- Copy and content: the Token help text explains the OpenAI/Anthropic cache-field difference, the unified input total, missing/zero values and the absence of output-cache fields. Product copy remains Chinese except protocol names.
+- Client Access Key names remain visible after deletion; a compact `已删除` tag follows the original name.
+- Historical rows whose pre-fix name is irrecoverable use the stable `API Key #ID` label with `已删除`; records never associated with a Key use `未关联 API Key` without a deletion tag.
+- Cost-table headers and data cells are uniformly left aligned.
+- Average unit prices render with exactly two decimal places, for example `￥2.67/百万 Token`.
+- Request-detail and provider-form modal headers use `24px` padding on all four sides.
+- Modal body padding is `0 24px 24px`; title-left and close-right gaps are both `24px`.
+- Title and close-button vertical center difference is at most `1px`.
+- The same modal geometry passes at `390px`, without page-level horizontal overflow.
 
-## Comparison history
+## Evidence
 
-1. Initial browser pass found that the existing `MobileTooltip` passed function components directly to Ant Design, so no desktop tooltip was rendered. Fixed by using a layout-neutral native `inline-flex` trigger.
-2. Final TX5pro Chrome pass confirmed full model and provider tooltip values, `16px` modal geometry, cache read `600`, cache write `200`, input total `1,000`, total `1,100`, and zero console/page/network errors.
+- `stats-cost-key-table-1440-light.jpg`: deleted name, deletion tag, left alignment, two-decimal average price.
+- `stats-api-key-row-1440-light.jpg`: lower API Key statistics use the same name and deletion status.
+- `request-detail-1440-light.jpg`: desktop request-detail modal spacing.
+- `request-detail-390-light.jpg`: mobile request-detail modal spacing and scrolling.
+- `admin-modal-1440-light.jpg`: reusable modal spacing applied to the provider form.
+- `report.json`: 25/25 checks passed; zero console errors, page errors, HTTP errors, and failed browser requests.
 
-## Findings
+## Data safety evidence
 
-- No actionable P0, P1 or P2 visual mismatch remains within the requested scope.
-- The Token help tooltip is intentionally allowed to wrap so the protocol distinction stays readable instead of producing an excessively wide overlay.
-
-## Primary interactions tested
-
-- Hover model and provider tags to reveal complete desktop tooltips.
-- Open/close request detail and provider form modals.
-- Hover the Token statistics help affordance.
-- Open and scroll the request detail modal at `390px` width.
+- Production database was inspected read-only and contained no orphaned Client Access Key groups.
+- A consistent production copy migrated from schema v5 to v6 with `integrity=ok`, 1533 request rows unchanged, all 3 eligible Key groups resolved, and a second migration run applied no versions.
+- The isolated database was backed up before migration. A real isolated create → priced request → delete flow returned the original name and `deleted=true` from both cost and API Key statistics.
+- Production containers and database were not changed.
 
 final result: passed
