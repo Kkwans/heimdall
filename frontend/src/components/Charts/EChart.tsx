@@ -136,6 +136,7 @@ function adaptCategoryAxis(option: ChartOptionRecord, containerWidth: number): C
 const EChart = React.forwardRef<ReactEChartsCore, Omit<EChartsReactProps, 'echarts'>>(
   function EChart(props, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
+    const hasRenderedRef = useRef(false)
     const [containerWidth, setContainerWidth] = useState(0)
 
     useLayoutEffect(() => {
@@ -152,10 +153,24 @@ const EChart = React.forwardRef<ReactEChartsCore, Omit<EChartsReactProps, 'echar
       return () => observer.disconnect()
     }, [])
 
-    const option = useMemo(
+    const adaptedOption = useMemo(
       () => adaptCategoryAxis(props.option as ChartOptionRecord, containerWidth),
       [props.option, containerWidth],
     )
+
+    // 首次进入页面允许图表自然呈现；后台刷新和容器尺寸变化只更新数据，
+    // 不重新播放完整入场动画，避免统计页刷新时闪烁或“重播”。
+    const option = useMemo(() => {
+      if (!hasRenderedRef.current) return adaptedOption
+      return {
+        ...adaptedOption,
+        animation: false,
+      }
+    }, [adaptedOption])
+
+    useLayoutEffect(() => {
+      hasRenderedRef.current = true
+    }, [])
 
     return (
       <div ref={containerRef} style={{ width: '100%', minWidth: 0 }}>

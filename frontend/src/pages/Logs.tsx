@@ -121,6 +121,7 @@ export default function Logs() {
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef       = useRef<HTMLDivElement>(null)
+  const historyRequestVersion = useRef(0)
 
   const isToday = selectedDate === getToday()
   const connected = connectionState === 'connected'
@@ -175,12 +176,14 @@ export default function Logs() {
 
   // ── 历史日志（非今天）：HTTP 查询 ─────────────────────────
   useEffect(() => {
+    const version = ++historyRequestVersion.current
     if (isToday) return
     setLines([])
     setConnectionState('disconnected')
     setHistoryLoading(true)
     fetchLogsHistory({ log_file: logFile, date: selectedDate, lines: linesLimit, cursor: 0 })
       .then(r => {
+        if (version !== historyRequestVersion.current) return
         setEmptyFile(r.empty_file === true)
         setLines(mergeLogLines(r.lines.map(parseLogLine)))
         setHistoryCursor(r.next_cursor)
@@ -188,13 +191,16 @@ export default function Logs() {
         setHistoryTotal(r.total)
       })
       .catch(() => {
+        if (version !== historyRequestVersion.current) return
         setEmptyFile(false)
         setLines([])
         setHistoryCursor(null)
         setHistoryHasMore(false)
         setHistoryTotal(0)
       })
-      .finally(() => setHistoryLoading(false))
+      .finally(() => {
+        if (version === historyRequestVersion.current) setHistoryLoading(false)
+      })
   }, [logFile, selectedDate, linesLimit, isToday])
 
   // ── 切换到今天时重置 emptyFile ──────────────────────────
@@ -612,7 +618,7 @@ export default function Logs() {
                 ? !connected
                   ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>正在连接日志流…</span>
                   : streamEmpty
-                    ? <Empty description="暂无系统日志，系统运行正常" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
+                    ? <Empty description={logFile === 'system' ? '暂无系统日志，系统运行正常' : '暂无业务日志，系统运行正常'} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: 0 }} />
                     : logFile === 'system'
                       ? <span style={{ color: isDark ? '#4a5568' : '#9ca3af' }}>系统日志较少，等待新日志…</span>
                       : '暂无日志，等待新日志…'

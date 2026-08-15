@@ -9,6 +9,7 @@ import dayjs from 'dayjs'
 import {
   fetchRequests,
   fetchModelList,
+  fetchRequestFilterOptions,
   fetchRequestDetail,
   fetchRequestRetention,
   previewRequestRetention,
@@ -16,6 +17,7 @@ import {
 } from '../api/stats'
 import { useFilter } from '../context/FilterContext'
 import { useStableData } from '../hooks/useStableData'
+import { useLatestAsyncRequest } from '../hooks/useLatestAsyncRequest'
 import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
@@ -24,9 +26,7 @@ import MobileTooltip from '../components/MobileTooltip'
 import { fmtCny, fmtCnyPerMillionValue, fmtTokens, fmtMs, latencyColor } from '../utils/format'
 import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
-
-// 移动端检测
-const isMobileCheck = () => window.innerWidth <= 768
+import { useIsMobile } from '../hooks/useMediaQuery'
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -366,10 +366,11 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function GridCell({ label, children }: { label: string; children: React.ReactNode }) {
+  const isMobile = useIsMobile()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums', fontSize: isMobileCheck() ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
+      <span style={{ fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums', fontSize: isMobile ? 13 : 14, display: 'inline-flex', alignItems: 'center' }}>{children}</span>
     </div>
   )
 }
@@ -386,32 +387,40 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
   const [detail, setDetail] = useState<RequestRecord | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
   const { theme } = useTheme()
   const isDark = theme === 'dark'
+  const mobile = useIsMobile()
 
   const loadDetail = useCallback((id: number) => {
+    const token = begin(false)
     setLoading(true)
     setLoadError(false)
     fetchRequestDetail(id)
       .then(value => {
+        if (!isCurrent(token)) return
         setDetail(value)
         setLoadError(false)
       })
       .catch(() => {
+        if (!isCurrent(token)) return
         setDetail(null)
         setLoadError(true)
       })
-      .finally(() => setLoading(false))
-  }, [])
+      .finally(() => {
+        if (isForegroundCurrent(token)) setLoading(false)
+      })
+  }, [begin, isCurrent, isForegroundCurrent])
 
   useEffect(() => {
     if (recordId == null) {
+      begin(false)
       setDetail(null)
       setLoadError(false)
       return
     }
     loadDetail(recordId)
-  }, [recordId, loadDetail])
+  }, [begin, recordId, loadDetail])
 
   const rec = detail
   const cacheRate = rec && rec.prompt_tokens > 0
@@ -419,8 +428,6 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
     : '0%'
   const cacheWriteTokens = rec?.cache_write_tokens ?? rec?.cache_miss_tokens ?? 0
   const outputMs = rec ? (rec.latency_ms - rec.ttfb_ms) : 0
-
-  const mobile = isMobileCheck()
 
   // ── 从 request_body / response_body 中提取额外信息 ──
   const reqBody = rec?.request_body as Record<string, unknown> | null | undefined
@@ -456,7 +463,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
       open={recordId != null}
       onCancel={onClose}
       footer={null}
-      width={mobile ? window.innerWidth - 24 : Math.min(860, window.innerWidth - 48)}
+      width={mobile ? 'calc(100vw - 24px)' : 860}
       className="hd-request-detail-modal"
       centered={true}
       style={mobile ? { marginTop: MOBILE_V_MARGIN, marginBottom: MOBILE_V_MARGIN, marginLeft: 12, marginRight: 12 } : undefined}
@@ -660,6 +667,7 @@ function formatBytes(bytes: number): string {
 
 export default function Requests() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
+  const isMobile = useIsMobile()
 
   const [data, setData] = useState<RequestRecord[]>([])
   const [total, setTotal] = useState(0)
@@ -669,7 +677,12 @@ export default function Requests() {
   const [loadError, setLoadError] = useState(false)
   const [modelFilter, setModelFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [protocolFilter, setProtocolFilter] = useState('all')
+  const [streamFilter, setStreamFilter] = useState('all')
+  const [providerFilter, setProviderFilter] = useState('all')
+  const [clientKeyFilter, setClientKeyFilter] = useState('all')
   const [models, setModels] = useState<string[]>([])
+  const [filterOptions, setFilterOptions] = useState({ providers: [] as string[], protocols: [] as string[], client_keys: [] as Array<{ id: number; name: string; is_deleted: boolean }> })
   const [detailId, setDetailId] = useState<number | null>(null)
   const [sortBy, setSortBy] = useState<string>('created_at')
   const [sortOrder, setSortOrder] = useState<string>('desc')
@@ -678,6 +691,7 @@ export default function Requests() {
   const [retentionSaving, setRetentionSaving] = useState(false)
   const [retentionLastRun, setRetentionLastRun] = useState<string | null>(null)
   const [retentionLastError, setRetentionLastError] = useState<string | null>(null)
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
   const [retentionForm] = Form.useForm()
   const retentionEnabled = Form.useWatch<boolean>('enabled', retentionForm)
   const { setIfChanged } = useStableData()
@@ -760,21 +774,30 @@ export default function Requests() {
   }
 
   const fetchData = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     try {
-      const [reqRes, modelRes] = await Promise.all([
+      const [reqResult, modelResult, filterResult] = await Promise.allSettled([
         fetchRequests({
           page,
           page_size: pageSize,
           model: modelFilter,
           status: statusFilter,
+          protocol: protocolFilter,
+          stream: streamFilter,
+          provider: providerFilter,
+          client_key_id: clientKeyFilter,
           start_date: dateRange.start,
           end_date: dateRange.end,
           sort_by: sortBy,
           sort_order: sortOrder,
         }),
         fetchModelList(),
+        fetchRequestFilterOptions(),
       ])
+      if (!isCurrent(token)) return
+      if (reqResult.status === 'rejected') throw reqResult.reason
+      const reqRes = reqResult.value
       if (silent) {
         setIfChanged(reqRes.items, setData, 'items')
         setIfChanged(reqRes.total, (v) => setTotal(v), 'total')
@@ -782,21 +805,22 @@ export default function Requests() {
         setData(reqRes.items)
         setTotal(reqRes.total)
       }
-      setModels(modelRes.data)
+      if (modelResult.status === 'fulfilled') setModels(modelResult.value.data)
+      if (filterResult.status === 'fulfilled') setFilterOptions(filterResult.value)
       if (!silent) setLoadError(false)
     } catch (e) {
-      if (!silent) {
+      if (isCurrent(token) && !silent) {
         console.error(e)
         setLoadError(true)
       }
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && isForegroundCurrent(token)) setLoading(false)
     }
-  }, [page, pageSize, modelFilter, statusFilter, dateRange.start, dateRange.end, sortBy, sortOrder, setIfChanged])
+  }, [begin, isCurrent, isForegroundCurrent, page, pageSize, modelFilter, statusFilter, protocolFilter, streamFilter, providerFilter, clientKeyFilter, dateRange.start, dateRange.end, sortBy, sortOrder, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
   useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
-  useEffect(() => { setPage(1) }, [modelFilter, statusFilter, dateRange.start, dateRange.end])
+  useEffect(() => { setPage(1) }, [modelFilter, statusFilter, protocolFilter, streamFilter, providerFilter, clientKeyFilter, dateRange.start, dateRange.end])
 
   // 只处理排序变化，不处理分页（分页由 pagination.onChange 单独处理）
   // 关键：必须判断是否真的有 sorter 字段变化，避免误处理分页点击事件
@@ -817,14 +841,6 @@ export default function Requests() {
       setPage(1)
     }
   }
-
-  const [isMobile, setIsMobile] = useState(isMobileCheck())
-
-  React.useEffect(() => {
-    const handleResize = () => setIsMobile(isMobileCheck())
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
 
   const cellStyle: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
 
@@ -875,27 +891,16 @@ export default function Requests() {
       align: 'center' as const,
       onHeaderCell: () => ({ style: { textAlign: 'center' } }),
       onCell: () => ({ style: cellStyle }),
-      render: (v: string | null) => (
-        <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, fontWeight: v ? 550 : 400, color: v ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-          {v || '未知'}
-        </span>
+      render: (v: string | null, record) => (
+        <Space size={4} wrap={false}>
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, fontWeight: v ? 550 : 400, color: v ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+            {v || (record.api_key_id != null ? `API Key #${record.api_key_id}` : '未关联 API Key')}
+          </span>
+          {record.api_key_deleted && (
+            <Tag color="default" style={{ margin: 0, fontSize: 10, lineHeight: '18px' }}>已删除</Tag>
+          )}
+        </Space>
       ),
-    },
-    {
-      title: '厂商',
-      dataIndex: 'provider',
-      key: 'provider',
-      width: isMobile ? 80 : 100,
-      align: 'center' as const,
-      onHeaderCell: () => ({ style: { textAlign: 'center' } }),
-      onCell: () => ({ style: cellStyle }),
-      render: (value: string | null) => value
-        ? (
-          <MobileTooltip title={value}>
-            <VendorTag name={value} style={{ maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
-          </MobileTooltip>
-        )
-        : <span style={{ color: 'var(--text-disabled)' }}>—</span>,
     },
     {
       title: '模式',
@@ -1086,7 +1091,6 @@ export default function Requests() {
   const mobileColumnKeys = new Set([
     'created_at',
     'model',
-    'provider',
     'total_tokens',
     'estimated_cost',
     'success',
@@ -1159,6 +1163,44 @@ export default function Requests() {
                       { value: 'error', label: '失败' },
                     ]}
                   />
+                  <Select
+                    aria-label="协议筛选"
+                    size="small"
+                    value={protocolFilter}
+                    onChange={(v) => { setProtocolFilter(v); setPage(1) }}
+                    style={{ minWidth: 110, maxWidth: 170 }}
+                    options={[
+                      { value: 'all', label: '全部协议' },
+                      ...filterOptions.protocols.map(protocol => ({ value: protocol, label: protocol === 'anthropic_messages' ? 'Anthropic' : protocol === 'openai_responses' ? 'Responses' : 'Chat' })),
+                    ]}
+                  />
+                  <Select
+                    aria-label="流式模式筛选"
+                    size="small"
+                    value={streamFilter}
+                    onChange={(v) => { setStreamFilter(v); setPage(1) }}
+                    style={{ minWidth: 100, maxWidth: 130 }}
+                    options={[{ value: 'all', label: '全部模式' }, { value: 'json', label: 'JSON' }, { value: 'sse', label: 'SSE' }]}
+                  />
+                  <Select
+                    aria-label="厂商筛选"
+                    size="small"
+                    value={providerFilter}
+                    onChange={(v) => { setProviderFilter(v); setPage(1) }}
+                    style={{ minWidth: 100, maxWidth: 160 }}
+                    options={[{ value: 'all', label: '全部厂商' }, ...filterOptions.providers.map(provider => ({ value: provider, label: provider === 'default' ? '未关联厂商' : provider }))]}
+                  />
+                  <Select
+                    aria-label="Client Access Key 筛选"
+                    size="small"
+                    value={clientKeyFilter}
+                    onChange={(v) => { setClientKeyFilter(v); setPage(1) }}
+                    style={{ minWidth: 130, maxWidth: 210 }}
+                    options={[
+                      { value: 'all', label: '全部 Client Key' },
+                      ...filterOptions.client_keys.map(key => ({ value: String(key.id), label: key.is_deleted ? `${key.name}（已删除）` : key.name })),
+                    ]}
+                  />
                 </div>
               ) : undefined
             }
@@ -1181,13 +1223,13 @@ export default function Requests() {
             {/* 筛选组件：独立一行，解决标题被遮挡问题 */}
             {/* 移动端：筛选框独立一行，各占约 50% 宽度 */}
             {isMobile && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                 <Select
                   aria-label="模型筛选"
                   size="small"
                   value={modelFilter}
                   onChange={(v) => { setModelFilter(v); setPage(1) }}
-                  style={{ minWidth: 100, maxWidth: 'calc(50vw - 16px)', flex: 1 }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
                   options={[
                     { value: 'all', label: '全部模型' },
                     ...models.map(m => ({ value: m, label: m })),
@@ -1200,11 +1242,49 @@ export default function Requests() {
                   size="small"
                   value={statusFilter}
                   onChange={(v) => { setStatusFilter(v); setPage(1) }}
-                  style={{ minWidth: 100, maxWidth: 'calc(50vw - 16px)', flex: 1 }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
                   options={[
                     { value: 'all', label: '全部状态' },
                     { value: 'success', label: '成功' },
                     { value: 'error', label: '失败' },
+                  ]}
+                />
+                <Select
+                  aria-label="协议筛选"
+                  size="small"
+                  value={protocolFilter}
+                  onChange={(v) => { setProtocolFilter(v); setPage(1) }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
+                  options={[
+                    { value: 'all', label: '全部协议' },
+                    ...filterOptions.protocols.map(protocol => ({ value: protocol, label: protocol === 'anthropic_messages' ? 'Anthropic' : protocol === 'openai_responses' ? 'Responses' : 'Chat' })),
+                  ]}
+                />
+                <Select
+                  aria-label="流式模式筛选"
+                  size="small"
+                  value={streamFilter}
+                  onChange={(v) => { setStreamFilter(v); setPage(1) }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
+                  options={[{ value: 'all', label: '全部模式' }, { value: 'json', label: 'JSON' }, { value: 'sse', label: 'SSE' }]}
+                />
+                <Select
+                  aria-label="厂商筛选"
+                  size="small"
+                  value={providerFilter}
+                  onChange={(v) => { setProviderFilter(v); setPage(1) }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
+                    options={[{ value: 'all', label: '全部厂商' }, ...filterOptions.providers.map(provider => ({ value: provider, label: provider === 'default' ? '未关联厂商' : provider }))]}
+                />
+                <Select
+                  aria-label="Client Access Key 筛选"
+                  size="small"
+                  value={clientKeyFilter}
+                  onChange={(v) => { setClientKeyFilter(v); setPage(1) }}
+                  style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
+                  options={[
+                    { value: 'all', label: '全部 Client Key' },
+                    ...filterOptions.client_keys.map(key => ({ value: String(key.id), label: key.is_deleted ? `${key.name}（已删除）` : key.name })),
                   ]}
                 />
               </div>

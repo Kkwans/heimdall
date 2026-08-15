@@ -7,7 +7,10 @@ import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
 import { CHART_COLORS, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle, PAGE_ICON_STYLE } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
+import { ChartSkeleton } from '../LoadingSkeleton'
 import { fmtTokens, fmtAxis } from '../../utils/format'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
 
 const ModelTokenBar = memo(function ModelTokenBar() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -16,31 +19,36 @@ const ModelTokenBar = memo(function ModelTokenBar() {
   const [data, setData] = useState<ModelData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
 
-  // 移动端检测（< 768px）
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+  const isMobile = useIsMobile()
 
   const fetchData = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     try {
       const res = await fetchDashboardModels({ start_date: dateRange.start, end_date: dateRange.end })
+      if (!isCurrent(token)) return
       if (silent) { setIfChanged(res.data, setData) } else { setData(res.data) }
     } catch (e) {
-      if (!silent) console.error(e)
+      if (!silent && isCurrent(token)) console.error(e)
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && isForegroundCurrent(token)) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end, setIfChanged])
+  }, [begin, dateRange.start, dateRange.end, isCurrent, isForegroundCurrent, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
   useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
 
   const chartHeight = isMobile ? 340 : 260  // 移动端增大高度，为图例留出更多空间
+
+  if (loading && data.length === 0) {
+    return (
+      <Card title="各模型 Token 对比" className="chart-card" bordered={false}>
+        <ChartSkeleton height={260} />
+      </Card>
+    )
+  }
 
   if (!loading && data.length === 0) {
     return (
@@ -138,8 +146,8 @@ const ModelTokenBar = memo(function ModelTokenBar() {
   }
 
   return (
-    <Card title="各模型 Token 对比" className="chart-card" bordered={false} loading={loading}>
-      <ReactECharts option={option} style={{ height: chartHeight }} notMerge />
+    <Card title="各模型 Token 对比" className="chart-card" bordered={false}>
+      <ReactECharts option={option} style={{ height: chartHeight }} />
     </Card>
   )
 })

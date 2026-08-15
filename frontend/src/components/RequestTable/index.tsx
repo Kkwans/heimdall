@@ -8,6 +8,7 @@ import type { RequestRecord } from '../../types'
 import styles from './RequestTable.module.css'
 import { fmtTokens } from '../../utils/format'
 import { getVendorColor } from '../Charts/chartTheme'
+import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
 
 /**
  * 耗时分段颜色（与日志页/后端规则统一）
@@ -54,9 +55,11 @@ export default function RequestTable() {
   const [modelFilter, setModelFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [models, setModels] = useState<string[]>([])
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
 
   // 加载请求数据（支持静默刷新）
   const fetchData = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     try {
       const [reqRes, modelRes] = await Promise.all([
@@ -70,15 +73,16 @@ export default function RequestTable() {
         }),
         fetchModelList(),
       ])
+      if (!isCurrent(token)) return
       setData(reqRes.items)
       setTotal(reqRes.total)
       setModels(modelRes.data)
     } catch (e) {
-      if (!silent) console.error(e)
+      if (isCurrent(token) && !silent) console.error(e)
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && isForegroundCurrent(token)) setLoading(false)
     }
-  }, [page, pageSize, modelFilter, statusFilter, dateRange.start, dateRange.end])
+  }, [begin, isCurrent, isForegroundCurrent, page, pageSize, modelFilter, statusFilter, dateRange.start, dateRange.end])
 
   // 前台刷新（显示 loading）
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])

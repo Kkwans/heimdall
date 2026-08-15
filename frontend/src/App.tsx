@@ -5,13 +5,13 @@ import zhCN from 'antd/locale/zh_CN'
 import { ThemeProvider, useTheme } from './context/ThemeContext'
 import { FilterProvider } from './context/FilterContext'
 import Layout from './components/Layout'
-import Dashboard from './pages/Dashboard'
 import NotFound from './pages/NotFound'
 import RouteFallback from './components/RouteFallback'
 import PageErrorBoundary from './components/PageErrorBoundary'
 import './styles/global.css'
 
-// 懒加载非首屏页面（提升首屏速度）
+// 页面按路由懒加载，避免首屏同步打入图表和管理页依赖。
+const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const Requests = React.lazy(() => import('./pages/Requests'))
 const Logs = React.lazy(() => import('./pages/Logs'))
 const Stats = React.lazy(() => import('./pages/Stats'))

@@ -73,6 +73,12 @@ export interface RequestRecord {
   request_body?: object | null
   response_body?: object | null
   provider?: string | null
+  provider_id?: number | null
+  provider_api_key_id?: number | null
+  client_api_key_id?: number | null
+  protocol?: string | null
+  endpoint?: string | null
+  route_attempts?: unknown[]
   estimated_cost?: number | null
   pricing_snapshot?: Record<string, unknown> | null
   cost_source?: 'request_snapshot' | 'historical_estimate' | null

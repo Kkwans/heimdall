@@ -74,3 +74,32 @@ export function LogSkeleton({ rows = 9 }: { rows?: number }) {
     </div>
   )
 }
+
+/**
+ * 图表区域的稳定占位，避免统计页在首屏请求期间闪成空白或 Spinner。
+ * 只模拟标题、坐标网格和图例的几何，不模拟真实数据，避免造成误导。
+ */
+export function ChartSkeleton({ height = 280 }: { height?: number }) {
+  return (
+    <div
+      className="hd-skeleton hd-chart-skeleton"
+      style={{ height }}
+      role="status"
+      aria-live="polite"
+      aria-label="图表加载中"
+    >
+      <span className="sr-only">图表加载中…</span>
+      <div className="hd-chart-skeleton__plot" aria-hidden="true">
+        {Array.from({ length: 4 }, (_, index) => (
+          <SkeletonBlock key={`grid-${index}`} className="hd-chart-skeleton__grid" />
+        ))}
+        <SkeletonBlock className="hd-chart-skeleton__line" />
+      </div>
+      <div className="hd-chart-skeleton__legend" aria-hidden="true">
+        {Array.from({ length: 3 }, (_, index) => (
+          <SkeletonBlock key={`legend-${index}`} width={`${42 + index * 12}px`} />
+        ))}
+      </div>
+    </div>
+  )
+}

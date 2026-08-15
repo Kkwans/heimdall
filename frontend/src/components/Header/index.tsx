@@ -5,6 +5,7 @@ import { useFilter } from '../../context/FilterContext'
 import type { DatePreset, DateRange } from '../../types'
 import styles from './Header.module.css'
 import RefreshModule from './RefreshModule'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 
 // 页面名称 → 蓝色 SVG 图标映射（与 Layout/index.tsx 中 PAGE_ICONS 完全一致）
 const PAGE_ICONS: Record<string, React.ReactNode> = {
@@ -58,9 +59,6 @@ const PRESETS: { key: DatePreset; label: string }[] = [
   { key: 'all', label: '全部' },
 ]
 
-// 检测移动端
-const isMobile = () => window.innerWidth <= 768
-
 interface HeaderProps {
   /** 已废弃，保留向后兼容 */
   hideBrand?: boolean
@@ -77,6 +75,7 @@ export default function Header({ pageName, hideDatePicker }: HeaderProps = {}) {
     setDatePreset,
     setCustomDateRange,
   } = useFilter()
+  const isMobile = useIsMobile()
 
   const rangePickerValue = (() => {
     if (datePreset === 'all') return null
@@ -92,10 +91,10 @@ export default function Header({ pageName, hideDatePicker }: HeaderProps = {}) {
     <header className={`${styles.header} ${pageName ? styles.headerWithTitle : ''}`}>
       {/* PC端页面标题：图标 + 页面名称（移动端通过 CSS 隐藏） */}
       {pageName && (
-        <div className={`${styles.pageTitle} page-header-inline`}>
-          {icon && <span className={styles.pageTitleIcon}>{icon}</span>}
+        <h1 className={`${styles.pageTitle} page-header-inline`}>
+          {icon && <span className={styles.pageTitleIcon} aria-hidden="true">{icon}</span>}
           <span className={styles.pageTitleText}>{pageName}</span>
-        </div>
+        </h1>
       )}
 
       <div className={styles.controls}>
@@ -138,7 +137,7 @@ export default function Header({ pageName, hideDatePicker }: HeaderProps = {}) {
         )}
 
         {/* PC端刷新模块（在日历右侧），移动端由 Layout 的 topbar 负责 */}
-        {!isMobile() && <RefreshModule />}
+        {!isMobile && <RefreshModule />}
       </div>
     </header>
   )

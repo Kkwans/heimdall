@@ -3,6 +3,7 @@
  */
 import React from 'react'
 import { Tooltip } from 'antd'
+import { useIsMobile } from '../hooks/useMediaQuery'
 
 interface MobileTooltipProps {
   title: string | React.ReactNode
@@ -11,7 +12,7 @@ interface MobileTooltipProps {
 }
 
 export default function MobileTooltip({ title, children, placement = 'top' }: MobileTooltipProps) {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768
+  const isMobile = useIsMobile()
 
   // 移动端不显示 tooltip
   if (isMobile) {

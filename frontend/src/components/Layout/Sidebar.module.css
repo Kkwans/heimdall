@@ -168,17 +168,24 @@
   transition-delay: 0ms;
 }
 
+.sidebarCollapsed .navItem,
+.sidebarCollapsed .utilityBtn {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .sidebarCollapsed .utilityBtnIcon svg {
   width: 19px;
   height: 19px;
 }
 
-/* 折叠态仍保留左对齐布局，避免宽度动画期间图标横穿侧栏。
-   仅补偿隐藏标签残留 gap 造成的视觉偏移，使图标与按钮背景同轴。 */
+/* 折叠态图标始终以菜单项中心为轴，不再使用会造成偏移的补偿位移。 */
 .sidebarCollapsed .navIcon {
-  transform: translateX(3px);
+  transform: none;
 }
 
 .sidebarCollapsed .utilityBtnIcon {
-  transform: translateX(4px);
+  transform: none;
 }

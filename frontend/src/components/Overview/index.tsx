@@ -9,6 +9,7 @@ import {
 import { fetchDashboardOverview } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
+import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
 import type { OverviewData } from '../../types'
 import styles from './Overview.module.css'
 import { fmtCny, fmtTokens as formatTokens } from '../../utils/format'
@@ -17,12 +18,15 @@ export default function Overview() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
   const [data, setData] = useState<OverviewData | null>(null)
   const [loading, setLoading] = useState(true)
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
   const { setIfChanged } = useStableData()
 
   const fetchData = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     try {
       const result = await fetchDashboardOverview({ start_date: dateRange.start, end_date: dateRange.end })
+      if (!isCurrent(token)) return
       if (silent) {
         // 后台刷新：只在数据变化时才更新，防止无意义重渲染闪烁
         setIfChanged(result, setData)
@@ -30,11 +34,11 @@ export default function Overview() {
         setData(result)
       }
     } catch (e) {
-      if (!silent) console.error(e)
+      if (isCurrent(token) && !silent) console.error(e)
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && isForegroundCurrent(token)) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end, setIfChanged])
+  }, [begin, dateRange.start, dateRange.end, isCurrent, isForegroundCurrent, setIfChanged])
 
   // 前台刷新（参数变化 or 手动刷新）
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])

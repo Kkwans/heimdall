@@ -8,12 +8,12 @@
  * - 新增顶部日期范围筛选（默认近七天，与首页一致）
  * - 饼图 PC端 center/radius 调整，给右侧图例留出更多空间
  */
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Alert, Button, Card, Table, Space, Row, Col, Statistic, DatePicker, Tag, Tooltip
 } from 'antd'
 import { InfoCircleOutlined } from '@ant-design/icons'
-import { TableSkeleton } from '../components/LoadingSkeleton'
+import { ChartSkeleton, TableSkeleton } from '../components/LoadingSkeleton'
 import type { ColumnsType } from 'antd/es/table'
 import ReactECharts, { type ChartTooltipParam, type EChartRef } from '../components/Charts/EChart'
 import dayjs from 'dayjs'
@@ -36,6 +36,8 @@ import type { ModelStats, ErrorAnalysis, HourlyStat, DailyData, ProviderStats } 
 import { fmtCny, fmtCnyPerMillionValue, fmtTokens as fmtTokensUtil, fmtAxis, fmtMs as fmtMsUtil, pctStr as pctStrUtil, latencyColor as latencyColorUtil } from '../utils/format'
 import { PAGE_ICON_STYLE, getVendorColor } from '../components/Charts/chartTheme'
 import { VendorTag, ModelTag } from '../components/CommonTag'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { useLatestAsyncRequest } from '../hooks/useLatestAsyncRequest'
 
 const CHART_HEIGHT = 280
 const CHART_HEIGHT_MOBILE = 240
@@ -69,7 +71,7 @@ function EmptyPlaceholder({ text = '暂无数据' }: { text?: string }) {
 function ApiKeyName({ name, deleted }: { name: string; deleted?: boolean }) {
   return (
     <Space size={6} wrap={false}>
-      <span style={{ fontWeight: 500 }}>{name || '未知'}</span>
+      <span style={{ fontWeight: 500 }}>{name || '未关联 API Key'}</span>
       {deleted && (
         <Tag color="default" style={{ margin: 0, fontSize: 10, lineHeight: '18px' }}>
           已删除
@@ -1016,7 +1018,7 @@ function ProviderStatsTable({ data, loading }: { data: ProviderStats[]; loading:
 // APIKey 统计组件
 // ──────────────────────────────────────────
 function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile: boolean }) {
-  const filtered = data.filter(d => d.api_key_id !== null)
+  const filtered = data
   if (filtered.length === 0) return <EmptyPlaceholder />
   
   const colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2']
@@ -1059,7 +1061,7 @@ function ApiKeyTokenPieChart({ data, isMobile }: { data: ApiKeyStat[]; isMobile:
 }
 
 function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
-  const filtered = data.filter(d => d.api_key_id !== null)
+  const filtered = data
   if (filtered.length === 0) return <EmptyPlaceholder text="暂无 API Key 数据" />
   
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
@@ -1088,7 +1090,7 @@ function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
     <Table
       columns={columns}
       dataSource={filtered}
-      rowKey={(r) => r.api_key_id || 'unknown'}
+      rowKey={(r) => r.api_key_id === null ? 'unassigned' : String(r.api_key_id)}
       pagination={false}
       size="small"
     />
@@ -1096,7 +1098,7 @@ function ApiKeyStatsTable({ data }: { data: ApiKeyStat[] }) {
 }
 
 function ApiKeyModelStatsTable({ data }: { data: ApiKeyModelStat[] }) {
-  const filtered = data.filter(d => d.api_key_id !== null)
+  const filtered = data
   if (filtered.length === 0) return <EmptyPlaceholder text="暂无数据" />
   
   const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 12 }
@@ -1203,12 +1205,7 @@ export default function Stats() {
   const isDark = theme === 'dark'
 
   // 移动端检测（用于饼图图例切换）
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+  const isMobile = useIsMobile()
 
   const [loading, setLoading] = useState(true)
   const [modelStats, setModelStats] = useState<ModelStats[]>([])
@@ -1222,6 +1219,8 @@ export default function Stats() {
   const [costLoading, setCostLoading] = useState(true)
   const [sectionErrors, setSectionErrors] = useState<string[]>([])
   const [hourlyDate, setHourlyDate] = useState<string>(() => dayjs().format('YYYY-MM-DD'))
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
+  const hourlyRequestVersion = useRef(0)
 
   // 汇总摘要指标
   const totalRequests = modelStats.reduce((s, d) => s + d.total_requests, 0)
@@ -1230,11 +1229,12 @@ export default function Stats() {
   const avgSuccessRate = totalRequests > 0
     ? (totalRequests - totalErrors) / totalRequests
     : 1
-  const avgLatency = modelStats.length > 0
+  const avgLatency = modelStats.length > 0 && totalRequests > 0
     ? modelStats.reduce((s, d) => s + (d.avg_total_latency_ms ?? 0) * d.total_requests, 0) / totalRequests
     : 0
 
   const loadStats = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     if (!silent) setCostLoading(true)
     const params = {
@@ -1244,33 +1244,67 @@ export default function Stats() {
     const failures: string[] = []
     const load = async <T,>(label: string, request: Promise<T>, apply: (value: T) => void) => {
       try {
-        apply(await request)
+        const value = await request
+        if (!isCurrent(token)) return
+        apply(value)
       } catch (error) {
+        if (!isCurrent(token)) return
         failures.push(label)
         console.error(`[Stats] ${label}加载失败`, error)
       }
     }
-    await Promise.all([
-      load('模型数据', fetchModelStats(params), value => setModelStats(value.data)),
-      load('厂商数据', fetchProviderStats(params), value => setProviderStats(value.data)),
-      load('错误分析', fetchErrorAnalysis(params), value => setErrorAnalysis(value.data)),
-      load('小时分布', fetchHourly(hourlyDate), value => setHourly(value.data)),
-      load('趋势数据', fetchDaily(params), value => setDailyData(value.data)),
-      load('API Key 统计', fetchApiKeyStats(params), value => setApiKeyStats(value.data)),
-      load('API Key 模型统计', fetchApiKeyModelStats(params), value => setApiKeyModelStats(value.data)),
-      load('成本统计', fetchCostStats(params), value => setCostStats(value)),
-    ])
-    setSectionErrors(failures)
-    if (!silent) {
-      setLoading(false)
-      setCostLoading(false)
+    // 先完成首屏需要的模型、厂商、趋势和成本摘要；下方较重的明细在首屏可见后再加载。
+    try {
+      await Promise.all([
+        load('模型数据', fetchModelStats(params), value => setModelStats(value.data)),
+        load('厂商数据', fetchProviderStats(params), value => setProviderStats(value.data)),
+        load('趋势数据', fetchDaily(params), value => setDailyData(value.data)),
+        load('成本统计', fetchCostStats(params), value => setCostStats(value)),
+      ])
+      if (!isCurrent(token)) return
+
+      await Promise.all([
+        load('错误分析', fetchErrorAnalysis(params), value => setErrorAnalysis(value.data)),
+        load('API Key 统计', fetchApiKeyStats(params), value => setApiKeyStats(value.data)),
+        load('API Key 模型统计', fetchApiKeyModelStats(params), value => setApiKeyModelStats(value.data)),
+      ])
+      if (!isCurrent(token)) return
+      // 保留独立小时分布请求的错误状态；主统计刷新不应覆盖另一块的结果。
+      setSectionErrors(current => {
+        const preservedHourlyError = current.includes('小时分布') ? ['小时分布'] : []
+        return [...preservedHourlyError, ...failures]
+      })
+    } finally {
+      // 前台请求即使被静默刷新取代，也必须结束自己的占位；后台请求不触碰前台 loading。
+      if (!silent && isForegroundCurrent(token)) {
+        setLoading(false)
+        setCostLoading(false)
+      }
     }
-  }, [dateRange.start, dateRange.end, hourlyDate])
+  }, [begin, dateRange.start, dateRange.end, isCurrent, isForegroundCurrent])
+
+  const loadHourly = useCallback(async () => {
+    const version = ++hourlyRequestVersion.current
+    try {
+      const value = await fetchHourly(hourlyDate)
+      if (version !== hourlyRequestVersion.current) return
+      setHourly(value.data)
+      setSectionErrors(current => current.filter(label => label !== '小时分布'))
+    } catch (error) {
+      if (version !== hourlyRequestVersion.current) return
+      console.error('[Stats] 小时分布加载失败', error)
+      setSectionErrors(current => current.includes('小时分布') ? current : [...current, '小时分布'])
+    }
+  }, [hourlyDate])
 
   // 响应日期变化 + 前台刷新
   useEffect(() => { loadStats() }, [loadStats, refreshTick])
   // 响应后台静默刷新
   useEffect(() => { if (backgroundTick > 0) loadStats(true) }, [backgroundTick, loadStats])
+  // 小时分布只依赖所选日期，切换日期时不重复刷新整页统计。
+  useEffect(() => { loadHourly() }, [loadHourly, refreshTick])
+  // 后台刷新同样更新小时分布，但不触发加载占位。
+  useEffect(() => { if (backgroundTick > 0) loadHourly() }, [backgroundTick, loadHourly])
 
   const cardStyle = { borderRadius: 6, overflow: 'hidden' as const }
   const sectionTitle = (title: string, subtitle?: string) => (
@@ -1393,7 +1427,11 @@ export default function Stats() {
               />
             }
           >
-            {hourly.length > 0 ? <HourlyChart data={hourly} isDark={isDark} /> : <EmptyPlaceholder />}
+            {loading && hourly.length === 0
+              ? <ChartSkeleton height={CHART_HEIGHT} />
+              : hourly.length > 0
+                ? <HourlyChart data={hourly} isDark={isDark} />
+                : <EmptyPlaceholder />}
           </Card>
         </Col>
       </Row>
@@ -1402,12 +1440,20 @@ export default function Stats() {
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
           <Card title={sectionTitle('Token 消耗趋势', '输入/输出/缓存命中')} bordered={false} className="hd-card" style={cardStyle} size="small">
-            {dailyData.length > 0 ? <DailyTokenChart data={dailyData} isDark={isDark} /> : <EmptyPlaceholder />}
+            {loading && dailyData.length === 0
+              ? <ChartSkeleton height={CHART_HEIGHT} />
+              : dailyData.length > 0
+                ? <DailyTokenChart data={dailyData} isDark={isDark} />
+                : <EmptyPlaceholder />}
           </Card>
         </Col>
         <Col xs={24} md={12}>
           <Card title={sectionTitle('缓存命中率趋势', '每日')} bordered={false} className="hd-card" style={cardStyle} size="small">
-            {dailyData.length > 0 ? <DailyCacheChart data={dailyData} isDark={isDark} /> : <EmptyPlaceholder />}
+            {loading && dailyData.length === 0
+              ? <ChartSkeleton height={CHART_HEIGHT} />
+              : dailyData.length > 0
+                ? <DailyCacheChart data={dailyData} isDark={isDark} />
+                : <EmptyPlaceholder />}
           </Card>
         </Col>
       </Row>
@@ -1416,12 +1462,20 @@ export default function Stats() {
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
           <Card title={sectionTitle('每日请求量', '成功/失败堆叠')} bordered={false} className="hd-card" style={cardStyle} size="small">
-            {dailyData.length > 0 ? <DailyRequestChart data={dailyData} isDark={isDark} /> : <EmptyPlaceholder />}
+            {loading && dailyData.length === 0
+              ? <ChartSkeleton height={CHART_HEIGHT} />
+              : dailyData.length > 0
+                ? <DailyRequestChart data={dailyData} isDark={isDark} />
+                : <EmptyPlaceholder />}
           </Card>
         </Col>
         <Col xs={24} md={12}>
           <Card title={sectionTitle('每日平均耗时趋势')} bordered={false} className="hd-card" style={cardStyle} size="small">
-            {dailyData.length > 0 ? <DailyLatencyChart data={dailyData} isDark={isDark} /> : <EmptyPlaceholder />}
+            {loading && dailyData.length === 0
+              ? <ChartSkeleton height={CHART_HEIGHT} />
+              : dailyData.length > 0
+                ? <DailyLatencyChart data={dailyData} isDark={isDark} />
+                : <EmptyPlaceholder />}
           </Card>
         </Col>
       </Row>
@@ -1463,9 +1517,8 @@ export default function Stats() {
             className="hd-card"
             style={cardStyle}
             size="small"
-            loading={costLoading}
           >
-            {costStats ? (
+            {costLoading && !costStats ? <TableSkeleton columns={5} rows={4} compact /> : costStats ? (
               <>
                 <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
                   {[

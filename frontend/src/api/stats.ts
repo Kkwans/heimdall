@@ -113,6 +113,10 @@ export async function fetchRequests(params: {
   start_date?: string
   end_date?: string
   status?: string
+  protocol?: string
+  stream?: string
+  provider?: string
+  client_key_id?: number | string
   /** v4：后端全量排序字段 */
   sort_by?: string
   /** v4：排序方向 'asc' | 'desc' */
@@ -184,6 +188,17 @@ export async function fetchLatencyDistribution(params: {
 
 export async function fetchModelList(): Promise<{ data: string[] }> {
   const { data } = await api.get('/api/stats/models/list')
+  return data
+}
+
+export interface RequestFilterOptions {
+  providers: string[]
+  protocols: string[]
+  client_keys: Array<{ id: number; name: string; is_deleted: boolean }>
+}
+
+export async function fetchRequestFilterOptions(): Promise<RequestFilterOptions> {
+  const { data } = await api.get<RequestFilterOptions>('/api/stats/request-filters')
   return data
 }
 

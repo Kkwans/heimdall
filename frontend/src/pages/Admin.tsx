@@ -15,6 +15,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SaveOutlined 
 import type { ColumnsType } from 'antd/es/table'
 import { TableSkeleton } from '../components/LoadingSkeleton'
 import { VendorTag, ModelTag } from '../components/CommonTag'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import MobileTooltip from '../components/MobileTooltip'
 import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
@@ -262,13 +263,7 @@ function ProviderManager() {
 
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
   const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  const isMobile = useIsMobile()
 
   const columns: ColumnsType<Provider> = [
     {
@@ -713,13 +708,7 @@ function ModelManager() {
     }
   }
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  const isMobile = useIsMobile()
 
   const vendorName = providers.find(p => p.id === selectedProvider)?.name || ''
 
@@ -1088,13 +1077,7 @@ function ApiKeyManager() {
     }
   }
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  const isMobile = useIsMobile()
 
   const columns: ColumnsType<ApiKey> = [
     {
@@ -1335,6 +1318,7 @@ function ApiKeyManager() {
 // ==========================================
 
 export default function Admin() {
+  const isMobile = useIsMobile()
   const tabItems = [
     {
       key: 'providers',
@@ -1352,8 +1336,6 @@ export default function Admin() {
       children: <ApiKeyManager />,
     },
   ]
-
-  const isMobile = window.innerWidth <= 768
 
   return (
     <div className="page-content">

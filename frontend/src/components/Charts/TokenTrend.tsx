@@ -8,6 +8,8 @@ import type { DailyData } from '../../types'
 import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { fmtTokens, fmtAxis } from '../../utils/format'
+import { ChartSkeleton } from '../LoadingSkeleton'
+import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
 
 // fmtK 已不应再使用，改用全局 fmtAxis
 const fmtK = fmtAxis
@@ -19,21 +21,32 @@ const TokenTrend = memo(function TokenTrend() {
   const [data, setData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
   const { setIfChanged } = useStableData()
+  const { begin, isCurrent, isForegroundCurrent } = useLatestAsyncRequest()
 
   const fetchData = useCallback(async (silent = false) => {
+    const token = begin(silent)
     if (!silent) setLoading(true)
     try {
       const res = await fetchDashboardDaily({ start_date: dateRange.start, end_date: dateRange.end })
+      if (!isCurrent(token)) return
       if (silent) { setIfChanged(res.data, setData) } else { setData(res.data) }
     } catch (e) {
-      if (!silent) console.error(e)
+      if (!silent && isCurrent(token)) console.error(e)
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && isForegroundCurrent(token)) setLoading(false)
     }
-  }, [dateRange.start, dateRange.end, setIfChanged])
+  }, [begin, dateRange.start, dateRange.end, isCurrent, isForegroundCurrent, setIfChanged])
 
   useEffect(() => { fetchData(false) }, [fetchData, refreshTick])
   useEffect(() => { if (backgroundTick > 0) fetchData(true) }, [backgroundTick, fetchData])
+
+  if (loading && data.length === 0) {
+    return (
+      <Card title="Token 消耗趋势" className="chart-card" bordered={false}>
+        <ChartSkeleton height={260} />
+      </Card>
+    )
+  }
 
   if (!loading && data.length === 0) {
     return (
@@ -105,8 +118,8 @@ const TokenTrend = memo(function TokenTrend() {
   }
 
   return (
-    <Card title="Token 消耗趋势" className="chart-card" bordered={false} loading={loading}>
-      <ReactECharts option={option} style={{ height: 260 }} notMerge />
+    <Card title="Token 消耗趋势" className="chart-card" bordered={false}>
+      <ReactECharts option={option} style={{ height: 260 }} />
     </Card>
   )
 })
