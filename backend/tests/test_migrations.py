@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
+import migrations
 
 from migrations import (
     MIGRATIONS,
@@ -12,6 +13,7 @@ from migrations import (
     backup_database,
     create_timestamped_backup,
     inspect_database,
+    migrate_with_backup,
     main,
 )
 
@@ -63,6 +65,37 @@ def test_legacy_database_is_backed_up_before_migration(tmp_path: Path) -> None:
     assert migrated_key == ("fixture-not-a-secret",)
 
 
+def test_migrate_with_backup_is_idempotent_and_skips_empty_database(
+    tmp_path: Path,
+) -> None:
+    empty_database = tmp_path / "empty.db"
+    empty_backup_dir = tmp_path / "empty-backups"
+
+    backup, result = migrate_with_backup(empty_database, empty_backup_dir)
+
+    assert backup is None
+    assert result.applied_versions == (1, 2, 3, 4, 5, 6, 7)
+    assert list(empty_backup_dir.glob("*.db")) == []
+
+    legacy_database = tmp_path / "legacy-auto.db"
+    legacy_backup_dir = tmp_path / "legacy-backups"
+    _create_legacy_database(legacy_database)
+
+    first_backup, first_result = migrate_with_backup(
+        legacy_database, legacy_backup_dir
+    )
+    second_backup, second_result = migrate_with_backup(
+        legacy_database, legacy_backup_dir
+    )
+
+    assert first_backup is not None
+    assert first_backup.integrity == "ok"
+    assert first_result.current_version == 7
+    assert second_backup is None
+    assert second_result.applied_versions == ()
+    assert len(list(legacy_backup_dir.glob("*.db"))) == 1
+
+
 def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
     database = tmp_path / "rollback.db"
     apply_migrations(database)
@@ -82,6 +115,25 @@ def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path) -> None:
         version = connection.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0]
     assert table is None
     assert version == 7
+
+
+def test_integrity_failure_rolls_back_before_schema_is_committed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "integrity-rollback.db"
+
+    def fail_integrity(_connection: sqlite3.Connection) -> str:
+        raise MigrationError("injected integrity failure")
+
+    monkeypatch.setattr(migrations, "_integrity_check", fail_integrity)
+    with pytest.raises(MigrationError, match="injected integrity failure"):
+        apply_migrations(database)
+
+    with sqlite3.connect(database) as connection:
+        schema_versions = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_versions'"
+        ).fetchone()
+    assert schema_versions is None
 
 
 def test_backup_never_overwrites_existing_file(tmp_path: Path) -> None:

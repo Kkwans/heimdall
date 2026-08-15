@@ -72,6 +72,86 @@ def test_provider_creation_is_atomic_and_creates_first_key(admin_app) -> None:
     assert provider[0] != _provider_payload()["api_key"]
 
 
+def test_provider_api_key_update_keeps_runtime_key_in_sync(admin_app) -> None:
+    app, database = admin_app
+    client = app.test_client()
+    provider_id = client.post("/api/providers", json=_provider_payload()).get_json()["id"]
+
+    with sqlite3.connect(database) as connection:
+        key_id = connection.execute(
+            "SELECT id FROM provider_api_keys WHERE provider_id = ?",
+            (provider_id,),
+        ).fetchone()[0]
+        connection.execute(
+            "UPDATE provider_api_keys SET error_count = 3, "
+            "cooldown_until = datetime('now', '+5 minutes') WHERE id = ?",
+            (key_id,),
+        )
+        connection.commit()
+
+    replacement = "provider-secret-replacement-5678"
+    response = client.put(
+        f"/api/providers/{provider_id}",
+        json={"api_key": replacement},
+    )
+
+    assert response.status_code == 200
+    with sqlite3.connect(database) as connection:
+        legacy, runtime = connection.execute(
+            "SELECT p.api_key, k.api_key FROM providers p "
+            "JOIN provider_api_keys k ON k.provider_id = p.id WHERE p.id = ?",
+            (provider_id,),
+        ).fetchone()
+        health = connection.execute(
+            "SELECT error_count, cooldown_until, last_error_summary "
+            "FROM provider_api_keys WHERE id = ?",
+            (key_id,),
+        ).fetchone()
+    assert crypto.decrypt(legacy) == replacement
+    assert crypto.decrypt(runtime) == replacement
+    assert health == (0, None, None)
+
+
+def test_provider_api_key_update_rejects_empty_secret(admin_app) -> None:
+    app, database = admin_app
+    client = app.test_client()
+    provider_id = client.post("/api/providers", json=_provider_payload()).get_json()["id"]
+    with sqlite3.connect(database) as connection:
+        key_id = connection.execute(
+            "SELECT id FROM provider_api_keys WHERE provider_id = ?",
+            (provider_id,),
+        ).fetchone()[0]
+
+    response = client.put(
+        f"/api/provider-api-keys/{key_id}",
+        json={"api_key": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "api_key must be a non-empty string"
+
+    provider_response = client.put(
+        f"/api/providers/{provider_id}",
+        json={"api_key": ""},
+    )
+    assert provider_response.status_code == 400
+    assert provider_response.get_json()["error"] == "api_key must be a non-empty string"
+
+
+def test_provider_api_key_create_rejects_empty_secret(admin_app) -> None:
+    app, _database = admin_app
+    client = app.test_client()
+    provider_id = client.post("/api/providers", json=_provider_payload()).get_json()["id"]
+
+    response = client.post(
+        f"/api/providers/{provider_id}/api-keys",
+        json={"api_key": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "api_key must be a non-empty string"
+
+
 def test_provider_creation_rolls_back_when_first_key_fails(admin_app) -> None:
     app, database = admin_app
     with sqlite3.connect(database) as connection:

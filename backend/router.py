@@ -176,6 +176,7 @@ def init_routing_tables():
         conn.commit()
     except sqlite3.Error as e:
         _logger.error(f"[ROUTER] 初始化路由表失败: {e}", exc_info=True)
+        raise
 
 
 def get_context_window(model: str) -> Optional[int]:
@@ -353,10 +354,13 @@ def get_provider_by_name(name: str) -> Optional[dict]:
 
 def create_provider(data: dict) -> int:
     """在单一事务中创建厂商和首个 Provider Key。"""
+    api_key = data.get("api_key")
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise ValueError("api_key must be a non-empty string")
     conn = _get_conn()
     cursor = conn.cursor()
     base_url = data.get("base_url") or data.get("openai_url", "")
-    encrypted_key = crypto.encrypt(data["api_key"])
+    encrypted_key = crypto.encrypt(api_key)
     with conn:
         cursor.execute("""
             INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type)
@@ -396,29 +400,62 @@ def _validate_field_name(field: str, allowed: set) -> bool:
 
 
 def update_provider(provider_id: int, data: dict) -> bool:
-    """更新厂商（API Key 加密存储，字段名白名单校验）"""
+    """更新厂商，并让 legacy API Key 与运行时 Key 保持同一来源。"""
     conn = _get_conn()
     cursor = conn.cursor()
     fields = []
     values = []
+    encrypted_key = None
     for key, value in data.items():
         if not _validate_field_name(key, _PROVIDER_ALLOWED_FIELDS):
             continue
         if key == "api_key":
-            if not value:
-                continue
-            fields.append(f"{key} = ?")
-            values.append(crypto.encrypt(value))
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("api_key must be a non-empty string")
+            encrypted_key = crypto.encrypt(value)
+            fields.append("api_key = ?")
+            values.append(encrypted_key)
         else:
             fields.append(f"{key} = ?")
             values.append(value)
     if not fields:
         return False
-    fields.append("updated_at = CURRENT_TIMESTAMP")
-    values.append(provider_id)
-    cursor.execute(f"UPDATE providers SET {', '.join(fields)} WHERE id = ?", values)
-    conn.commit()
-    return cursor.rowcount > 0
+    try:
+        with conn:
+            fields.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(provider_id)
+            cursor.execute(
+                f"UPDATE providers SET {', '.join(fields)} WHERE id = ?", values
+            )
+            updated = cursor.rowcount > 0
+            if not updated or encrypted_key is None:
+                return updated
+
+            # 旧 API 的 api_key 仍保留用于回滚兼容，但路由只读取
+            # provider_api_keys。更新入口必须同步首选 Key，否则保存后
+            # UI 显示成功、实际请求仍会继续使用旧密钥。
+            key_row = cursor.execute(
+                "SELECT id FROM provider_api_keys WHERE provider_id = ? "
+                "ORDER BY priority DESC, id ASC LIMIT 1",
+                (provider_id,),
+            ).fetchone()
+            if key_row:
+                cursor.execute(
+                    "UPDATE provider_api_keys SET api_key = ?, error_count = 0, "
+                    "cooldown_until = NULL, last_error_at = NULL, "
+                    "last_error_summary = NULL WHERE id = ?",
+                    (encrypted_key, key_row["id"]),
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO provider_api_keys "
+                    "(provider_id, api_key, priority, enabled) VALUES (?, ?, 0, 1)",
+                    (provider_id, encrypted_key),
+                )
+        return updated
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def delete_provider(provider_id: int) -> bool:
@@ -473,9 +510,12 @@ def get_provider_api_keys_for_route(provider_id: int) -> list:
 
 def create_provider_api_key(provider_id: int, data: dict) -> int:
     """添加厂商 API Key（加密存储）"""
+    api_key = data.get("api_key")
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise ValueError("api_key must be a non-empty string")
     conn = _get_conn()
     cursor = conn.cursor()
-    encrypted_key = crypto.encrypt(data["api_key"])
+    encrypted_key = crypto.encrypt(api_key)
     cursor.execute("""
         INSERT INTO provider_api_keys (provider_id, api_key, priority, enabled)
         VALUES (?, ?, ?, ?)
@@ -498,6 +538,8 @@ def update_provider_api_key(key_id: int, data: dict) -> bool:
     for key in ["api_key", "priority", "enabled"]:
         if key in data:
             if key == "api_key":
+                if not isinstance(data[key], str) or not data[key].strip():
+                    raise ValueError("api_key must be a non-empty string")
                 fields.append(f"{key} = ?")
                 values.append(crypto.encrypt(data[key]))
             else:
@@ -673,51 +715,73 @@ def _import_from_json(json_path: str):
         default_key = cfg.get("default_provider", "")
 
         conn = _get_conn()
-        cursor = conn.cursor()
+        # providers.json 可能来自旧版本或用户手工编辑。整个导入必须是
+        # 一个事务，避免某个模型配置损坏时留下已经写入的半套 Provider。
+        with conn:
+            cursor = conn.cursor()
 
-        for provider_key, provider_data in providers.items():
-            # 确定 priority：default_provider 设为最高
-            priority = 100 if provider_key == default_key else 0
+            for provider_key, provider_data in providers.items():
+                # 确定 priority：default_provider 设为最高
+                priority = 100 if provider_key == default_key else 0
 
-            # 获取 URL 配置
-            base_url = provider_data.get("base_url", "")
-            openai_url = provider_data.get("openai_url", base_url)
-            anthropic_url = provider_data.get("anthropic_url", "")
-            plan_type = provider_data.get("plan_type", "api")
+                # 获取 URL 配置
+                base_url = provider_data.get("base_url", "")
+                openai_url = provider_data.get("openai_url", base_url)
+                anthropic_url = provider_data.get("anthropic_url", "")
+                plan_type = provider_data.get("plan_type", "api")
+                raw_api_key = str(provider_data.get("api_key") or "").strip()
+                if not raw_api_key:
+                    env_name = str(provider_data.get("api_key_env") or "").strip()
+                    if env_name:
+                        raw_api_key = os.environ.get(env_name, "").strip()
+                # providers.json 是旧版明文配置格式；运行时路由只读取
+                # provider_api_keys，因此导入时必须写入同一份加密 Key。
+                # 已经是 Fernet 值的历史配置保持原值，避免重复加密。
+                stored_api_key = (
+                    raw_api_key
+                    if raw_api_key.startswith("gAAAAA")
+                    else crypto.encrypt(raw_api_key)
+                ) if raw_api_key else ""
 
-            cursor.execute(
-                "INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    provider_key,
-                    provider_data.get("name", provider_key),
-                    base_url,
-                    openai_url,
-                    anthropic_url,
-                    provider_data.get("api_key", ""),
-                    provider_data.get("enabled", True),
-                    priority,
-                    plan_type,
-                )
-            )
-            provider_id = cursor.lastrowid
-
-            # 导入模型
-            models = provider_data.get("models", {})
-            for model_name, model_cfg in models.items():
                 cursor.execute(
-                    "INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO providers (name, display_name, base_url, openai_url, anthropic_url, api_key, enabled, priority, plan_type) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        provider_id,
-                        model_name,
-                        model_cfg.get("upstream_model"),
-                        model_cfg.get("enabled", True),
-                        model_cfg.get("context_window"),
+                        provider_key,
+                        provider_data.get("name", provider_key),
+                        base_url,
+                        openai_url,
+                        anthropic_url,
+                        stored_api_key,
+                        provider_data.get("enabled", True),
+                        priority,
+                        plan_type,
                     )
                 )
+                provider_id = cursor.lastrowid
 
-        conn.commit()
+                if stored_api_key:
+                    cursor.execute(
+                        "INSERT INTO provider_api_keys "
+                        "(provider_id, api_key, priority, enabled) VALUES (?, ?, ?, 1)",
+                        (provider_id, stored_api_key, priority),
+                    )
+
+                # 导入模型
+                models = provider_data.get("models", {})
+                for model_name, model_cfg in models.items():
+                    cursor.execute(
+                        "INSERT INTO models (provider_id, model_name, upstream_model, enabled, context_window) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            provider_id,
+                            model_name,
+                            model_cfg.get("upstream_model"),
+                            model_cfg.get("enabled", True),
+                            model_cfg.get("context_window"),
+                        )
+                    )
+
         _logger.info(f"[ROUTER] 已从 providers.json 导入 {len(providers)} 个厂商")
 
     except Exception as e:

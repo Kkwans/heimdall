@@ -80,6 +80,8 @@ def _get_date_range():
         datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
         return None, None, "日期格式错误，请使用 YYYY-MM-DD 格式"
+    if start_date > end_date:
+        return None, None, "开始日期不能晚于结束日期"
 
     return start_date, end_date, None
 
@@ -208,6 +210,10 @@ def requests_list():
         "start_date": request.args.get("start_date", ""),
         "end_date": request.args.get("end_date", ""),
         "status": request.args.get("status", "all"),
+        "protocol": request.args.get("protocol", "all"),
+        "stream": request.args.get("stream", "all"),
+        "provider": request.args.get("provider", "all"),
+        "client_key_id": request.args.get("client_key_id", "all"),
         # v4 新增：全量排序支持
         "sort_by": request.args.get("sort_by", "created_at"),
         "sort_order": request.args.get("sort_order", "desc"),
@@ -216,6 +222,17 @@ def requests_list():
     try:
         data = db.query_requests(page, page_size, filters)
         return _cors_response(data)
+    except Exception as e:
+        return _cors_response({"error": str(e)}, 500)
+
+
+@stats_bp.route("/api/stats/request-filters", methods=["GET", "OPTIONS"])
+def request_filter_options():
+    """Return request-filter metadata used by the Requests page."""
+    if request.method == "OPTIONS":
+        return _cors_response({})
+    try:
+        return _cors_response(db.query_request_filter_options())
     except Exception as e:
         return _cors_response({"error": str(e)}, 500)
 
@@ -340,83 +357,15 @@ def _log_file_path(log_file_param: str, date_str: str = "") -> Optional[str]:
     return os.path.join(config.LOG_DIR, prefix)
 
 
-def _auto_archive_if_needed():
-    """
-    自动归档检查：若当前日志文件中存在非今天的日志行，立即触发归档。
-    在每次日志相关接口被调用时执行，完全透明，前端无感知。
-    """
-    import re as _re
-
-    today = _today_string()
-    DATE_RE = _re.compile(r'^(\d{4}-\d{2}-\d{2})')
-
-    for log_file in ("proxy-business.log", "proxy-system.log"):
-        log_path = os.path.join(config.LOG_DIR, log_file)
-        if not os.path.isfile(log_path) or os.path.getsize(log_path) == 0:
-            continue
-        try:
-            # 只读前 20 行做快速检测，避免大文件全量读取
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                sample = [f.readline() for _ in range(20)]
-            has_old = any(
-                (m := DATE_RE.match(l)) and m.group(1) != today
-                for l in sample if l.strip()
-            )
-            if not has_old:
-                continue
-            # 确认有历史日期内容，全量读取并归档
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                all_lines = f.readlines()
-            date_buckets: dict = {}
-            today_lines: list = []
-            for line in all_lines:
-                m2 = DATE_RE.match(line)
-                d = m2.group(1) if m2 else None
-                if d == today:
-                    today_lines.append(line)
-                elif d:
-                    date_buckets.setdefault(d, []).append(line)
-                else:
-                    if today_lines:
-                        today_lines.append(line)
-                    elif date_buckets:
-                        date_buckets[sorted(date_buckets.keys())[-1]].append(line)
-                    else:
-                        today_lines.append(line)
-            if not date_buckets:
-                continue
-            archived = False
-            for date_str, lines in sorted(date_buckets.items()):
-                archive_path = os.path.join(config.LOG_DIR, f"{log_file}.{date_str}")
-                try:
-                    # 追加模式：将旧行追加到归档文件末尾
-                    with open(archive_path, "a", encoding="utf-8") as f:
-                        f.writelines(lines)
-                    archived = True
-                except Exception:
-                    pass
-            if archived:
-                try:
-                    with open(log_path, "w", encoding="utf-8") as f:
-                        f.writelines(today_lines)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-
 @stats_bp.route("/api/logs/dates", methods=["GET", "OPTIONS"])
 def logs_dates():
     """
     返回可查询的日志日期列表（含今天）。
-    每次调用时自动检查并归档过期日志，前端无感知。
+    归档由 Proxy maintenance worker 统一负责，查询接口只读文件。
     格式：{"data": ["2026-06-11", "2026-06-10", ...]}
     """
     if request.method == "OPTIONS":
         return _cors_response({})
-
-    # 自动归档：若日志文件中有非今天的行，立即归档
-    _auto_archive_if_needed()
 
     log_file_param = request.args.get("log_file", "business")
     prefix_map = {
@@ -464,9 +413,6 @@ def logs_history():
     if request.method == "OPTIONS":
         return _cors_response({})
 
-    # 自动归档：确保历史日志已正确分离
-    _auto_archive_if_needed()
-
     log_file_param = request.args.get("log_file", "business")
     date_str = request.args.get("date", _today_string())
     try:
@@ -503,13 +449,8 @@ def logs_history():
         })
 
     try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
-            all_lines = [line.rstrip("\r\n") for line in log_file if line.strip()]
-        total = len(all_lines)
-        page_end = max(total - cursor, 0)
-        page_start = max(page_end - n_lines, 0)
-        raw_lines = all_lines[page_start:page_end]
-        has_more = page_start > 0
+        raw_lines, total = _read_log_page(log_path, cursor, n_lines)
+        has_more = cursor + len(raw_lines) < total
         return _cors_response({
             "lines": raw_lines,
             "date": date_str,
@@ -520,6 +461,44 @@ def logs_history():
         })
     except Exception as e:
         return _cors_response({"error": str(e)}, 500)
+
+
+def _read_log_page(log_path: str, cursor: int, limit: int) -> tuple[list[str], int]:
+    """Read a page from the end of a log using bounded memory.
+
+    ``cursor`` keeps the existing API semantics (number of newest non-empty
+    lines already consumed), while the implementation scans fixed-size chunks
+    instead of materialising the whole log in a Python list.
+    """
+    needed = cursor + limit
+    newest_first: list[bytes] = []
+    chunk_size = 64 * 1024
+    with open(log_path, "rb") as log_file:
+        log_file.seek(0, os.SEEK_END)
+        position = log_file.tell()
+        partial = b""
+        while position > 0 and len(newest_first) < needed:
+            size = min(chunk_size, position)
+            position -= size
+            log_file.seek(position)
+            data = log_file.read(size) + partial
+            parts = data.split(b"\n")
+            partial = parts[0]
+            for part in reversed(parts[1:]):
+                if part.strip():
+                    newest_first.append(part.rstrip(b"\r"))
+                    if len(newest_first) >= needed:
+                        break
+        if position == 0 and partial.strip() and len(newest_first) < needed:
+            newest_first.append(partial.rstrip(b"\r"))
+
+        # Count non-empty lines in bounded chunks for the existing total field.
+        log_file.seek(0)
+        total = sum(1 for line in log_file if line.strip())
+
+    page = newest_first[cursor:cursor + limit]
+    page.reverse()
+    return [line.decode("utf-8", errors="replace") for line in page], total
 
 
 def _stream_log_file(log_path: str, n_lines: int):
@@ -577,13 +556,11 @@ def _stream_log_file(log_path: str, n_lines: int):
 def logs_stream():
     """
     SSE 实时日志流接口（仅用于今天的实时追踪）。
-    连接时自动检查并归档过期日志，确保 tail 读到的是今天的内容。
+    归档由后台维护任务负责；此接口只读取当前日志文件。
     参数：
       log_file=business（默认）或 system
       lines=200（初始展示最后 N 行，最大 2000）
     """
-    # 自动归档：SSE 连接前先归档，确保 tail 的日志是今天的
-    _auto_archive_if_needed()
     log_file_param = request.args.get("log_file", "business")
     try:
         n_lines = min(2000, max(1, int(request.args.get("lines", 200))))
@@ -968,7 +945,7 @@ def _load_runtime_config() -> dict:
     legacy_public_base_url = getattr(config, 'PUBLIC_BASE_URL', '')
     defaults = {
         "upstream_url": getattr(config, 'TARGET_BASE_URL', ''),
-        "proxy_path": getattr(config, 'PROXY_PATH', '/v1/openai/native'),
+        "proxy_path": getattr(config, 'PROXY_PATH', '/v1/chat/completions'),
         "request_timeout": config.REQUEST_TIMEOUT,
         "proxy_port": getattr(config, 'PROXY_EXTERNAL_PORT', 9888),
         "public_base_url": legacy_public_base_url,

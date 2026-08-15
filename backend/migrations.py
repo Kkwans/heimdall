@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -566,8 +567,10 @@ def apply_migrations(
             )
             applied_now.append(migration.version)
 
-        connection.commit()
+        # 完整性检查必须仍处于同一事务内。若先提交再检查，损坏的
+        # schema/index 可能已经落盘，下面的 rollback 将无法恢复到迁移前。
         integrity = _integrity_check(connection)
+        connection.commit()
         current_version = _read_schema_version(connection)
         return MigrationResult(
             database=str(database),
@@ -664,6 +667,75 @@ def create_timestamped_backup(
     return backup_database(source, destination)
 
 
+@contextmanager
+def _migration_file_lock(database: Path):
+    """Serialize backup + migration across the proxy/dashboard processes.
+
+    The launcher starts two Python processes against the same SQLite file. A
+    plain ``inspect -> backup -> migrate`` sequence would let both processes
+    create a backup from the same pre-migration state and race on the schema
+    ledger. The lock is intentionally a small adjacent file and is never
+    removed; only the OS lock is released, so a crashed process cannot leave a
+    stale lock that blocks the next startup.
+    """
+
+    lock_path = database.with_name(f".{database.name}.migration.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl_module = None
+    try:
+        try:
+            import fcntl as fcntl_module
+
+            fcntl_module.flock(descriptor, fcntl_module.LOCK_EX)
+        except ImportError:
+            # Heimdall runs on Linux. Keeping the fallback makes the helper
+            # importable on platforms without ``fcntl`` for unit tests; SQLite
+            # still serializes the actual migration transaction there.
+            pass
+        yield
+    finally:
+        if fcntl_module is not None:
+            fcntl_module.flock(descriptor, fcntl_module.LOCK_UN)
+        os.close(descriptor)
+
+
+def migrate_with_backup(
+    database_path: os.PathLike[str] | str,
+    backup_directory: os.PathLike[str] | str | None = None,
+    *,
+    migrations: Optional[Sequence[Migration]] = None,
+) -> tuple[Optional[DatabaseReport], MigrationResult]:
+    """Back up an existing database before applying pending migrations.
+
+    Empty/new databases do not need a backup. For a non-empty database the
+    read-only integrity/schema check and the backup happen while holding the
+    same inter-process lock as the migration. Once the migration ledger reaches
+    the current version, subsequent startups perform no additional backup.
+    """
+
+    database = Path(database_path).expanduser().resolve()
+    database.parent.mkdir(parents=True, exist_ok=True)
+    known = _normalise_migrations(migrations or MIGRATIONS)
+    target_version = known[-1].version
+    backup_report: Optional[DatabaseReport] = None
+    default_backup_directory = database.parent / "migration-backups"
+    destination_directory = Path(
+        backup_directory or default_backup_directory
+    ).expanduser().resolve()
+
+    with _migration_file_lock(database):
+        if database.is_file() and database.stat().st_size > 0:
+            current = inspect_database(database)
+            if current.schema_version != target_version:
+                backup_report = create_timestamped_backup(
+                    database, destination_directory
+                )
+        result = apply_migrations(database, migrations=known)
+
+    return backup_report, result
+
+
 def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
@@ -704,8 +776,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if database.exists() and database.stat().st_size > 0 and not args.skip_backup:
         if not args.backup_dir:
             raise MigrationError("现有数据库迁移前必须提供 --backup-dir")
-        backup_report = create_timestamped_backup(database, args.backup_dir)
-    result = apply_migrations(database)
+        backup_report, result = migrate_with_backup(
+            database, args.backup_dir
+        )
+    else:
+        # --skip-backup is deliberately limited to disposable/isolated
+        # databases. Normal existing databases always take the locked backup
+        # path above.
+        result = apply_migrations(database)
     _print_json(
         {
             "backup": asdict(backup_report) if backup_report else None,

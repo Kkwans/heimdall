@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -38,12 +39,25 @@ class FakeResponse:
                 raise line
             yield line
 
+    def iter_content(self, chunk_size=8192):
+        if self.content:
+            yield self.content
+
     def close(self):
         self.closed = True
 
 
 def _sse(payload):
     return b"data: " + json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def _sse_frame(payload, event=None):
+    lines = []
+    if event:
+        lines.append(f"event: {event}".encode("utf-8"))
+    lines.append(_sse(payload))
+    lines.append(b"")
+    return lines
 
 
 @pytest.fixture
@@ -110,11 +124,16 @@ def _success_response(protocol: str, stream: bool):
     if protocol == "openai_chat":
         if stream:
             return FakeResponse(
-                lines=[
-                    _sse({"choices": [{"delta": {"content": "hello"}}]}),
-                    _sse({"choices": [], "usage": {"prompt_tokens": 4, "completion_tokens": 2}}),
-                    b"data: [DONE]",
-                ]
+                lines=(
+                    _sse_frame({"choices": [{"delta": {"content": "hello"}}]})
+                    + _sse_frame(
+                        {
+                            "choices": [],
+                            "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+                        }
+                    )
+                    + [b"data: [DONE]", b""]
+                )
             )
         return FakeResponse(
             payload={
@@ -125,36 +144,40 @@ def _success_response(protocol: str, stream: bool):
     if protocol == "openai_responses":
         if stream:
             return FakeResponse(
-                lines=[
-                    _sse({"type": "response.output_text.delta", "delta": "hello"}),
-                    _sse(
+                lines=(
+                    _sse_frame(
+                        {"type": "response.output_text.delta", "delta": "hello"}
+                    )
+                    + _sse_frame(
                         {
                             "type": "response.completed",
-                            "response": {"usage": {"input_tokens": 4, "output_tokens": 2}},
+                            "response": {
+                                "usage": {"input_tokens": 4, "output_tokens": 2}
+                            },
                         }
-                    ),
-                ]
+                    )
+                )
             )
         return FakeResponse(
             payload={"output": [], "usage": {"input_tokens": 4, "output_tokens": 2}}
         )
     if stream:
         return FakeResponse(
-            lines=[
-                _sse(
+            lines=(
+                _sse_frame(
                     {
                         "type": "message_start",
                         "message": {"usage": {"input_tokens": 4, "output_tokens": 0}},
                     }
-                ),
-                _sse(
+                )
+                + _sse_frame(
                     {
                         "type": "content_block_delta",
                         "delta": {"type": "text_delta", "text": "hello"},
                     }
-                ),
-                _sse({"type": "message_delta", "usage": {"output_tokens": 2}}),
-            ]
+                )
+                + _sse_frame({"type": "message_delta", "usage": {"output_tokens": 2}})
+            )
         )
     return FakeResponse(
         payload={"content": [], "usage": {"input_tokens": 4, "output_tokens": 2}}
@@ -208,6 +231,91 @@ def test_six_protocol_modes_create_one_complete_record(
     assert json.loads(record["request_body"])["model"] == "fixture/gateway-model"
     assert len(json.loads(record["route_attempts"])) == 1
     assert record["response_body"]
+
+
+def test_anthropic_sse_preserves_event_and_data_frames(proxy_env, monkeypatch) -> None:
+    upstream = FakeResponse(
+        lines=(
+            _sse_frame(
+                {
+                    "type": "message_start",
+                    "message": {"usage": {"input_tokens": 4, "output_tokens": 0}},
+                },
+                event="message_start",
+            )
+            + _sse_frame(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": "hello"},
+                },
+                event="content_block_delta",
+            )
+            + _sse_frame({"type": "message_stop"}, event="message_stop")
+        )
+    )
+    monkeypatch.setattr(proxy.http_requests, "post", lambda *args, **kwargs: upstream)
+
+    response = proxy_env["app"].test_client().post(
+        "/v1/messages",
+        json={"model": "fixture/gateway-model", "messages": [], "stream": True},
+        headers={"x-api-key": proxy_env["client_secret"]},
+    )
+
+    body = response.get_data()
+    assert response.status_code == 200
+    assert (
+        b"event: message_start\n"
+        b'data: {"type": "message_start", "message": {"usage": {"input_tokens": 4, "output_tokens": 0}}}\n\n'
+    ) in body
+    assert b"event: content_block_delta\n" in body
+    assert body.count(b"\n\n") == 3
+    assert proxy_env["records"][0]["success"] == 1
+
+
+def test_non_stream_ttfb_uses_first_response_chunk(proxy_env, monkeypatch) -> None:
+    class ChunkedResponse(FakeResponse):
+        def iter_content(self, chunk_size=8192):
+            midpoint = max(len(self.content) // 2, 1)
+            yield self.content[:midpoint]
+            time.sleep(0.02)
+            yield self.content[midpoint:]
+
+    upstream = ChunkedResponse(
+        payload={
+            "choices": [{"message": {"content": "hello"}}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+        }
+    )
+    monkeypatch.setattr(proxy.http_requests, "post", lambda *args, **kwargs: upstream)
+
+    response = proxy_env["app"].test_client().post(
+        "/v1/chat/completions",
+        json={"model": "fixture/gateway-model", "messages": []},
+        headers={"Authorization": f"Bearer {proxy_env['client_secret']}"},
+    )
+
+    assert response.status_code == 200
+    record = proxy_env["records"][0]
+    assert record["ttfb_ms"] < record["latency_ms"]
+
+
+def test_non_stream_response_read_failure_is_not_reported_as_proxy_crash(proxy_env, monkeypatch) -> None:
+    class BrokenResponse(FakeResponse):
+        def iter_content(self, chunk_size=8192):
+            yield self.content[:1]
+            raise requests.exceptions.ChunkedEncodingError("injected read break")
+
+    upstream = BrokenResponse(payload={"choices": []})
+    monkeypatch.setattr(proxy.http_requests, "post", lambda *args, **kwargs: upstream)
+
+    response = proxy_env["app"].test_client().post(
+        "/v1/chat/completions",
+        json={"model": "fixture/gateway-model", "messages": []},
+        headers={"Authorization": f"Bearer {proxy_env['client_secret']}"},
+    )
+
+    assert response.status_code == 502
+    assert proxy_env["records"][0]["error_type"] == "connection_error"
 
 
 @pytest.mark.parametrize(
@@ -412,10 +520,8 @@ def test_auth_and_validation_failures_are_recorded_without_polluting_stats(
 
 def test_stream_interruption_is_not_recorded_as_success(proxy_env, monkeypatch) -> None:
     response = FakeResponse(
-        lines=[
-            _sse({"choices": [{"delta": {"content": "partial"}}]}),
-            requests.exceptions.ChunkedEncodingError("injected break"),
-        ]
+        lines=_sse_frame({"choices": [{"delta": {"content": "partial"}}]})
+        + [requests.exceptions.ChunkedEncodingError("injected break")]
     )
     monkeypatch.setattr(proxy.http_requests, "post", lambda *args, **kwargs: response)
 
@@ -444,6 +550,75 @@ def test_legacy_provider_secret_is_not_a_runtime_fallback(proxy_env) -> None:
 
     assert isinstance(result, router.RouteError)
     assert result.status_code == 403
+
+
+def test_legacy_provider_json_import_creates_runtime_provider_key(proxy_env, tmp_path) -> None:
+    providers_file = tmp_path / "providers.json"
+    providers_file.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "imported": {
+                        "name": "Imported Provider",
+                        "base_url": "http://imported-upstream/v1",
+                        "api_key": "imported-provider-secret",
+                        "models": {
+                            "imported-model": {"upstream_model": "upstream-imported"}
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    router._import_from_json(str(providers_file))
+    route = router.resolve_route_for_proxy("imported/imported-model")
+
+    assert isinstance(route, router.RouteResult)
+    assert route.api_key == "imported-provider-secret"
+    with sqlite3.connect(proxy_env["database"]) as connection:
+        key_count = connection.execute(
+            "SELECT COUNT(*) FROM provider_api_keys k "
+            "JOIN providers p ON p.id = k.provider_id WHERE p.name = ?",
+            ("imported",),
+        ).fetchone()[0]
+    assert key_count == 1
+
+
+def test_legacy_provider_json_import_rolls_back_partial_provider(proxy_env, tmp_path) -> None:
+    providers_file = tmp_path / "invalid-providers.json"
+    providers_file.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "partial-import": {
+                        "name": "Partial Import",
+                        "base_url": "http://invalid-upstream/v1",
+                        "api_key": "partial-secret",
+                        # 该值会在 Provider 已插入后触发配置错误，验证整批回滚。
+                        "models": {"broken-model": None},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    router._import_from_json(str(providers_file))
+
+    with sqlite3.connect(proxy_env["database"]) as connection:
+        provider_count = connection.execute(
+            "SELECT COUNT(*) FROM providers WHERE name = ?",
+            ("partial-import",),
+        ).fetchone()[0]
+        key_count = connection.execute(
+            "SELECT COUNT(*) FROM provider_api_keys k "
+            "JOIN providers p ON p.id = k.provider_id WHERE p.name = ?",
+            ("partial-import",),
+        ).fetchone()[0]
+    assert provider_count == 0
+    assert key_count == 0
 
 
 def test_ineligible_requests_remain_visible_but_are_excluded_from_stats(
@@ -477,10 +652,8 @@ def test_ineligible_requests_remain_visible_but_are_excluded_from_stats(
 
 def test_client_disconnect_finalizes_stream_as_499(proxy_env, monkeypatch) -> None:
     upstream = FakeResponse(
-        lines=[
-            _sse({"choices": [{"delta": {"content": "first"}}]}),
-            _sse({"choices": [{"delta": {"content": "second"}}]}),
-        ]
+        lines=_sse_frame({"choices": [{"delta": {"content": "first"}}]})
+        + _sse_frame({"choices": [{"delta": {"content": "second"}}]}),
     )
     monkeypatch.setattr(proxy.http_requests, "post", lambda *args, **kwargs: upstream)
     response = proxy_env["app"].test_client().post(

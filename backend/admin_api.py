@@ -118,7 +118,12 @@ def update_provider(provider_id):
     if not data:
         return jsonify({"error": "Request body required"}), 400
     
-    success = router.update_provider(provider_id, data)
+    if "api_key" in data and (not isinstance(data["api_key"], str) or not data["api_key"].strip()):
+        return jsonify({"error": "api_key must be a non-empty string"}), 400
+    try:
+        success = router.update_provider(provider_id, data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     if not success:
         return jsonify({"error": "Provider not found or no changes"}), 404
     return jsonify({"message": "Provider updated"})
@@ -223,13 +228,17 @@ def create_provider_api_key(provider_id):
     if not provider:
         return jsonify({"error": "Provider not found"}), 404
     data = request.get_json()
-    if not data or not data.get("api_key"):
-        return jsonify({"error": "api_key is required"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body required"}), 400
+    if not isinstance(data.get("api_key"), str) or not data["api_key"].strip():
+        return jsonify({"error": "api_key must be a non-empty string"}), 400
     try:
         key_id = router.create_provider_api_key(provider_id, data)
         return jsonify({"id": key_id, "message": "API Key created"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        return jsonify({"error": "API Key 创建失败，请稍后重试"}), 500
 
 
 @admin_bp.route('/api/provider-api-keys/<int:key_id>', methods=['PUT'])
@@ -238,7 +247,12 @@ def update_provider_api_key(key_id):
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
-    success = router.update_provider_api_key(key_id, data)
+    if "api_key" in data and (not isinstance(data["api_key"], str) or not data["api_key"].strip()):
+        return jsonify({"error": "api_key must be a non-empty string"}), 400
+    try:
+        success = router.update_provider_api_key(key_id, data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     if not success:
         return jsonify({"error": "Key not found or no changes"}), 404
     return jsonify({"message": "API Key updated"})

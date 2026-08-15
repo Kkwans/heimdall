@@ -5,6 +5,7 @@ import time
 import json
 import threading
 import subprocess
+import tempfile
 from logging.handlers import WatchedFileHandler
 from datetime import datetime, timezone, timedelta
 
@@ -125,26 +126,69 @@ def _archive_missed_log_days(log_file: str) -> None:
     if not date_buckets:
         return
 
-    # 将历史日期的行写入归档文件
-    archived_any = False
+    # 将历史日期的行写入归档文件。归档必须先完整写入同目录临时文件，再
+    # 原子替换目标文件；只有所有日期都成功后才允许截断源文件，避免进程
+    # 在半写状态退出时丢失仍未归档的日志。
+    archive_complete = True
     for date_str, lines in sorted(date_buckets.items()):
         archive_path = os.path.join(config.LOG_DIR, f"{log_file}.{date_str}")
         try:
-            # 追加模式：将旧行追加到归档文件末尾
-            with open(archive_path, "a", encoding="utf-8") as f:
-                f.writelines(lines)
-            archived_any = True
+            # 归档文件一旦存在就视为已完成。启动阶段可能在写入归档后、截断当前日志前崩溃；
+            # 此时再次追加会复制整段历史日志。当前文件只会在停机期间保留旧日期内容，
+            # 因此跳过既有归档并继续截断即可保持幂等。
+            if os.path.exists(archive_path):
+                continue
+            fd, temp_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(archive_path)}.",
+                suffix=".tmp",
+                dir=config.LOG_DIR,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, archive_path)
+                temp_path = None
+            finally:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
         except Exception:
-            pass
+            archive_complete = False
+            break
 
     # 将当前日志文件截断为只剩今天的内容
-    if archived_any:
+    if archive_complete:
         try:
             with open(log_path, "w", encoding="utf-8") as f:
                 f.writelines(today_lines)
         except Exception:
             pass
 
+
+def _purge_archived_logs() -> None:
+    """Remove archived log files older than the configured retention window."""
+    keep_days = max(int(getattr(config, "LOG_BACKUP_DAYS", 30)), 1)
+    cutoff = datetime.now(CST).date() - timedelta(days=keep_days - 1)
+    import re as _re
+
+    pattern = _re.compile(r"^(proxy-(?:business|system)\.log)\.(\d{4}-\d{2}-\d{2})$")
+    try:
+        for filename in os.listdir(config.LOG_DIR):
+            match = pattern.match(filename)
+            if not match:
+                continue
+            try:
+                log_date = datetime.strptime(match.group(2), "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if log_date < cutoff:
+                os.unlink(os.path.join(config.LOG_DIR, filename))
+    except OSError as exc:
+        system_logger.warning("日志保留清理失败: %s", exc)
 
 # 初始化日志记录器
 proxy_logger = setup_logger("proxy", "proxy-business.log")
@@ -173,6 +217,7 @@ def _start_midnight_archiver():
             try:
                 _archive_missed_log_days("proxy-business.log")
                 _archive_missed_log_days("proxy-system.log")
+                _purge_archived_logs()
             except Exception:
                 pass
 
@@ -191,6 +236,7 @@ def _start_proxy_background_tasks() -> bool:
     _proxy_background_started = True
     _archive_missed_log_days("proxy-business.log")
     _archive_missed_log_days("proxy-system.log")
+    _purge_archived_logs()
     _start_midnight_archiver()
     return True
 
@@ -234,6 +280,34 @@ class StreamToLogger:
 
 sys.stdout = StreamToLogger(system_logger, logging.INFO)
 sys.stderr = StreamToLogger(system_logger, logging.ERROR)
+
+
+def _ensure_startup_migrations() -> None:
+    """Migrate and back up the database before any runtime table is opened."""
+    from migrations import migrate_with_backup
+
+    backup_report, result = migrate_with_backup(
+        config.DB_PATH,
+        os.path.join(config.APP_SUPPORT_DIR, "migration-backups"),
+    )
+    if backup_report is not None:
+        system_logger.warning(
+            "数据库迁移前已创建一致性备份: path=%s size=%s integrity=%s",
+            backup_report.database,
+            backup_report.size_bytes,
+            backup_report.integrity,
+        )
+    system_logger.info(
+        "数据库迁移检查完成: version=%s applied=%s integrity=%s",
+        result.current_version,
+        list(result.applied_versions),
+        result.integrity,
+    )
+
+
+# 迁移必须先于 db/router/auth 的 CREATE/ALTER TABLE。这样任何进程在
+# 接受流量前都已经完成版本校验，并且已有数据库在变更前拥有可验证备份。
+_ensure_startup_migrations()
 
 # ==========================================
 # 2. 导入第三方库并屏蔽底层兼容性警告
@@ -289,6 +363,39 @@ app = Flask(__name__)
 from stats_api import stats_bp
 app.register_blueprint(stats_bp)
 app.register_blueprint(admin_bp)
+
+
+def _create_dashboard_app():
+    """Create the Dashboard WSGI application for the dedicated 8889 process."""
+    from flask import Flask as _Flask
+    from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
+    from stats_api import stats_bp as _stats_bp, dashboard_bp as _dashboard_bp
+    from admin_api import admin_bp as _admin_bp
+
+    class _UTF8JSONProvider(_DefaultJSONProvider):
+        """让 jsonify 输出原始 UTF-8 中文，不做 unicode 转义。"""
+        ensure_ascii = False
+
+    dashboard_app = _Flask(__name__)
+    dashboard_app.json_provider_class = _UTF8JSONProvider
+    dashboard_app.json = _UTF8JSONProvider(dashboard_app)
+    dashboard_app.register_blueprint(_stats_bp)
+    dashboard_app.register_blueprint(_dashboard_bp)
+    dashboard_app.register_blueprint(_admin_bp)
+    return dashboard_app
+
+
+def _serve_wsgi(application, port: int) -> None:
+    """Serve a Flask WSGI app with Waitress instead of Flask's dev server."""
+    from waitress import serve
+
+    serve(
+        application,
+        host="0.0.0.0",
+        port=int(port),
+        threads=max(int(os.getenv("HEIMDALL_WSGI_THREADS", "8")), 2),
+        channel_timeout=max(int(os.getenv("HEIMDALL_WSGI_CHANNEL_TIMEOUT", "180")), 30),
+    )
 
 
 def _fmt_duration(ms: int) -> str:
@@ -545,13 +652,50 @@ def _recorded_error(
     )
 
 
-def _parse_sse_event(line: bytes):
-    if not line.startswith(b"data: ") or line == b"data: [DONE]":
+def _parse_sse_frame(lines):
+    """Parse one complete SSE frame without changing its wire representation.
+
+    ``requests.Response.iter_lines`` removes line terminators but keeps the
+    empty line that terminates an SSE event.  Parsing only individual ``data``
+    lines loses Anthropic's ``event`` + ``data`` pairing, so frames are parsed
+    after they have been grouped by the blank-line delimiter.
+    """
+    data_lines = []
+    for line in lines:
+        if isinstance(line, str):
+            line = line.encode("utf-8")
+        line = bytes(line).rstrip(b"\r")
+        if line.startswith(b"data:"):
+            value = line[5:]
+            if value.startswith(b" "):
+                value = value[1:]
+            data_lines.append(value)
+    if not data_lines:
+        return None
+    payload = b"\n".join(data_lines)
+    if payload == b"[DONE]":
         return None
     try:
-        return json.loads(line[6:].decode("utf-8", errors="replace"))
+        return json.loads(payload.decode("utf-8", errors="replace"))
     except (TypeError, ValueError):
         return None
+
+
+def _iter_sse_frames(response):
+    """Yield ``(wire_frame, parsed_event)`` pairs from an upstream response."""
+    frame = []
+    for raw_line in response.iter_lines():
+        if isinstance(raw_line, str):
+            raw_line = raw_line.encode("utf-8")
+        line = bytes(raw_line).rstrip(b"\r")
+        if line:
+            frame.append(line)
+            continue
+        if frame:
+            yield b"\n".join(frame) + b"\n\n", _parse_sse_frame(frame)
+            frame = []
+    if frame:
+        yield b"\n".join(frame) + b"\n\n", _parse_sse_frame(frame)
 
 
 def _is_meaningful_stream_event(event: dict, protocol: str) -> bool:
@@ -586,7 +730,10 @@ def _forward_non_stream(
             data,
             headers,
             route,
-            stream=False,
+            # Read the upstream body incrementally so TTFB is measured at the
+            # first received chunk rather than after requests has buffered the
+            # complete response for ``stream=False``.
+            stream=True,
             auth_style=auth_style,
         )
     except UpstreamAttemptsExhausted as exc:
@@ -598,19 +745,66 @@ def _forward_non_stream(
             attempts=exc.attempts,
         )
 
-    content = response.content
+    status_code = int(response.status_code)
     trace_id = response.headers.get("M-TraceId", "")
+    content_type = response.headers.get("Content-Type", "application/json")
+    content_chunks = []
+    first_byte_at = None
+    try:
+        iter_content = getattr(response, "iter_content", None)
+        if callable(iter_content):
+            for chunk in iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                if first_byte_at is None:
+                    first_byte_at = time.time()
+                content_chunks.append(bytes(chunk))
+            content = b"".join(content_chunks)
+        else:
+            content = response.content
+            if content:
+                first_byte_at = time.time()
+    except http_requests.exceptions.Timeout:
+        router.mark_api_key_error(candidate.id, "timeout")
+        return _recorded_error(
+            recorder,
+            504,
+            "Provider 响应读取超时",
+            "timeout",
+            attempts=attempts,
+            provider_api_key_id=candidate.id,
+        )
+    except (
+        http_requests.exceptions.ConnectionError,
+        http_requests.exceptions.ChunkedEncodingError,
+    ):
+        router.mark_api_key_error(candidate.id, "response_read_error")
+        return _recorded_error(
+            recorder,
+            502,
+            "Provider 响应传输中断",
+            "connection_error",
+            attempts=attempts,
+            provider_api_key_id=candidate.id,
+        )
+    finally:
+        response.close()
     payload = None
     try:
-        payload = response.json()
-    except Exception:
+        payload = json.loads(content.decode("utf-8", errors="replace"))
+    except (TypeError, ValueError, UnicodeDecodeError):
         pass
     usage = normalize_usage((payload or {}).get("usage") if isinstance(payload, dict) else {})
-    status_code = int(response.status_code)
+    if status_code < 400:
+        router.mark_api_key_used(candidate.id)
     recorder.finalize(
         status_code,
         usage=usage,
-        ttfb_ms=max(int((time.time() - recorder.started_at) * 1000), 0),
+        ttfb_ms=(
+            max(int((first_byte_at - recorder.started_at) * 1000), 0)
+            if first_byte_at is not None
+            else 0
+        ),
         trace_id=trace_id,
         error_type=None if status_code < 400 else "upstream_error",
         response_body=payload if payload is not None else content,
@@ -620,7 +814,7 @@ def _forward_non_stream(
     return Response(
         content,
         status=status_code,
-        content_type=response.headers.get("Content-Type", "application/json"),
+        content_type=content_type,
     )
 
 
@@ -654,6 +848,7 @@ def _forward_stream(
     trace_id = response.headers.get("M-TraceId", "")
     if status_code >= 400:
         content = response.content
+        response.close()
         recorder.finalize(
             status_code,
             trace_id=trace_id,
@@ -675,12 +870,8 @@ def _forward_stream(
         error_type = None
         captured = bytearray()
         try:
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                framed = line + b"\n\n"
+            for framed, event in _iter_sse_frames(response):
                 captured.extend(framed)
-                event = _parse_sse_event(line)
                 if event is not None:
                     usage = merge_usage(
                         usage,
@@ -940,8 +1131,8 @@ if __name__ == '__main__':
     # 和每次启动都污染系统日志。
     # 方案：
     #   1. 把 werkzeug logger 设为 CRITICAL 并清空 handler
-    #   2. 用 make_server().serve_forever() 代替 app.run()，完全绕过
-    #      werkzeug 内部的 click.echo 启动打印
+    #   2. 用 Waitress WSGI server 代替 app.run()，完全绕过
+    #      werkzeug 内部的开发服务器与 click.echo 启动打印
     # ──────────────────────────────────────────────────────────
     for _log_name in ('werkzeug', 'flask.app', 'flask'):
         _lg = flask_logging.getLogger(_log_name)
@@ -973,7 +1164,7 @@ if __name__ == '__main__':
         config.PROXY_PORT = 8888  # 强制使用容器内部端口
         _start_proxy_background_tasks()
         system_logger.info(f"代理服务启动 → 宿主机端口 {getattr(config, 'PROXY_EXTERNAL_PORT', config.PROXY_PORT)}")
-        app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
+        _serve_wsgi(app, config.PROXY_PORT)
 
     elif mode == '--dashboard':
         # 纯 Dashboard 模式（子进程，永久运行）
@@ -981,21 +1172,7 @@ if __name__ == '__main__':
         if _is_port_in_use(config.DASHBOARD_PORT):
             proxy_logger.info(f"Dashboard 服务已在运行（端口 {config.DASHBOARD_PORT} 已被占用），退出")
             sys.exit(0)
-        from flask import Flask as _Flask
-        from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
-        from stats_api import stats_bp as _stats_bp, dashboard_bp as _dashboard_bp
-        from admin_api import admin_bp as _admin_bp
-
-        class _UTF8JSONProvider(_DefaultJSONProvider):
-            """让 jsonify 输出原始 UTF-8 中文，不做 unicode 转义（兼容 Flask 3.x）"""
-            ensure_ascii = False
-
-        dashboard_app = _Flask(__name__)
-        dashboard_app.json_provider_class = _UTF8JSONProvider
-        dashboard_app.json = _UTF8JSONProvider(dashboard_app)
-        dashboard_app.register_blueprint(_stats_bp)
-        dashboard_app.register_blueprint(_dashboard_bp)
-        dashboard_app.register_blueprint(_admin_bp)
+        dashboard_app = _create_dashboard_app()
         if getattr(config, "RETENTION_WORKER_ENABLED", False):
             from services.request_retention import start_retention_worker
             from stats_api import get_request_retention_service
@@ -1004,7 +1181,7 @@ if __name__ == '__main__':
                 logger=system_logger,
             )
         system_logger.info(f"Dashboard 服务启动 → 宿主机端口 {getattr(config, 'DASHBOARD_EXTERNAL_PORT', config.DASHBOARD_PORT)}")
-        dashboard_app.run(host='0.0.0.0', port=config.DASHBOARD_PORT, threaded=True, use_reloader=False)
+        _serve_wsgi(dashboard_app, config.DASHBOARD_PORT)
 
     else:
         # 启动器模式：确保两个服务都在运行
@@ -1029,5 +1206,5 @@ if __name__ == '__main__':
         # 主进程运行代理
         _start_proxy_background_tasks()
         proxy_logger.info(f"代理进程启动 (PID {os.getpid()})")
-        app.run(host='0.0.0.0', port=config.PROXY_PORT, threaded=True, use_reloader=False)
+        _serve_wsgi(app, config.PROXY_PORT)
         proxy_logger.info("代理进程退出，Dashboard 继续运行中...")

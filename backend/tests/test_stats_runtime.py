@@ -380,6 +380,29 @@ def test_unrecoverable_deleted_client_key_uses_stable_id_fallback(runtime_app) -
     assert item["api_key_deleted"] is True
 
 
+def test_unassigned_client_key_is_kept_as_its_own_stats_group(runtime_app) -> None:
+    app, database, _runtime_config, _docker = runtime_app
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS api_keys "
+            "(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        connection.execute(
+            """
+            INSERT INTO requests (
+                date, model, success, stat_eligible, prompt_tokens,
+                completion_tokens, total_tokens
+            ) VALUES (date('now'), 'unassigned-model', 1, 1, 2, 1, 3)
+            """
+        )
+        connection.commit()
+
+    payload = app.test_client().get("/api/stats/api-keys").get_json()["data"]
+    item = next(item for item in payload if item["api_key_id"] is None)
+    assert item["api_key_name"] == "未关联 API Key"
+    assert item["api_key_deleted"] is False
+
+
 def test_log_history_uses_cursor_without_fake_all(runtime_app) -> None:
     app, _database, _runtime_config, _docker = runtime_app
     today = date.today().isoformat()
@@ -417,6 +440,21 @@ def test_log_stream_emits_empty_and_real_heartbeat(runtime_app, monkeypatch) -> 
     assert next(stream).startswith("event: empty")
     assert next(stream).startswith("event: heartbeat")
     stream.close()
+
+
+def test_log_history_reads_bounded_tail_pages_in_stable_order(tmp_path: Path) -> None:
+    log_path = tmp_path / "proxy-business.log"
+    log_path.write_text(
+        "\n".join(f"2026-08-14 12:00:0{i} - line-{i}" for i in range(6)) + "\n",
+        encoding="utf-8",
+    )
+
+    latest, total = stats_api._read_log_page(str(log_path), cursor=0, limit=2)
+    older, older_total = stats_api._read_log_page(str(log_path), cursor=2, limit=2)
+
+    assert total == older_total == 6
+    assert latest == ["2026-08-14 12:00:04 - line-4", "2026-08-14 12:00:05 - line-5"]
+    assert older == ["2026-08-14 12:00:02 - line-2", "2026-08-14 12:00:03 - line-3"]
 
 
 @pytest.mark.parametrize(

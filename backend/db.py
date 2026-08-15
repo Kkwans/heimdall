@@ -1,7 +1,11 @@
 import sqlite3
 import threading
 import logging
-from datetime import datetime, date
+import atexit
+import os
+import queue
+import time
+from datetime import datetime, date, timedelta
 
 import config
 
@@ -10,6 +14,19 @@ _logger = logging.getLogger("stderr")
 
 # 线程本地存储，每个线程持有独立的 SQLite 连接
 _local = threading.local()
+
+# 请求写入使用一个有界队列和单独的 writer 线程。这样不会为每个请求
+# 创建 daemon 线程，也能让突发流量在队列满时施加可控背压，而不是无界
+# 地堆积线程和 SQLite 连接。
+_WRITE_QUEUE_SIZE = max(int(os.getenv("HEIMDALL_DB_QUEUE_SIZE", "256")), 1)
+_WRITE_BATCH_SIZE = max(int(os.getenv("HEIMDALL_DB_BATCH_SIZE", "32")), 1)
+_WRITE_LOCK_RETRIES = 3
+_WRITE_LOCK_BACKOFF_SECONDS = 0.05
+_write_queue = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
+_writer_thread = None
+_writer_start_lock = threading.Lock()
+_write_lock = threading.RLock()
+_writer_stop = threading.Event()
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -162,67 +179,246 @@ def init_db():
         conn.commit()
     except Exception as e:
         _logger.error(f"[DB] init_db 失败: {e}", exc_info=True)
+        raise
+
+
+def _close_writer_connection() -> None:
+    connection = getattr(_local, "conn", None)
+    if connection is not None:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            pass
+    _local.conn = None
+
+
+def _ensure_writer() -> None:
+    global _writer_thread
+    with _writer_start_lock:
+        if _writer_thread is not None and _writer_thread.is_alive():
+            return
+        _writer_stop.clear()
+        _writer_thread = threading.Thread(
+            target=_writer_loop,
+            daemon=True,
+            name="heimdall-db-writer",
+        )
+        _writer_thread.start()
+
+
+def _writer_loop() -> None:
+    while not _writer_stop.is_set() or not _write_queue.empty():
+        try:
+            first = _write_queue.get(timeout=0.2)
+        except queue.Empty:
+            continue
+
+        batch = [first]
+        while len(batch) < _WRITE_BATCH_SIZE:
+            try:
+                batch.append(_write_queue.get_nowait())
+            except queue.Empty:
+                break
+        try:
+            _insert_records(batch)
+        finally:
+            for _ in batch:
+                _write_queue.task_done()
+    _close_writer_connection()
+
+
+def flush_pending_writes(timeout: float = 10.0) -> bool:
+    """等待当前排队记录写入完成，供优雅退出和测试使用。"""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while _write_queue.unfinished_tasks:
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
+def shutdown_writer(timeout: float = 10.0) -> bool:
+    """停止 writer 并在退出前 flush，避免 daemon 线程丢失请求记录。"""
+    _writer_stop.set()
+    flushed = flush_pending_writes(timeout)
+    thread = _writer_thread
+    if thread is not None and thread.is_alive():
+        thread.join(None if timeout is None else max(timeout, 0))
+    return flushed and not _write_queue.unfinished_tasks
+
+
+atexit.register(shutdown_writer)
 
 
 def insert_request(record: dict):
-    """
-    异步写入请求记录（不阻塞主线程）。
-    写入完成后自动更新 daily_stats。
-    """
-    t = threading.Thread(target=_do_insert, args=(record,), daemon=True)
-    t.start()
+    """将请求记录放入有界写入队列；队列满时短暂背压并同步落盘。"""
+    _ensure_writer()
+    record = dict(record)
+    try:
+        _write_queue.put(record, timeout=5)
+    except queue.Full:
+        _logger.warning("[DB] 写入队列已满，当前请求切换为同步写入")
+        _insert_records([record])
 
 
 def _do_insert(record: dict):
-    """实际的数据库写入操作（在独立线程中执行）"""
-    try:
-        conn = _get_conn()
-        conn.execute("""
-            INSERT INTO requests (
-                created_at, date, model, original_model, stream, messages_count,
-                prompt_tokens, completion_tokens, total_tokens,
-                cache_hit_tokens, cache_miss_tokens, reasoning_tokens,
-                latency_ms, ttfb_ms,
-                status_code, success, error_type,
-                trace_id, client_ip,
-                request_body, response_body,
-                provider,
-                api_key_id,
-                provider_id, provider_api_key_id, client_api_key_id,
-                client_api_key_name,
-                protocol, endpoint, route_attempts, stat_eligible,
-                estimated_cost, pricing_snapshot, cost_source, billable_tokens
-            ) VALUES (
-                :created_at, :date, :model, :original_model, :stream, :messages_count,
-                :prompt_tokens, :completion_tokens, :total_tokens,
-                :cache_hit_tokens, :cache_miss_tokens, :reasoning_tokens,
-                :latency_ms, :ttfb_ms,
-                :status_code, :success, :error_type,
-                :trace_id, :client_ip,
-                :request_body, :response_body,
-                :provider,
-                :api_key_id,
-                :provider_id, :provider_api_key_id, :client_api_key_id,
-                :client_api_key_name,
-                :protocol, :endpoint, :route_attempts, :stat_eligible,
-                :estimated_cost, :pricing_snapshot, :cost_source, :billable_tokens
+    """兼容旧调用方的单条同步写入入口。"""
+    _insert_records([record])
+
+
+def _insert_records(records: list[dict]) -> None:
+    """在一次事务中写入一批请求并增量维护每日聚合。"""
+    if not records:
+        return
+
+    def write_batch() -> None:
+        with _write_lock:
+            conn = _get_conn()
+            affected_dates = set()
+            for record in records:
+                conn.execute("""
+                    INSERT INTO requests (
+                        created_at, date, model, original_model, stream, messages_count,
+                        prompt_tokens, completion_tokens, total_tokens,
+                        cache_hit_tokens, cache_miss_tokens, reasoning_tokens,
+                        latency_ms, ttfb_ms,
+                        status_code, success, error_type,
+                        trace_id, client_ip,
+                        request_body, response_body,
+                        provider,
+                        api_key_id,
+                        provider_id, provider_api_key_id, client_api_key_id,
+                        client_api_key_name,
+                        protocol, endpoint, route_attempts, stat_eligible,
+                        estimated_cost, pricing_snapshot, cost_source, billable_tokens
+                    ) VALUES (
+                        :created_at, :date, :model, :original_model, :stream, :messages_count,
+                        :prompt_tokens, :completion_tokens, :total_tokens,
+                        :cache_hit_tokens, :cache_miss_tokens, :reasoning_tokens,
+                        :latency_ms, :ttfb_ms,
+                        :status_code, :success, :error_type,
+                        :trace_id, :client_ip,
+                        :request_body, :response_body,
+                        :provider,
+                        :api_key_id,
+                        :provider_id, :provider_api_key_id, :client_api_key_id,
+                        :client_api_key_name,
+                        :protocol, :endpoint, :route_attempts, :stat_eligible,
+                        :estimated_cost, :pricing_snapshot, :cost_source, :billable_tokens
+                    )
+                """, record)
+                if record.get("stat_eligible", 1):
+                    target_date = record.get("date", str(date.today()))
+                    affected_dates.add(target_date)
+                    _increment_daily_stats(conn, record, target_date)
+            for target_date in affected_dates:
+                _refresh_daily_percentiles(conn, target_date)
+            conn.commit()
+
+    for attempt in range(_WRITE_LOCK_RETRIES + 1):
+        try:
+            write_batch()
+            return
+        except sqlite3.OperationalError as exc:
+            try:
+                _get_conn().rollback()
+            except sqlite3.Error:
+                pass
+            message = str(exc).lower()
+            is_transient_lock = "locked" in message or "busy" in message
+            if not is_transient_lock or attempt >= _WRITE_LOCK_RETRIES:
+                _logger.error(f"[DB] insert_request 失败: {exc}", exc_info=True)
+                return
+            delay = _WRITE_LOCK_BACKOFF_SECONDS * (2 ** attempt)
+            _logger.warning(
+                "[DB] 数据库暂时不可写，%s 秒后重试（第 %s/%s 次）",
+                f"{delay:.2f}", attempt + 1, _WRITE_LOCK_RETRIES,
             )
-        """, record)
-        conn.commit()
-        # 更新当天的聚合统计
-        if record.get("stat_eligible", 1):
-            _update_daily_stats(record.get("date", str(date.today())))
-    except Exception as e:
-        _logger.error(f"[DB] insert_request 失败: {e}", exc_info=True)
+            time.sleep(delay)
+        except Exception as exc:
+            try:
+                _get_conn().rollback()
+            except sqlite3.Error:
+                pass
+            _logger.error(f"[DB] insert_request 失败: {exc}", exc_info=True)
+            return
+
+
+def _increment_daily_stats(conn: sqlite3.Connection, record: dict, target_date: str) -> None:
+    """用单条记录增量更新每日计数和平均耗时。"""
+    values = {
+        "total_requests": 1,
+        "success_requests": 1 if record.get("success") else 0,
+        "error_requests": 0 if record.get("success") else 1,
+        "stream_requests": 1 if record.get("stream") else 0,
+        "total_prompt_tokens": int(record.get("prompt_tokens") or 0),
+        "total_completion_tokens": int(record.get("completion_tokens") or 0),
+        "total_tokens": int(record.get("total_tokens") or 0),
+        "total_cache_hit_tokens": int(record.get("cache_hit_tokens") or 0),
+        "latency_ms": float(record.get("latency_ms") or 0),
+    }
+    conn.execute("""
+        INSERT INTO daily_stats (
+            date, total_requests, success_requests, error_requests, stream_requests,
+            total_prompt_tokens, total_completion_tokens, total_tokens,
+            total_cache_hit_tokens, avg_latency_ms, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(date) DO UPDATE SET
+            total_requests = daily_stats.total_requests + excluded.total_requests,
+            success_requests = daily_stats.success_requests + excluded.success_requests,
+            error_requests = daily_stats.error_requests + excluded.error_requests,
+            stream_requests = daily_stats.stream_requests + excluded.stream_requests,
+            total_prompt_tokens = daily_stats.total_prompt_tokens + excluded.total_prompt_tokens,
+            total_completion_tokens = daily_stats.total_completion_tokens + excluded.total_completion_tokens,
+            total_tokens = daily_stats.total_tokens + excluded.total_tokens,
+            total_cache_hit_tokens = daily_stats.total_cache_hit_tokens + excluded.total_cache_hit_tokens,
+            avg_latency_ms = CASE
+                WHEN daily_stats.total_requests + excluded.total_requests = 0 THEN 0
+                ELSE (
+                    daily_stats.avg_latency_ms * daily_stats.total_requests
+                    + excluded.avg_latency_ms * excluded.total_requests
+                ) / (daily_stats.total_requests + excluded.total_requests)
+            END,
+            updated_at = CURRENT_TIMESTAMP
+    """, (
+        target_date,
+        values["total_requests"], values["success_requests"], values["error_requests"],
+        values["stream_requests"], values["total_prompt_tokens"],
+        values["total_completion_tokens"], values["total_tokens"],
+        values["total_cache_hit_tokens"], values["latency_ms"],
+    ))
+
+
+def _refresh_daily_percentiles(conn: sqlite3.Connection, target_date: str) -> None:
+    """每个写入批次只重算一次百分位，避免按请求重复扫描当天数据。"""
+    latencies = [r[0] for r in conn.execute(
+        "SELECT latency_ms FROM requests "
+        "WHERE stat_eligible = 1 AND date = ? AND latency_ms > 0 "
+        "ORDER BY latency_ms",
+        (target_date,),
+    ).fetchall()]
+
+    def percentile(data, p):
+        if not data:
+            return 0
+        return data[min(int(len(data) * p / 100), len(data) - 1)]
+
+    conn.execute(
+        "UPDATE daily_stats SET p50_latency_ms = ?, p90_latency_ms = ?, "
+        "p99_latency_ms = ?, updated_at = CURRENT_TIMESTAMP WHERE date = ?",
+        (percentile(latencies, 50), percentile(latencies, 90),
+         percentile(latencies, 99), target_date),
+    )
 
 
 def _update_daily_stats(target_date: str):
-    """根据 requests 表重新计算并 UPSERT 当天的 daily_stats"""
+    """根据 requests 表完整重建当天聚合（供迁移、修复和校验使用）。"""
     try:
-        conn = _get_conn()
+        with _write_lock:
+            conn = _get_conn()
 
-        # 聚合当天所有请求
-        row = conn.execute("""
+            # 聚合当天所有请求
+            row = conn.execute("""
             SELECT
                 COUNT(*) as total_requests,
                 SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_requests,
@@ -235,34 +431,36 @@ def _update_daily_stats(target_date: str):
                 AVG(latency_ms) as avg_latency_ms
             FROM requests
             WHERE stat_eligible = 1 AND date = ?
-        """, (target_date,)).fetchone()
+            """, (target_date,)).fetchone()
 
-        if not row or row["total_requests"] == 0:
-            return
+            if not row or row["total_requests"] == 0:
+                conn.execute("DELETE FROM daily_stats WHERE date = ?", (target_date,))
+                conn.commit()
+                return
 
-        # 计算延迟百分位
-        latencies = [r[0] for r in conn.execute(
-            "SELECT latency_ms FROM requests WHERE stat_eligible = 1 AND date = ? AND latency_ms > 0 ORDER BY latency_ms",
-            (target_date,)
-        ).fetchall()]
+            # 计算延迟百分位
+            latencies = [r[0] for r in conn.execute(
+                "SELECT latency_ms FROM requests WHERE stat_eligible = 1 AND date = ? AND latency_ms > 0 ORDER BY latency_ms",
+                (target_date,)
+            ).fetchall()]
 
-        def percentile(data, p):
-            if not data:
-                return 0
-            idx = int(len(data) * p / 100)
-            idx = min(idx, len(data) - 1)
-            return data[idx]
+            def percentile(data, p):
+                if not data:
+                    return 0
+                idx = int(len(data) * p / 100)
+                idx = min(idx, len(data) - 1)
+                return data[idx]
 
-        p50 = percentile(latencies, 50)
-        p90 = percentile(latencies, 90)
-        p99 = percentile(latencies, 99)
+            p50 = percentile(latencies, 50)
+            p90 = percentile(latencies, 90)
+            p99 = percentile(latencies, 99)
 
-        # 计算缓存命中率
-        total_prompt = row["total_prompt_tokens"] or 0
-        total_cache_hit = row["total_cache_hit_tokens"] or 0
-        cache_hit_rate = (total_cache_hit / total_prompt) if total_prompt > 0 else 0
+            # 计算缓存命中率
+            total_prompt = row["total_prompt_tokens"] or 0
+            total_cache_hit = row["total_cache_hit_tokens"] or 0
+            cache_hit_rate = (total_cache_hit / total_prompt) if total_prompt > 0 else 0
 
-        conn.execute("""
+            conn.execute("""
             INSERT INTO daily_stats (
                 date, total_requests, success_requests, error_requests, stream_requests,
                 total_prompt_tokens, total_completion_tokens, total_tokens, total_cache_hit_tokens,
@@ -284,14 +482,14 @@ def _update_daily_stats(target_date: str):
                 p99_latency_ms = excluded.p99_latency_ms,
                 cache_hit_rate = excluded.cache_hit_rate,
                 updated_at = CURRENT_TIMESTAMP
-        """, (
-            target_date,
-            row["total_requests"], row["success_requests"], row["error_requests"], row["stream_requests"],
-            row["total_prompt_tokens"], row["total_completion_tokens"], row["total_tokens"], row["total_cache_hit_tokens"],
-            row["avg_latency_ms"] or 0, p50, p90, p99,
-            cache_hit_rate
-        ))
-        conn.commit()
+            """, (
+                target_date,
+                row["total_requests"], row["success_requests"], row["error_requests"], row["stream_requests"],
+                row["total_prompt_tokens"], row["total_completion_tokens"], row["total_tokens"], row["total_cache_hit_tokens"],
+                row["avg_latency_ms"] or 0, p50, p90, p99,
+                cache_hit_rate
+            ))
+            conn.commit()
     except Exception as e:
         _logger.error(f"[DB] _update_daily_stats 失败: {e}", exc_info=True)
 
@@ -420,7 +618,42 @@ def query_daily(start_date: str, end_date: str) -> list:
             ORDER BY date ASC
         """, (start_date, end_date)).fetchall()
 
-        return [dict(r) for r in rows]
+        values_by_date = {str(row["date"]): dict(row) for row in rows}
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if start > end:
+            return []
+        # “全部”使用 0001-01-01～9999-12-31 作为边界；趋势不应为这段
+        # 不可见的空白时间生成数百万个日期。全量请求仍已由上面的 SQL
+        # 覆盖，这里只把补零范围收敛到实际数据的首尾日期。
+        if values_by_date and (end - start).days > 3660:
+            actual_dates = [
+                datetime.strptime(value, "%Y-%m-%d").date()
+                for value in values_by_date
+            ]
+            start = min(actual_dates)
+            end = max(actual_dates)
+        if not values_by_date:
+            return []
+
+        result = []
+        current = start
+        while current <= end:
+            key = current.isoformat()
+            result.append(values_by_date.get(key, {
+                "date": key,
+                "total_requests": 0,
+                "success_requests": 0,
+                "error_requests": 0,
+                "total_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cache_hit_tokens": 0,
+                "avg_latency_ms": 0,
+                "cache_hit_rate": 0,
+            }))
+            current += timedelta(days=1)
+        return result
     except Exception as e:
         _logger.error(f"[DB] query_daily 失败: {e}", exc_info=True)
         return []
@@ -471,8 +704,144 @@ _SORT_FIELD_MAP = {
 }
 
 
+def _api_key_sql_fragments(conn: sqlite3.Connection) -> dict:
+    """Return reusable API-key join/label SQL for stats queries.
+
+    The running dashboard initializes ``api_keys`` before serving requests,
+    but migration and empty-database checks can legitimately query stats while
+    that table is not present yet.  Keep those reads useful without inventing
+    a deleted state merely because the metadata table is unavailable.
+    """
+    key_expression = "COALESCE(r.client_api_key_id, r.api_key_id)"
+    has_api_keys = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'api_keys'"
+    ).fetchone() is not None
+    if has_api_keys:
+        return {
+            "join": (
+                "LEFT JOIN api_keys ak "
+                f"ON ak.id = {key_expression}"
+            ),
+            "name": (
+                "CASE WHEN {key} IS NULL THEN '未关联 API Key' ELSE "
+                "COALESCE(NULLIF(ak.name, ''), "
+                "NULLIF(r.client_api_key_name, ''), "
+                "'API Key #' || {key}) END"
+            ).format(key=key_expression),
+            "deleted": (
+                "CASE WHEN {key} IS NOT NULL AND ak.id IS NULL "
+                "THEN 1 ELSE 0 END"
+            ).format(key=key_expression),
+            "id": key_expression,
+        }
+    return {
+        "join": "",
+        "name": (
+            "CASE WHEN {key} IS NULL THEN '未关联 API Key' ELSE "
+            "COALESCE(NULLIF(r.client_api_key_name, ''), "
+            "'API Key #' || {key}) END"
+        ).format(key=key_expression),
+        "deleted": "0",
+        "id": key_expression,
+    }
+
+
+def query_request_filter_options() -> dict:
+    """Return stable request-filter metadata without exposing request bodies."""
+    try:
+        conn = _get_conn()
+        providers = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT DISTINCT provider FROM requests "
+                "WHERE provider IS NOT NULL AND TRIM(provider) <> '' "
+                "ORDER BY provider"
+            ).fetchall()
+        ]
+        has_unassigned_provider = conn.execute(
+            "SELECT 1 FROM requests WHERE provider IS NULL OR TRIM(provider) = '' LIMIT 1"
+        ).fetchone() is not None
+        if has_unassigned_provider:
+            # ``default`` is also the value already understood by
+            # query_requests for legacy records with no provider snapshot.
+            providers.append("default")
+        protocols = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT DISTINCT protocol FROM requests "
+                "WHERE protocol IS NOT NULL AND TRIM(protocol) <> '' "
+                "ORDER BY protocol"
+            ).fetchall()
+        ]
+        client_keys = []
+        # An isolated migration or empty-database smoke test may initialize
+        # requests before auth tables. Keep this metadata read useful there.
+        has_api_keys = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'api_keys'"
+        ).fetchone()
+        if has_api_keys:
+            rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(r.client_api_key_id, r.api_key_id) AS id,
+                    COALESCE(
+                        NULLIF(ak.name, ''),
+                        NULLIF(r.client_api_key_name, ''),
+                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    ) AS name,
+                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS is_deleted
+                FROM requests r
+                LEFT JOIN api_keys ak
+                  ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                WHERE COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+                GROUP BY
+                    COALESCE(r.client_api_key_id, r.api_key_id),
+                    COALESCE(
+                        NULLIF(ak.name, ''),
+                        NULLIF(r.client_api_key_name, ''),
+                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
+                    ),
+                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END
+                ORDER BY name
+                """
+            ).fetchall()
+            for row in rows:
+                client_keys.append({
+                    "id": int(row[0]),
+                    "name": str(row[1]),
+                    "is_deleted": bool(row[2]),
+                })
+        else:
+            rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(r.client_api_key_id, r.api_key_id) AS id,
+                    COALESCE(NULLIF(r.client_api_key_name, ''),
+                             'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)) AS name
+                FROM requests r
+                WHERE COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
+                GROUP BY id, name
+                ORDER BY name
+                """
+            ).fetchall()
+            for row in rows:
+                client_keys.append({
+                    "id": int(row[0]),
+                    "name": str(row[1]),
+                    "is_deleted": True,
+                })
+        return {
+            "providers": providers,
+            "protocols": protocols,
+            "client_keys": client_keys,
+        }
+    except Exception as e:
+        _logger.error(f"[DB] query_request_filter_options 失败: {e}", exc_info=True)
+        return {"providers": [], "protocols": [], "client_keys": []}
+
+
 def query_requests(page: int, page_size: int, filters: dict) -> dict:
-    """分页查询请求明细，支持按 model/date/status 筛选，支持全量数据排序"""
+    """分页查询请求明细，支持白名单筛选和全量数据排序。"""
     try:
         conn = _get_conn()
 
@@ -501,6 +870,33 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
         elif status == "error":
             where_clauses.append("r.success = 0")
 
+        protocol = filters.get("protocol", "all")
+        if protocol and protocol != "all":
+            where_clauses.append("r.protocol = ?")
+            params.append(protocol)
+
+        stream = filters.get("stream", "all")
+        if stream in ("json", "sse"):
+            where_clauses.append("r.stream = ?")
+            params.append(1 if stream == "sse" else 0)
+
+        provider = filters.get("provider", "all")
+        if provider and provider != "all":
+            if provider == "default":
+                where_clauses.append("(r.provider IS NULL OR TRIM(r.provider) = '')")
+            else:
+                where_clauses.append("r.provider = ?")
+                params.append(provider)
+
+        client_key_id = filters.get("client_key_id", "all")
+        if client_key_id not in (None, "", "all"):
+            try:
+                client_key_id = int(client_key_id)
+            except (TypeError, ValueError):
+                return {"total": 0, "page": page, "page_size": page_size, "items": []}
+            where_clauses.append("COALESCE(r.client_api_key_id, r.api_key_id) = ?")
+            params.append(client_key_id)
+
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         # 排序字段与方向（防注入白名单校验）
@@ -525,6 +921,21 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
             params
         ).fetchone()[0]
 
+        # Dashboard 正式进程会先初始化 auth 表，但迁移和空库验收可能只
+        # 有 requests 表。此时仍应返回历史请求，而不是因 LEFT JOIN 的
+        # 目标表不存在而整页变成空结果。
+        has_api_keys = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'api_keys'"
+        ).fetchone() is not None
+        if has_api_keys:
+            api_key_join = "LEFT JOIN api_keys ak ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)"
+            api_key_name_expr = "COALESCE(NULLIF(ak.name, ''), NULLIF(r.client_api_key_name, ''), CASE WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL THEN '未关联 API Key' ELSE 'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id) END)"
+            api_key_deleted_expr = "CASE WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL AND ak.id IS NULL THEN 1 ELSE 0 END"
+        else:
+            api_key_join = ""
+            api_key_name_expr = "COALESCE(NULLIF(r.client_api_key_name, ''), CASE WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL THEN '未关联 API Key' ELSE 'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id) END)"
+            api_key_deleted_expr = "CASE WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL THEN 1 ELSE 0 END"
+
         # 分页查询
         offset = (page - 1) * page_size
         rows = conn.execute(
@@ -540,23 +951,10 @@ def query_requests(page: int, page_size: int, filters: dict) -> dict:
                 r.provider, r.provider_id, r.provider_api_key_id,
                 r.protocol, r.endpoint, r.route_attempts, r.stat_eligible,
                 r.estimated_cost, r.cost_source, r.billable_tokens,
-                COALESCE(
-                    NULLIF(ak.name, ''),
-                    NULLIF(r.client_api_key_name, ''),
-                    CASE
-                        WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL
-                            THEN '未知'
-                        ELSE 'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                    END
-                ) AS api_key_name,
-                CASE
-                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
-                         AND ak.id IS NULL THEN 1
-                    ELSE 0
-                END AS api_key_deleted
+                {api_key_name_expr} AS api_key_name,
+                {api_key_deleted_expr} AS api_key_deleted
             FROM requests r
-            LEFT JOIN api_keys ak
-              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+            {api_key_join}
             {where_sql}
             {order_sql}
             LIMIT ? OFFSET ?
@@ -905,6 +1303,7 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
     """按 Client Access Key 和模型聚合已固化的人民币成本。"""
     try:
         conn = _get_conn()
+        api_key_sql = _api_key_sql_fragments(conn)
         filter_sql = """
             r.date BETWEEN ? AND ?
             AND r.stat_eligible = 1
@@ -949,7 +1348,7 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
                     SUM(CASE WHEN r.estimated_cost IS NOT NULL
                              THEN r.billable_tokens ELSE 0 END) AS billable_tokens
                 FROM requests r
-                LEFT JOIN api_keys ak ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                {api_key_sql["join"]}
                 WHERE {filter_sql}
                 GROUP BY {group_expression}, {name_expression}
                 ORDER BY total_cost DESC, billable_tokens DESC
@@ -1002,21 +1401,9 @@ def query_cost_stats(start_date: str, end_date: str) -> dict:
                 ),
             },
             "by_client_key": grouped(
-                "COALESCE(r.client_api_key_id, r.api_key_id)",
-                """CASE
-                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NULL
-                        THEN '未关联 API Key'
-                    ELSE COALESCE(
-                        NULLIF(ak.name, ''),
-                        NULLIF(r.client_api_key_name, ''),
-                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                    )
-                END""",
-                """CASE
-                    WHEN COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
-                         AND ak.id IS NULL THEN 1
-                    ELSE 0
-                END""",
+                api_key_sql["id"],
+                api_key_sql["name"],
+                api_key_sql["deleted"],
             ),
             "by_model": grouped("r.model", "r.model"),
         }
@@ -1029,15 +1416,12 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
     """按 APIKey 分组统计 token 用量和请求次数"""
     try:
         conn = _get_conn()
-        rows = conn.execute("""
+        api_key_sql = _api_key_sql_fragments(conn)
+        rows = conn.execute(f"""
             SELECT
-                COALESCE(
-                    NULLIF(ak.name, ''),
-                    NULLIF(r.client_api_key_name, ''),
-                    'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                ) AS api_key_name,
-                COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
-                CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
+                {api_key_sql["name"]} AS api_key_name,
+                {api_key_sql["id"]} AS api_key_id,
+                {api_key_sql["deleted"]} AS api_key_deleted,
                 COUNT(*) as total_requests,
                 SUM(CASE WHEN r.success = 1 THEN 1 ELSE 0 END) as success_requests,
                 SUM(CASE WHEN r.success = 0 THEN 1 ELSE 0 END) as error_requests,
@@ -1048,11 +1432,9 @@ def query_api_key_stats(start_date: str, end_date: str) -> list:
                 SUM(r.reasoning_tokens) as total_reasoning_tokens,
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
-            LEFT JOIN api_keys ak
-              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+            {api_key_sql["join"]}
             WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
-              AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
-            GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name, api_key_deleted
+            GROUP BY {api_key_sql["id"]}, api_key_name, api_key_deleted
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
         result = [dict(r) for r in rows]
@@ -1068,25 +1450,20 @@ def query_api_key_model_stats(start_date: str, end_date: str) -> list:
     """按 APIKey + 模型分组统计"""
     try:
         conn = _get_conn()
-        rows = conn.execute("""
+        api_key_sql = _api_key_sql_fragments(conn)
+        rows = conn.execute(f"""
             SELECT
-                COALESCE(
-                    NULLIF(ak.name, ''),
-                    NULLIF(r.client_api_key_name, ''),
-                    'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                ) AS api_key_name,
-                COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
-                CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
+                {api_key_sql["name"]} AS api_key_name,
+                {api_key_sql["id"]} AS api_key_id,
+                {api_key_sql["deleted"]} AS api_key_deleted,
                 r.model,
                 COUNT(*) as request_count,
                 SUM(r.total_tokens) as total_tokens,
                 ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
             FROM requests r
-            LEFT JOIN api_keys ak
-              ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+            {api_key_sql["join"]}
             WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
-              AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
-            GROUP BY COALESCE(r.client_api_key_id, r.api_key_id), api_key_name,
+            GROUP BY {api_key_sql["id"]}, api_key_name,
                      api_key_deleted, r.model
             ORDER BY total_tokens DESC
         """, (start_date, end_date)).fetchall()
@@ -1103,52 +1480,42 @@ def query_api_key_daily(start_date: str, end_date: str, api_key_id: int = None) 
     """按日期分组的 APIKey 统计趋势"""
     try:
         conn = _get_conn()
+        api_key_sql = _api_key_sql_fragments(conn)
         if api_key_id:
-            rows = conn.execute("""
+            rows = conn.execute(f"""
                 SELECT
                     r.date,
-                    COALESCE(
-                        NULLIF(ak.name, ''),
-                        NULLIF(r.client_api_key_name, ''),
-                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                    ) AS api_key_name,
-                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
+                    {api_key_sql["name"]} AS api_key_name,
+                    {api_key_sql["deleted"]} AS api_key_deleted,
                     COUNT(*) as requests,
                     SUM(r.total_tokens) as tokens,
                     SUM(r.prompt_tokens) as prompt_tokens,
                     SUM(r.completion_tokens) as completion_tokens,
                     ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
                 FROM requests r
-                LEFT JOIN api_keys ak
-                  ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                {api_key_sql["join"]}
                 WHERE r.date >= ? AND r.date <= ?
-                  AND COALESCE(r.client_api_key_id, r.api_key_id) = ?
+                  AND {api_key_sql["id"]} = ?
                   AND r.stat_eligible = 1
                 GROUP BY r.date, api_key_name, api_key_deleted
                 ORDER BY r.date
             """, (start_date, end_date, api_key_id)).fetchall()
         else:
-            rows = conn.execute("""
+            rows = conn.execute(f"""
                 SELECT
                     r.date,
-                    COALESCE(
-                        NULLIF(ak.name, ''),
-                        NULLIF(r.client_api_key_name, ''),
-                        'API Key #' || COALESCE(r.client_api_key_id, r.api_key_id)
-                    ) AS api_key_name,
-                    COALESCE(r.client_api_key_id, r.api_key_id) AS api_key_id,
-                    CASE WHEN ak.id IS NULL THEN 1 ELSE 0 END AS api_key_deleted,
+                    {api_key_sql["name"]} AS api_key_name,
+                    {api_key_sql["id"]} AS api_key_id,
+                    {api_key_sql["deleted"]} AS api_key_deleted,
                     COUNT(*) as requests,
                     SUM(r.total_tokens) as tokens,
                     SUM(r.prompt_tokens) as prompt_tokens,
                     SUM(r.completion_tokens) as completion_tokens,
                     ROUND(AVG(r.latency_ms), 0) as avg_latency_ms
                 FROM requests r
-                LEFT JOIN api_keys ak
-                  ON ak.id = COALESCE(r.client_api_key_id, r.api_key_id)
+                {api_key_sql["join"]}
                 WHERE r.stat_eligible = 1 AND r.date >= ? AND r.date <= ?
-                  AND COALESCE(r.client_api_key_id, r.api_key_id) IS NOT NULL
-                GROUP BY r.date, COALESCE(r.client_api_key_id, r.api_key_id),
+                GROUP BY r.date, {api_key_sql["id"]},
                          api_key_name, api_key_deleted
                 ORDER BY r.date, tokens DESC
             """, (start_date, end_date)).fetchall()

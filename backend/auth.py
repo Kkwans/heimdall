@@ -44,6 +44,7 @@ def init_auth_tables():
         _logger.info("[AUTH] 认证表初始化完成")
     except Exception as e:
         _logger.error(f"[AUTH] 初始化认证表失败: {e}", exc_info=True)
+        raise
 
 
 def generate_api_key() -> str:
