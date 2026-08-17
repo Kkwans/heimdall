@@ -38,6 +38,14 @@ def _load_or_create_key() -> bytes:
 _fernet: Fernet = None
 
 
+class SecretEncryptionError(RuntimeError):
+    """Raised when a secret cannot be encrypted safely."""
+
+
+class SecretDecryptionError(RuntimeError):
+    """Raised when an encrypted secret cannot be decrypted safely."""
+
+
 def _get_fernet() -> Fernet:
     """获取 Fernet 实例（延迟初始化）"""
     global _fernet
@@ -56,21 +64,25 @@ def encrypt(plaintext: str) -> str:
         encrypted = f.encrypt(plaintext.encode("utf-8"))
         return encrypted.decode("utf-8")
     except Exception as e:
-        _logger.error(f"[CRYPTO] 加密失败: {e}")
-        return plaintext  # 加密失败时返回原文（降级处理）
+        _logger.error("[CRYPTO] 加密失败，已拒绝写入密钥")
+        raise SecretEncryptionError("secret encryption failed") from e
 
 
 def decrypt(ciphertext: str) -> str:
     """解密字符串，返回明文"""
     if not ciphertext:
         return ciphertext
+    # 只有明确不是 Fernet token 的历史值才按 legacy plaintext 兼容读取。
+    # 看起来像密文但无法验证的值必须失败关闭，不能当作明文继续路由。
+    if not is_encrypted(ciphertext):
+        return ciphertext
     try:
         f = _get_fernet()
         decrypted = f.decrypt(ciphertext.encode("utf-8"))
         return decrypted.decode("utf-8")
-    except Exception:
-        # 解密失败说明是旧的明文数据，直接返回
-        return ciphertext
+    except Exception as exc:
+        _logger.error("[CRYPTO] 密钥解密失败，已拒绝使用该值")
+        raise SecretDecryptionError("secret decryption failed") from exc
 
 
 def is_encrypted(value: str) -> bool:
