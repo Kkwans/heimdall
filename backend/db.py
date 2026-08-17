@@ -6,6 +6,7 @@ import os
 import queue
 import time
 from datetime import datetime, date, timedelta
+from typing import Optional
 
 import config
 
@@ -840,8 +841,9 @@ def query_request_filter_options() -> dict:
         return {"providers": [], "protocols": [], "client_keys": []}
 
 
-def query_requests(page: int, page_size: int, filters: dict) -> dict:
+def query_requests(page: int, page_size: int, filters: Optional[dict] = None) -> dict:
     """分页查询请求明细，支持白名单筛选和全量数据排序。"""
+    filters = filters or {}
     try:
         conn = _get_conn()
 

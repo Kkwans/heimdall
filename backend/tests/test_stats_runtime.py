@@ -107,15 +107,15 @@ def runtime_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _close_thread_connection()
 
 
-def test_proxy_config_allows_port_and_protocol_base_urls_with_explicit_restart(runtime_app) -> None:
+def test_proxy_config_allows_port_and_protocol_paths_with_explicit_restart(runtime_app) -> None:
     app, _database, runtime_config, docker = runtime_app
     client = app.test_client()
 
     config_response = client.get("/api/proxy/config")
     saved = client.put("/api/proxy/config", json={
         "proxy_port": 29999,
-        "openai_base_url": "https://openai.example.com/gateway///",
-        "anthropic_base_url": "https://anthropic.example.com/proxy/",
+        "openai_base_path": "/gateway///",
+        "anthropic_base_path": "/proxy/",
     })
     pending = client.get("/api/proxy/config")
 
@@ -123,22 +123,24 @@ def test_proxy_config_allows_port_and_protocol_base_urls_with_explicit_restart(r
     assert config_response.get_json()["proxy_port"] == 19888
     assert config_response.get_json()["active_proxy_port"] == 19888
     assert config_response.get_json()["editable_fields"] == [
-        "proxy_port", "openai_base_url", "anthropic_base_url", "request_timeout",
+        "proxy_port", "openai_base_path", "anthropic_base_path", "request_timeout",
     ]
     assert saved.status_code == 200
     assert saved.get_json()["changed_fields"] == [
-        "anthropic_base_url", "openai_base_url", "proxy_port",
+        "anthropic_base_path", "openai_base_path", "proxy_port",
     ]
     assert saved.get_json()["restart_required"] is True
     assert pending.get_json()["proxy_port"] == 29999
     assert pending.get_json()["active_proxy_port"] == docker.active_port == 19888
-    assert pending.get_json()["openai_base_url"] == "https://openai.example.com/gateway"
-    assert pending.get_json()["anthropic_base_url"] == "https://anthropic.example.com/proxy"
+    assert pending.get_json()["openai_base_path"] == "/gateway"
+    assert pending.get_json()["anthropic_base_path"] == "/proxy"
+    assert pending.get_json()["openai_base_url"] == ""
+    assert pending.get_json()["anthropic_base_url"] == ""
     assert pending.get_json()["restart_pending"] is True
     persisted = json.loads(runtime_config.read_text(encoding="utf-8"))
     assert persisted["proxy_port"] == 29999
-    assert persisted["openai_base_url"] == "https://openai.example.com/gateway"
-    assert persisted["anthropic_base_url"] == "https://anthropic.example.com/proxy"
+    assert persisted["openai_base_path"] == "/gateway"
+    assert persisted["anthropic_base_path"] == "/proxy"
 
 
 @pytest.mark.parametrize("payload", [
@@ -147,8 +149,10 @@ def test_proxy_config_allows_port_and_protocol_base_urls_with_explicit_restart(r
     {"public_base_url": "ftp://gateway.example.com"},
     {"public_base_url": "https://user:secret@gateway.example.com"},
     {"public_base_url": "https://gateway.example.com?token=secret"},
-    {"openai_base_url": "ftp://gateway.example.com/openai"},
-    {"anthropic_base_url": "https://user:secret@gateway.example.com/anthropic"},
+    {"openai_base_url": "https://gateway.example.com/openai"},
+    {"anthropic_base_url": "https://gateway.example.com/anthropic"},
+    {"openai_base_path": "https://gateway.example.com/openai"},
+    {"anthropic_base_path": "relative/path"},
 ])
 def test_proxy_config_rejects_unsafe_connection_settings(runtime_app, payload) -> None:
     app, _database, runtime_config, _docker = runtime_app
@@ -168,6 +172,8 @@ def test_legacy_public_base_url_is_expanded_for_both_protocols(runtime_app) -> N
 
     assert payload["openai_base_url"] == "https://legacy.example.com/openai"
     assert payload["anthropic_base_url"] == "https://legacy.example.com/anthropic"
+    assert payload["openai_base_path"] == "/openai"
+    assert payload["anthropic_base_path"] == "/anthropic"
 
 
 def test_runtime_timeout_is_atomic_and_explicitly_requires_restart(runtime_app) -> None:
@@ -405,7 +411,7 @@ def test_unassigned_client_key_is_kept_as_its_own_stats_group(runtime_app) -> No
 
 def test_log_history_uses_cursor_without_fake_all(runtime_app) -> None:
     app, _database, _runtime_config, _docker = runtime_app
-    today = date.today().isoformat()
+    today = stats_api._today_string()
     log_path = Path(config.LOG_DIR) / "proxy-business.log"
     log_path.write_text(
         "".join(f"{today} 10:00:0{i} - INFO - line-{i}\n" for i in range(1, 6)),
