@@ -177,8 +177,12 @@ function ViewerToolbar({ onExpandAll, onCollapseAll }: { onExpandAll: () => void
   )
 }
 
-function JsonViewer({ data }: { data: unknown }) {
-  const [expandMode, setExpandMode] = useState<ExpandMode>('default')
+function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }: {
+  data: unknown
+  initialExpandMode?: ExpandMode
+  showToolbar?: boolean
+}) {
+  const [expandMode, setExpandMode] = useState<ExpandMode>(initialExpandMode)
   if (data == null) {
     return (
       <Empty description="暂无数据（该请求发生时尚未启用详情记录）" style={{ padding: '32px 0' }} />
@@ -216,7 +220,7 @@ function JsonViewer({ data }: { data: unknown }) {
 
   return (
     <>
-      {structured && (
+      {structured && showToolbar && (
         <ViewerToolbar
           onExpandAll={() => setExpandMode('all')}
           onCollapseAll={() => setExpandMode('none')}
@@ -254,9 +258,9 @@ function MarkdownContent({ content, isDark }: { content: string; isDark: boolean
 // ──────────────────────────────────────────
 // 响应内容查看器：渲染消息与原始响应分离展示
 // ──────────────────────────────────────────
-function SseRawViewer({ frames, rawText }: { frames: SseFrame[]; rawText: string }) {
+function SseRawViewer({ frames, rawText, initialExpandMode = 'default', showToolbar = true }: { frames: SseFrame[]; rawText: string; initialExpandMode?: ExpandMode; showToolbar?: boolean }) {
   const keys = frames.map(frame => String(frame.index))
-  const [activeKeys, setActiveKeys] = useState<string[]>([])
+  const [activeKeys, setActiveKeys] = useState<string[]>(initialExpandMode === 'all' ? keys : [])
   const normalizeKeys = (value: string | string[]) => Array.isArray(value) ? value : [value]
 
   if (frames.length === 0) {
@@ -265,10 +269,12 @@ function SseRawViewer({ frames, rawText }: { frames: SseFrame[]; rawText: string
 
   return (
     <div>
-      <ViewerToolbar
-        onExpandAll={() => setActiveKeys(keys)}
-        onCollapseAll={() => setActiveKeys([])}
-      />
+      {showToolbar && (
+        <ViewerToolbar
+          onExpandAll={() => setActiveKeys(keys)}
+          onCollapseAll={() => setActiveKeys([])}
+        />
+      )}
       <Collapse
         size="small"
         activeKey={activeKeys}
@@ -290,17 +296,37 @@ function SseRawViewer({ frames, rawText }: { frames: SseFrame[]; rawText: string
 
 function RawResponsePanel({ display }: { display: ResponseDisplay }) {
   const formatLabel = display.format === 'json' ? 'JSON' : display.format === 'sse' ? 'SSE' : '文本'
+  const [rawOpen, setRawOpen] = useState(false)
+  const [rawCommand, setRawCommand] = useState<ExpandMode>('default')
+  const setRawState = (mode: ExpandMode) => {
+    setRawCommand(mode)
+    setRawOpen(true)
+  }
+  const controls = display.format !== 'text' ? (
+    <div style={{ display: 'inline-flex', gap: 4 }}>
+      <Button
+        size="small"
+        onClick={event => { event.stopPropagation(); setRawState('all') }}
+      >全部展开</Button>
+      <Button
+        size="small"
+        onClick={event => { event.stopPropagation(); setRawState('none') }}
+      >全部折叠</Button>
+    </div>
+  ) : undefined
   return (
     <Collapse
       size="small"
-      defaultActiveKey={[]}
+      activeKey={rawOpen ? ['raw-response'] : []}
+      onChange={value => setRawOpen((Array.isArray(value) ? value : [value]).includes('raw-response'))}
       items={[{
         key: 'raw-response',
+        extra: controls,
         label: <span>原始响应 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>（{formatLabel}，默认折叠）</span></span>,
         children: display.format === 'json' && display.parsed != null
-          ? <JsonViewer data={display.parsed} />
+          ? <JsonViewer key={rawCommand} data={display.parsed} initialExpandMode={rawCommand} showToolbar={false} />
           : display.format === 'sse'
-            ? <SseRawViewer frames={display.frames} rawText={display.rawText} />
+            ? <SseRawViewer key={rawCommand} frames={display.frames} rawText={display.rawText} initialExpandMode={rawCommand} showToolbar={false} />
             : <pre className="hd-response-raw-text">{display.rawText || '暂无原始响应'}</pre>,
       }]}
     />
