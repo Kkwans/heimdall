@@ -402,7 +402,7 @@ function ProviderManager() {
 
   return (
     <>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           添加厂商
         </Button>
@@ -839,7 +839,7 @@ function ModelManager() {
 
   return (
     <>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
         <Select
           style={{ width: 200 }}
           placeholder="选择厂商"
@@ -944,6 +944,7 @@ function ApiKeyManager() {
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [newKeyTitle, setNewKeyTitle] = useState('API Key 创建成功')
   const [resetKeyPending, setResetKeyPending] = useState(false)
+  const [copyingKeyId, setCopyingKeyId] = useState<number | null>(null)
   const [form] = Form.useForm()
   const cellCenter: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center' }
   const cellCenterFixed: React.CSSProperties = { verticalAlign: 'middle', textAlign: 'center', background: 'var(--bg-surface, #fff)' }
@@ -965,13 +966,13 @@ function ApiKeyManager() {
   const loadAllModels = useCallback(async () => {
     try {
       const { providers } = await fetchProviders()
-      const models: string[] = []
-      for (const p of providers) {
-        const { models: pModels } = await fetchModels(p.id)
-        for (const m of pModels) {
-          models.push(`${p.name}/${m.model_name}`)
-        }
-      }
+      const modelGroups = await Promise.all(
+        providers.map(async p => {
+          const { models: pModels } = await fetchModels(p.id)
+          return pModels.map(m => `${p.name}/${m.model_name}`)
+        }),
+      )
+      const models = modelGroups.flat()
       setAllModels(models)
     } catch (err) {
       showRequestError(err, '加载可用模型失败')
@@ -1068,12 +1069,15 @@ function ApiKeyManager() {
   }
 
   const handleCopyStoredKey = async (record: ApiKey) => {
+    setCopyingKeyId(record.id)
     try {
       const { key_value } = await copyApiKey(record.id)
       await copyText(key_value)
       message.success(`已复制 ${record.name || 'API Key'}`)
     } catch (err) {
       showRequestError(err, '复制 API Key 失败')
+    } finally {
+      setCopyingKeyId(null)
     }
   }
 
@@ -1098,10 +1102,22 @@ function ApiKeyManager() {
       align: 'center',
       onHeaderCell: () => ({ style: { textAlign: 'center' as const } }),
       onCell: () => ({ style: cellCenter }),
-      render: (preview: string) => (
-        <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-          {preview}
-        </Text>
+      render: (preview: string, record) => (
+        <Space size={4}>
+          <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+            {preview}
+          </Text>
+          <Tooltip title="复制完整 Key">
+            <Button
+              type="text"
+              size="small"
+              loading={copyingKeyId === record.id}
+              icon={copyingKeyId === record.id ? undefined : <CopyOutlined />}
+              aria-label={`复制客户端 API Key ${record.name}`}
+              onClick={() => handleCopyStoredKey(record)}
+            />
+          </Tooltip>
+        </Space>
       ),
     },
     {
@@ -1166,15 +1182,6 @@ function ApiKeyManager() {
       onCell: () => ({ style: cellCenter }),
       render: (_, record) => (
         <Space size="small">
-          <Tooltip title="复制完整 Key">
-            <Button
-              type="text"
-              size="small"
-              icon={<CopyOutlined />}
-              aria-label={`复制客户端 API Key ${record.name}`}
-              onClick={() => handleCopyStoredKey(record)}
-            />
-          </Tooltip>
           <Tooltip title="编辑">
             <Button type="text" size="small" icon={<EditOutlined />} aria-label={`编辑客户端 API Key ${record.name}`} onClick={() => handleEdit(record)} />
           </Tooltip>
@@ -1190,7 +1197,7 @@ function ApiKeyManager() {
 
   return (
     <>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           创建 API Key
         </Button>
