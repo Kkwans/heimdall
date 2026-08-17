@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Table, Tag, Select, Badge, Tooltip, Space, Card, Modal, Tabs, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
+import { Table, Tag, Badge, Tooltip, Space, Card, Modal, Tabs, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
 import { DetailSkeleton, TableSkeleton } from '../components/LoadingSkeleton'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import type { SorterResult } from 'antd/es/table/interface'
@@ -27,6 +27,7 @@ import { fmtCny, fmtCnyPerMillionValue, fmtTokens, fmtMs, latencyColor } from '.
 import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import AdaptiveFilterSelect from '../components/AdaptiveFilterSelect'
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -1138,7 +1139,7 @@ export default function Requests() {
                       aria-label="请求保留设置"
                     />
                   </Tooltip>
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="模型筛选"
                     size="small"
                     value={modelFilter}
@@ -1151,7 +1152,7 @@ export default function Requests() {
                     showSearch
                     optionFilterProp="label"
                   />
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="状态筛选"
                     size="small"
                     value={statusFilter}
@@ -1163,7 +1164,7 @@ export default function Requests() {
                       { value: 'error', label: '失败' },
                     ]}
                   />
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="协议筛选"
                     size="small"
                     value={protocolFilter}
@@ -1174,7 +1175,7 @@ export default function Requests() {
                       ...filterOptions.protocols.map(protocol => ({ value: protocol, label: protocol === 'anthropic_messages' ? 'Anthropic' : protocol === 'openai_responses' ? 'Responses' : 'Chat' })),
                     ]}
                   />
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="流式模式筛选"
                     size="small"
                     value={streamFilter}
@@ -1182,7 +1183,7 @@ export default function Requests() {
                     style={{ minWidth: 100, maxWidth: 130 }}
                     options={[{ value: 'all', label: '全部模式' }, { value: 'json', label: 'JSON' }, { value: 'sse', label: 'SSE' }]}
                   />
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="厂商筛选"
                     size="small"
                     value={providerFilter}
@@ -1190,7 +1191,7 @@ export default function Requests() {
                     style={{ minWidth: 100, maxWidth: 160 }}
                     options={[{ value: 'all', label: '全部厂商' }, ...filterOptions.providers.map(provider => ({ value: provider, label: provider === 'default' ? '未关联厂商' : provider }))]}
                   />
-                  <Select
+                  <AdaptiveFilterSelect
                     aria-label="Client Access Key 筛选"
                     size="small"
                     value={clientKeyFilter}
@@ -1224,7 +1225,7 @@ export default function Requests() {
             {/* 移动端：筛选框独立一行，各占约 50% 宽度 */}
             {isMobile && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="模型筛选"
                   size="small"
                   value={modelFilter}
@@ -1237,7 +1238,7 @@ export default function Requests() {
                   showSearch
                   optionFilterProp="label"
                 />
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="状态筛选"
                   size="small"
                   value={statusFilter}
@@ -1249,7 +1250,7 @@ export default function Requests() {
                     { value: 'error', label: '失败' },
                   ]}
                 />
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="协议筛选"
                   size="small"
                   value={protocolFilter}
@@ -1260,7 +1261,7 @@ export default function Requests() {
                     ...filterOptions.protocols.map(protocol => ({ value: protocol, label: protocol === 'anthropic_messages' ? 'Anthropic' : protocol === 'openai_responses' ? 'Responses' : 'Chat' })),
                   ]}
                 />
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="流式模式筛选"
                   size="small"
                   value={streamFilter}
@@ -1268,7 +1269,7 @@ export default function Requests() {
                   style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
                   options={[{ value: 'all', label: '全部模式' }, { value: 'json', label: 'JSON' }, { value: 'sse', label: 'SSE' }]}
                 />
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="厂商筛选"
                   size="small"
                   value={providerFilter}
@@ -1276,7 +1277,7 @@ export default function Requests() {
                   style={{ minWidth: 'calc(50% - 4px)', maxWidth: 'calc(50% - 4px)', flex: '1 1 calc(50% - 4px)' }}
                     options={[{ value: 'all', label: '全部厂商' }, ...filterOptions.providers.map(provider => ({ value: provider, label: provider === 'default' ? '未关联厂商' : provider }))]}
                 />
-                <Select
+                <AdaptiveFilterSelect
                   aria-label="Client Access Key 筛选"
                   size="small"
                   value={clientKeyFilter}
@@ -1366,31 +1367,36 @@ export default function Requests() {
             requiredMark={false}
             initialValues={{ enabled: false, retention_days: 30 }}
           >
-            <Form.Item
-              label="自动清理"
-              name="enabled"
-              valuePropName="checked"
-              tooltip="默认关闭；启用后由每日任务分批处理"
-            >
-              <Switch checkedChildren="已启用" unCheckedChildren="已关闭" />
-            </Form.Item>
-            <Form.Item
-              label="保留天数"
-              name="retention_days"
-              rules={[
-                { required: true, message: '请输入保留天数' },
-                { type: 'number', min: 1, max: 3650, message: '范围 1–3650 天' },
-              ]}
-            >
-              <InputNumber min={1} max={3650} addonAfter="天" style={{ width: '100%' }} />
-            </Form.Item>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+              <Form.Item
+                label="自动清理"
+                name="enabled"
+                valuePropName="checked"
+                tooltip="默认关闭；启用后由每日任务分批处理"
+                style={{ flex: '1 1 180px', minWidth: 0, marginBottom: 16 }}
+              >
+                <Switch checkedChildren="已启用" unCheckedChildren="已关闭" />
+              </Form.Item>
+              <Form.Item
+                label="保留天数"
+                name="retention_days"
+                rules={[
+                  { required: true, message: '请输入保留天数' },
+                  { type: 'number', min: 1, max: 3650, message: '范围 1–3650 天' },
+                ]}
+                style={{ flex: '0 1 170px', width: 170, maxWidth: '100%', marginBottom: 16 }}
+              >
+                <InputNumber min={1} max={3650} addonAfter="天" style={{ width: '100%' }} />
+              </Form.Item>
+            </div>
           </Form>
 
           <Alert
             type="warning"
             showIcon
-            message="请求和响应正文会完整保存，可能包含敏感数据并持续占用数据库空间。"
-            description="启用前会预览预计删除条数和正文大小，并再次确认；保存设置不会立即删除，也不会自动执行 VACUUM。"
+            banner
+            style={{ marginBottom: 12 }}
+            message="正文完整保存，可能包含敏感数据；启用前会预览删除范围，保存后次日分批执行。"
           />
 
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
