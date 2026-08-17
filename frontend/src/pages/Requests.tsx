@@ -28,6 +28,7 @@ import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import AdaptiveFilterSelect from '../components/AdaptiveFilterSelect'
+import { extractResponseDisplay, type ResponseDisplay, type SseFrame } from '../utils/responseContent'
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -36,10 +37,15 @@ interface JsonNodeProps {
   data: unknown
   depth: number
   defaultExpandDepth: number
+  expandMode: ExpandMode
 }
 
-function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
-  const [expanded, setExpanded] = useState(depth < defaultExpandDepth)
+type ExpandMode = 'default' | 'all' | 'none'
+
+function JsonNode({ data, depth, defaultExpandDepth, expandMode }: JsonNodeProps) {
+  const [expanded, setExpanded] = useState(() => (
+    expandMode === 'all' || (expandMode === 'default' && depth < defaultExpandDepth)
+  ))
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 
@@ -106,7 +112,7 @@ function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
             <div style={{ paddingLeft: 16 }}>
               {data.map((item, i) => (
                 <div key={i}>
-                  <JsonNode data={item} depth={depth + 1} defaultExpandDepth={defaultExpandDepth} />
+                  <JsonNode data={item} depth={depth + 1} defaultExpandDepth={defaultExpandDepth} expandMode={expandMode} />
                   {i < data.length - 1 && <span style={{ color: colors.punctuation }}>,</span>}
                 </div>
               ))}
@@ -147,7 +153,7 @@ function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
                 <div key={k}>
                   <span style={{ color: colors.key }}>"{k}"</span>
                   <span style={{ color: colors.punctuation }}>: </span>
-                  <JsonNode data={v} depth={depth + 1} defaultExpandDepth={defaultExpandDepth} />
+                  <JsonNode data={v} depth={depth + 1} defaultExpandDepth={defaultExpandDepth} expandMode={expandMode} />
                   {i < entries.length - 1 && <span style={{ color: colors.punctuation }}>,</span>}
                 </div>
               ))}
@@ -162,7 +168,17 @@ function JsonNode({ data, depth, defaultExpandDepth }: JsonNodeProps) {
   return <span style={{ ...mono }}>{String(data)}</span>
 }
 
+function ViewerToolbar({ onExpandAll, onCollapseAll }: { onExpandAll: () => void; onCollapseAll: () => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8 }}>
+      <Button size="small" onClick={onExpandAll}>全部展开</Button>
+      <Button size="small" onClick={onCollapseAll}>全部折叠</Button>
+    </div>
+  )
+}
+
 function JsonViewer({ data }: { data: unknown }) {
+  const [expandMode, setExpandMode] = useState<ExpandMode>('default')
   if (data == null) {
     return (
       <Empty description="暂无数据（该请求发生时尚未启用详情记录）" style={{ padding: '32px 0' }} />
@@ -196,21 +212,31 @@ function JsonViewer({ data }: { data: unknown }) {
     }
   }
 
+  const structured = typeof parsed === 'object' && parsed !== null
+
   return (
-    <div style={{
-      background: 'var(--bg-secondary)',
-      border: '1px solid var(--border-subtle)',
-      padding: '12px 16px',
-      borderRadius: 6,
-      fontSize: 12,
-      fontFamily: 'var(--font-mono)',
-      lineHeight: 1.6,
-      maxHeight: 460,
-      overflowY: 'auto',
-      wordBreak: 'break-word',
-    }}>
-      <JsonNode data={parsed} depth={0} defaultExpandDepth={2} />
-    </div>
+    <>
+      {structured && (
+        <ViewerToolbar
+          onExpandAll={() => setExpandMode('all')}
+          onCollapseAll={() => setExpandMode('none')}
+        />
+      )}
+      <div style={{
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border-subtle)',
+        padding: '12px 16px',
+        borderRadius: 6,
+        fontSize: 12,
+        fontFamily: 'var(--font-mono)',
+        lineHeight: 1.6,
+        maxHeight: 460,
+        overflowY: 'auto',
+        wordBreak: 'break-word',
+      }}>
+        <JsonNode key={expandMode} data={parsed} depth={0} defaultExpandDepth={1} expandMode={expandMode} />
+      </div>
+    </>
   )
 }
 
@@ -226,132 +252,94 @@ function MarkdownContent({ content, isDark }: { content: string; isDark: boolean
 }
 
 // ──────────────────────────────────────────
-// 响应内容查看器：支持流式响应分区展示
+// 响应内容查看器：渲染消息与原始响应分离展示
 // ──────────────────────────────────────────
-function StreamContentBlock({ label, icon, content, isDark, defaultExpand = true }: {
-  label: string; icon: string; content: string; isDark: boolean; defaultExpand?: boolean
-}) {
-  const isReasoning = icon === '💭'
-  // 思考过程与输出内容均渲染为 Markdown，仅背景色不同
-  const wrapStyle: React.CSSProperties = isReasoning ? {
-    background: 'var(--accent-blue-light)',
-    border: '1px solid var(--accent-blue-light)',
-    borderRadius: 6,
-    padding: '10px 14px',
-    maxHeight: 480,
-    overflowY: 'auto' as const,
-  } : {
-    background: 'var(--color-success-bg)',
-    border: '1px solid var(--color-success-bg)',
-    borderRadius: 6,
-    padding: '10px 14px',
-    maxHeight: 480,
-    overflowY: 'auto' as const,
+function SseRawViewer({ frames, rawText }: { frames: SseFrame[]; rawText: string }) {
+  const keys = frames.map(frame => String(frame.index))
+  const [activeKeys, setActiveKeys] = useState<string[]>([])
+  const normalizeKeys = (value: string | string[]) => Array.isArray(value) ? value : [value]
+
+  if (frames.length === 0) {
+    return <pre className="hd-response-raw-text">{rawText || '暂无原始响应'}</pre>
   }
 
   return (
     <div>
-      <div style={{
-        fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
-        marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4,
-      }}>
-        <span>{icon}</span>
-        <span>{label}</span>
-        <span style={{ color: 'var(--text-disabled)', fontWeight: 400, fontFamily: 'var(--font-mono)' }}>
-          {content.length.toLocaleString()} 字
-        </span>
-      </div>
+      <ViewerToolbar
+        onExpandAll={() => setActiveKeys(keys)}
+        onCollapseAll={() => setActiveKeys([])}
+      />
       <Collapse
         size="small"
-        defaultActiveKey={defaultExpand ? ['block'] : []}
-        items={[{
-          key: 'block',
-          label: <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{defaultExpand ? '折叠' : `展开内容（${content.split('\n').length} 行）`}</span>,
-          children: (
-            // 思考过程和输出内容都渲染为 Markdown
-            <div style={wrapStyle}>
-              <MarkdownContent content={content} isDark={isDark} />
-            </div>
-          ),
-        }]}
-        style={{
-          background: 'transparent',
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-          borderRadius: 6,
-        }}
+        activeKey={activeKeys}
+        onChange={value => setActiveKeys(normalizeKeys(value))}
+        items={frames.map(frame => {
+          const event = frame.event && typeof frame.event === 'object' && 'type' in frame.event
+            ? String((frame.event as Record<string, unknown>).type)
+            : ''
+          return {
+            key: String(frame.index),
+            label: `事件 ${frame.index + 1}${event ? ` · ${event}` : ''}`,
+            children: <pre className="hd-response-raw-text">{frame.raw}</pre>,
+          }
+        })}
       />
     </div>
   )
 }
 
+function RawResponsePanel({ display }: { display: ResponseDisplay }) {
+  const formatLabel = display.format === 'json' ? 'JSON' : display.format === 'sse' ? 'SSE' : '文本'
+  return (
+    <Collapse
+      size="small"
+      defaultActiveKey={[]}
+      items={[{
+        key: 'raw-response',
+        label: <span>原始响应 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>（{formatLabel}，默认折叠）</span></span>,
+        children: display.format === 'json' && display.parsed != null
+          ? <JsonViewer data={display.parsed} />
+          : display.format === 'sse'
+            ? <SseRawViewer frames={display.frames} rawText={display.rawText} />
+            : <pre className="hd-response-raw-text">{display.rawText || '暂无原始响应'}</pre>,
+      }]}
+    />
+  )
+}
+
 function ResponseViewer({ data, isStream, isDark }: { data: unknown; isStream: boolean; isDark: boolean }) {
-  // 解析流式响应：新格式（{reasoning_content, content, _stream}）
-  if (isStream && data) {
-    let obj: Record<string, unknown> | null = null
+  const display = extractResponseDisplay(data, isStream)
+  if (data == null) return <JsonViewer data={data} />
 
-    if (typeof data === 'string') {
-      try { obj = JSON.parse(data) } catch { /* non-json */ }
-    } else if (typeof data === 'object') {
-      obj = data as Record<string, unknown>
-    }
-
-    if (obj) {
-      let reasoningContent: string | null = null
-      let regularContent: string | null = null
-
-      // 新格式：顶层 reasoning_content / content（后端 v7.1+ 存储格式）
-      if (typeof obj.reasoning_content === 'string') reasoningContent = obj.reasoning_content || null
-      if (typeof obj.content === 'string') regularContent = obj.content || null
-
-      // 兼容非流式 JSON 格式：choices[0].message
-      if (!reasoningContent && !regularContent && Array.isArray(obj.choices) && obj.choices.length > 0) {
-        const msg = (obj.choices[0] as Record<string, unknown>)?.message as Record<string, unknown> | undefined
-        if (msg) {
-          if (typeof msg.reasoning_content === 'string' && msg.reasoning_content) reasoningContent = msg.reasoning_content
-          if (typeof msg.content === 'string' && msg.content) regularContent = msg.content
-        }
-      }
-
-      // 旧格式（纯文本）：当作思考内容处理
-      if (!reasoningContent && !regularContent && typeof data === 'string' && data.length > 0) {
-        reasoningContent = data
-      }
-
-      if (reasoningContent || regularContent) {
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {reasoningContent && (
-              <StreamContentBlock
-                label="思考过程"
-                icon="💭"
-                content={reasoningContent}
-                isDark={isDark}
-                defaultExpand={!regularContent} // 只有思考时默认展开
-              />
-            )}
-            {regularContent && (
-              <StreamContentBlock
-                label="输出内容"
-                icon="📝"
-                content={regularContent}
-                isDark={isDark}
-                defaultExpand={true}
-              />
-            )}
-            {/* 显示总字数说明 */}
-            {(reasoningContent || regularContent) && (
-              <div style={{ fontSize: 11, color: 'var(--text-disabled)', textAlign: 'right' }}>
-                共 {((reasoningContent?.length ?? 0) + (regularContent?.length ?? 0)).toLocaleString()} 字（流式聚合）
-              </div>
-            )}
+  return (
+    <div className="hd-response-viewer">
+      <section className="hd-response-rendered">
+        <div className="hd-response-section-title">
+          <span>渲染消息</span>
+          <span className="hd-response-section-meta">用户实际看到的内容</span>
+        </div>
+        {display.renderedText ? (
+          <div className="hd-response-rendered-body">
+            <MarkdownContent content={display.renderedText} isDark={isDark} />
           </div>
-        )
-      }
-    }
-  }
-
-  // 普通响应或无内容：用 JsonViewer 展示
-  return <JsonViewer data={data} />
+        ) : (
+          <Empty description="未提取到可渲染消息" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '24px 0' }} />
+        )}
+        {display.reasoningText && (
+          <Collapse
+            size="small"
+            defaultActiveKey={[]}
+            items={[{
+              key: 'reasoning',
+              label: `思考过程（${display.reasoningText.length.toLocaleString()} 字，默认折叠）`,
+              children: <MarkdownContent content={display.reasoningText} isDark={isDark} />,
+            }]}
+          />
+        )}
+      </section>
+      <RawResponsePanel display={display} />
+    </div>
+  )
 }
 
 // ──────────────────────────────────────────
