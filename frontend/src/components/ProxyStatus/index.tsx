@@ -29,6 +29,7 @@ import styles from './ProxyStatus.module.css'
 // ─────────────────────────────────────────────
 interface ProxyStatus {
   running: boolean
+  state?: 'running' | 'stopped' | 'unknown'
   ready?: boolean
   status?: string
   health?: string | null
@@ -45,6 +46,8 @@ interface ProxyConfig {
   request_timeout: number
   autostart_enabled: boolean
   public_base_url?: string
+  openai_base_path?: string
+  anthropic_base_path?: string
   openai_base_url?: string
   anthropic_base_url?: string
   restart_pending?: boolean
@@ -135,13 +138,21 @@ export default function ProxyStatusCard() {
       setStatus(data)
       return data
     } catch {
-      const fallback = { running: false, port: 9888, pid: null }
+      const fallback = {
+        running: false,
+        state: 'unknown' as const,
+        status: 'unknown',
+        ready: false,
+        health: null,
+        port: cfg?.active_proxy_port ?? cfg?.proxy_port ?? 9888,
+        pid: null,
+      }
       setStatus(fallback)
       return fallback
     } finally {
       setLoadingStatus(false)
     }
-  }, [])
+  }, [cfg?.active_proxy_port, cfg?.proxy_port])
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -261,10 +272,12 @@ export default function ProxyStatusCard() {
 
   // ── 编辑弹窗 ──────────────────────────────
   const openEdit = () => {
+    const currentOpenAIPath = cfg?.openai_base_path || new URL(proxyUrls.openai).pathname || '/openai'
+    const currentAnthropicPath = cfg?.anthropic_base_path || new URL(proxyUrls.anthropic).pathname || '/anthropic'
     editForm.setFieldsValue({
       proxy_port: cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888,
-      openai_base_url: cfg?.openai_base_url || proxyUrls.openai,
-      anthropic_base_url: cfg?.anthropic_base_url || proxyUrls.anthropic,
+      openai_base_path: currentOpenAIPath,
+      anthropic_base_path: currentAnthropicPath,
       request_timeout: cfg?.request_timeout ?? 120,
     })
     setEditOpen(true)
@@ -317,22 +330,17 @@ export default function ProxyStatusCard() {
 
     const currentPort = cfg?.proxy_port ?? cfg?.active_proxy_port ?? status?.port ?? 9888
     const nextPort = Number(values.proxy_port)
-    const currentOpenAIBaseUrl = proxyUrls.openai
-    const currentAnthropicBaseUrl = proxyUrls.anthropic
-    const nextOpenAIBaseUrl = String(values.openai_base_url ?? '').trim().replace(/\/+$/, '')
-    const nextAnthropicBaseUrl = String(values.anthropic_base_url ?? '').trim().replace(/\/+$/, '')
+    const currentOpenAIPath = cfg?.openai_base_path || new URL(proxyUrls.openai).pathname || '/openai'
+    const currentAnthropicPath = cfg?.anthropic_base_path || new URL(proxyUrls.anthropic).pathname || '/anthropic'
+    const nextOpenAIPath = String(values.openai_base_path ?? '').trim().replace(/\/+$/, '') || '/'
+    const nextAnthropicPath = String(values.anthropic_base_path ?? '').trim().replace(/\/+$/, '') || '/'
     const portChanged = currentPort !== nextPort
-    const baseUrlChanged = currentOpenAIBaseUrl !== nextOpenAIBaseUrl
-      || currentAnthropicBaseUrl !== nextAnthropicBaseUrl
+    const baseUrlChanged = currentOpenAIPath !== nextOpenAIPath
+      || currentAnthropicPath !== nextAnthropicPath
     const valuesToSave = {
       ...values,
-      // 回显自动推导地址，但若用户未改动它，就继续保留“自动”语义，避免改端口后锁死旧地址。
-      openai_base_url: !cfg?.openai_base_url && nextOpenAIBaseUrl === currentOpenAIBaseUrl
-        ? ''
-        : nextOpenAIBaseUrl,
-      anthropic_base_url: !cfg?.anthropic_base_url && nextAnthropicBaseUrl === currentAnthropicBaseUrl
-        ? ''
-        : nextAnthropicBaseUrl,
+      openai_base_path: nextOpenAIPath,
+      anthropic_base_path: nextAnthropicPath,
     }
 
     if (!portChanged && !baseUrlChanged) {
@@ -353,7 +361,7 @@ export default function ProxyStatusCard() {
           )}
           {baseUrlChanged && (
             <p style={{ margin: 0 }}>
-              OpenAI / Anthropic Base URL 将分别更新 Dashboard 中展示和复制的客户端地址。请确认两个地址都能从客户端网络实际访问；它们不会修改上游厂商地址。
+              OpenAI / Anthropic Base URL 的路径将更新 Dashboard 中展示和复制的客户端地址；主机与端口仍由当前部署统一决定，不会修改上游厂商地址。
             </p>
           )}
         </div>
@@ -365,21 +373,29 @@ export default function ProxyStatusCard() {
     })
   }
 
-  const isRunning = status?.running ?? false
+  const statusState = status?.state ?? (status?.running ? 'running' : status ? 'stopped' : 'unknown')
+  const isRunning = statusState === 'running'
+  const isUnknown = statusState === 'unknown'
   const autostart = cfg?.autostart_enabled ?? false
   const activeProxyPort = cfg?.active_proxy_port ?? status?.port ?? cfg?.proxy_port ?? 9888
   const proxyUrls = buildProxyBaseUrls(
     {
       proxy_port: activeProxyPort,
       public_base_url: cfg?.public_base_url,
+      openai_base_path: cfg?.openai_base_path,
+      anthropic_base_path: cfg?.anthropic_base_path,
       openai_base_url: cfg?.openai_base_url,
       anthropic_base_url: cfg?.anthropic_base_url,
     },
     window.location,
   )
 
-  const borderColor = isRunning ? 'rgba(16,185,129,0.35)' : 'rgba(244,63,94,0.35)'
-  const bgGrad = isRunning ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)'
+  const borderColor = isRunning
+    ? 'rgba(16,185,129,0.35)'
+    : isUnknown ? 'rgba(245,158,11,0.35)' : 'rgba(244,63,94,0.35)'
+  const bgGrad = isRunning
+    ? 'rgba(16,185,129,0.03)'
+    : isUnknown ? 'rgba(245,158,11,0.03)' : 'rgba(244,63,94,0.03)'
 
   return (
     <>
@@ -406,9 +422,9 @@ export default function ProxyStatusCard() {
             <Divider type="vertical" className={`${styles.titleDivider} ${styles.dividerPc}`} />
             {/* 运行状态 + 开机自启 融合模块（PC和移动端共用） */}
             <div className={styles.statusModule}>
-              <span className={`${styles.statusChip} ${isRunning ? styles.statusRunning : styles.statusStopped}`}>
+              <span className={`${styles.statusChip} ${isRunning ? styles.statusRunning : isUnknown ? styles.statusUnknown : styles.statusStopped}`}>
                 <span className={styles.statusDot} />
-                <span className={styles.statusText}>{isRunning ? '运行中' : '已停止'}</span>
+                <span className={styles.statusText}>{isRunning ? '运行中' : isUnknown ? '状态未知' : '已停止'}</span>
               </span>
               <div className={styles.statusModuleDivider} />
               <button
@@ -468,8 +484,16 @@ export default function ProxyStatusCard() {
 
               <Divider type="vertical" className={`${styles.titleDivider} ${styles.dividerInline}`} />
 
-              {/* 停止 / 启动 */}
-              {isRunning ? (
+              {/* 状态未知时不伪装成停止，也不执行启停动作。 */}
+              {isUnknown ? (
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={refresh}
+                >
+                  重试
+                </Button>
+              ) : isRunning ? (
                 <Button
                   size="small"
                   danger
@@ -553,7 +577,7 @@ export default function ProxyStatusCard() {
           requiredMark={false}
           style={{ marginTop: 4 }}
         >
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <Form.Item
               label="代理端口"
               name="proxy_port"
@@ -561,7 +585,7 @@ export default function ProxyStatusCard() {
                 { required: true, message: '请输入代理端口' },
                 { type: 'number', min: 1024, max: 65535, message: '端口范围 1024–65535' },
               ]}
-              style={{ flex: 1 }}
+              style={{ flex: '1 1 180px', minWidth: 0 }}
             >
               <InputNumber min={1024} max={65535} style={{ width: '100%' }} />
             </Form.Item>
@@ -573,7 +597,7 @@ export default function ProxyStatusCard() {
                 { required: true, message: '请输入超时时间' },
                 { type: 'number', min: 10, max: 600, message: '范围 10–600 秒' },
               ]}
-              style={{ flex: 1 }}
+              style={{ flex: '0 1 170px', width: 170, maxWidth: '100%' }}
             >
               <InputNumber
                 min={10}
@@ -585,53 +609,41 @@ export default function ProxyStatusCard() {
           </div>
 
           <Form.Item
-            label="OpenAI Base URL"
-            name="openai_base_url"
-            tooltip="OpenAI 客户端使用的完整 Base URL，不会修改上游厂商地址。"
+            label="OpenAI Base URL 路径"
+            name="openai_base_path"
+            tooltip="只能编辑路径；主机与端口来自当前部署。"
             rules={[
               {
                 validator: (_, value) => {
-                  if (!value) return Promise.resolve()
-                  try {
-                    const url = new URL(String(value))
-                    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-                      throw new Error('invalid')
-                    }
-                    return Promise.resolve()
-                  } catch {
-                    return Promise.reject(new Error('请输入有效的 http:// 或 https:// 地址，且不要包含账号、查询参数或锚点'))
+                  if (!value || !String(value).startsWith('/') || String(value).includes('?') || String(value).includes('#')) {
+                    return Promise.reject(new Error('请输入以 / 开头的路径，不能包含查询参数或锚点'))
                   }
+                  return Promise.resolve()
                 },
               },
             ]}
-            extra="例如 http://NAS-IP:9888/openai。"
+            extra={<span>地址前缀：<strong>{new URL(proxyUrls.openai).origin}</strong></span>}
           >
-            <Input placeholder="例如：https://gateway.example.com/openai" allowClear />
+            <Input placeholder="例如：/openai" />
           </Form.Item>
 
           <Form.Item
-            label="Anthropic Base URL"
-            name="anthropic_base_url"
-            tooltip="Anthropic 客户端使用的完整 Base URL，不会修改上游厂商地址。"
+            label="Anthropic Base URL 路径"
+            name="anthropic_base_path"
+            tooltip="只能编辑路径；主机与端口来自当前部署。"
             rules={[
               {
                 validator: (_, value) => {
-                  if (!value) return Promise.resolve()
-                  try {
-                    const url = new URL(String(value))
-                    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-                      throw new Error('invalid')
-                    }
-                    return Promise.resolve()
-                  } catch {
-                    return Promise.reject(new Error('请输入有效的 http:// 或 https:// 地址，且不要包含账号、查询参数或锚点'))
+                  if (!value || !String(value).startsWith('/') || String(value).includes('?') || String(value).includes('#')) {
+                    return Promise.reject(new Error('请输入以 / 开头的路径，不能包含查询参数或锚点'))
                   }
+                  return Promise.resolve()
                 },
               },
             ]}
-            extra="例如 http://NAS-IP:9888/anthropic。"
+            extra={<span>地址前缀：<strong>{new URL(proxyUrls.anthropic).origin}</strong></span>}
           >
-            <Input placeholder="例如：https://gateway.example.com/anthropic" allowClear />
+            <Input placeholder="例如：/anthropic" />
           </Form.Item>
 
           {/* 提示信息 */}
@@ -646,7 +658,7 @@ export default function ProxyStatusCard() {
             lineHeight: 1.7,
           }}>
             <span style={{ color: 'var(--color-info)', fontWeight: 500 }}>💡</span>
-            {' '}代理端口和超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；两个 Base URL 分别更新展示和复制地址并立即生效；系统端口仍由部署配置管理。
+            {' '}代理端口和超时时间保存后需<strong style={{ color: 'var(--text-secondary)' }}>重启代理</strong>生效；Base URL 只允许修改路径，主机与端口由部署统一管理；系统端口仍由部署配置管理。
           </div>
         </Form>
       </AppModal>

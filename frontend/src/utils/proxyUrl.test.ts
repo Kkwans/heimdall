@@ -23,14 +23,21 @@ describe('buildProxyBaseUrls', () => {
     expect(buildProxyBaseUrls(
       {
         proxy_port: 9888,
-        openai_base_url: 'https://openai.example.com/gateway///',
-        anthropic_base_url: 'https://anthropic.example.com/proxy/',
+        openai_base_path: '/gateway///',
+        anthropic_base_path: '/proxy/',
       },
       { protocol: 'http:', hostname: 'localhost' },
     )).toEqual({
-      openai: 'https://openai.example.com/gateway',
-      anthropic: 'https://anthropic.example.com/proxy',
+      openai: 'http://localhost:9888/gateway',
+      anthropic: 'http://localhost:9888/proxy',
     })
+  })
+
+  it('keeps legacy absolute URLs readable while new paths remain preferred', () => {
+    expect(buildProxyBaseUrls(
+      { proxy_port: 9888, openai_base_url: 'https://legacy.example.com/gateway///' },
+      { protocol: 'http:', hostname: 'localhost' },
+    ).openai).toBe('https://legacy.example.com/gateway')
   })
 
   it('wraps an IPv6 hostname before appending the deployment port', () => {

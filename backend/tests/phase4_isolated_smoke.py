@@ -55,7 +55,8 @@ def main() -> int:
     assert config["active_proxy_port"] == 19888
     assert config["dashboard_port"] == 18889
     assert "proxy_port" in config["editable_fields"]
-    assert "public_base_url" in config["editable_fields"]
+    assert "openai_base_path" in config["editable_fields"]
+    assert "anthropic_base_path" in config["editable_fields"]
     request(
         "/api/proxy/config",
         method="PUT",
@@ -65,7 +66,7 @@ def main() -> int:
     unchanged = request(
         "/api/proxy/config",
         method="PUT",
-        payload={"proxy_port": 19888, "public_base_url": ""},
+        payload={"proxy_port": 19888, "openai_base_path": "/openai"},
     )
     assert unchanged["success"] is True and unchanged["restart_required"] is False
 

@@ -939,6 +939,58 @@ def _get_config_path():
     return config.RUNTIME_CONFIG_PATH
 
 
+def _normalize_public_path(value, label="Base URL 路径") -> str:
+    """Validate a protocol path without allowing a second authority source."""
+    if not isinstance(value, str):
+        raise ValueError(f"{label} 必须为字符串")
+    raw = value.strip()
+    if not raw or len(raw) > 256:
+        raise ValueError(f"{label} 不能为空且最多 256 个字符")
+    parsed = urlsplit(raw)
+    if "?" in raw or "#" in raw or (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError(f"{label} 只能包含路径，不能包含主机、端口、查询参数或锚点")
+    if not parsed.path.startswith("/"):
+        raise ValueError(f"{label} 必须以 / 开头")
+    normalized = "/" + parsed.path.strip("/")
+    return normalized if normalized != "/" else "/"
+
+
+def _extract_legacy_public_path(value, default: str) -> str:
+    """Extract a path from old absolute Base URL settings without preserving authority."""
+    if not isinstance(value, str) or not value.strip():
+        return default
+    raw = value.strip()
+    parsed = urlsplit(raw)
+    candidate = parsed.path if (parsed.scheme or parsed.netloc) else raw
+    try:
+        return _normalize_public_path(candidate, "旧版 Base URL")
+    except ValueError:
+        return default
+
+
+def _configured_public_url(cfg: dict, path_key: str, legacy_key: str, default: str) -> str:
+    """Return a read-only compatibility URL when an explicit deployment origin exists."""
+    path = cfg.get(path_key) or _extract_legacy_public_path(cfg.get(legacy_key), default)
+    public_base = str(cfg.get("public_base_url") or "").strip().rstrip("/")
+    if public_base:
+        return f"{public_base}{path}"
+
+    # Old protocol-specific absolute URLs remain readable for one compatibility
+    # cycle, but their host/port can no longer be edited through this API.
+    legacy = str(cfg.get(legacy_key) or "").strip().rstrip("/")
+    parsed = urlsplit(legacy)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    return ""
+
+
 def _load_runtime_config() -> dict:
     """读取运行时可编辑配置"""
     cfg_path = _get_config_path()
@@ -951,6 +1003,12 @@ def _load_runtime_config() -> dict:
         "public_base_url": legacy_public_base_url,
         "openai_base_url": getattr(config, 'PUBLIC_OPENAI_BASE_URL', ''),
         "anthropic_base_url": getattr(config, 'PUBLIC_ANTHROPIC_BASE_URL', ''),
+        "openai_base_path": _extract_legacy_public_path(
+            getattr(config, 'PUBLIC_OPENAI_BASE_URL', ''), "/openai"
+        ),
+        "anthropic_base_path": _extract_legacy_public_path(
+            getattr(config, 'PUBLIC_ANTHROPIC_BASE_URL', ''), "/anthropic"
+        ),
     }
     if os.path.isfile(cfg_path):
         try:
@@ -960,19 +1018,18 @@ def _load_runtime_config() -> dict:
             for field in (
                 "upstream_url", "proxy_path", "request_timeout", "log_retention_days",
                 "proxy_port", "public_base_url", "openai_base_url", "anthropic_base_url",
+                "openai_base_path", "anthropic_base_path",
             ):
                 if field in saved:
                     defaults[field] = saved[field]
         except Exception:
             pass
-    legacy_public_base_url = str(defaults.get("public_base_url") or "").rstrip("/")
-    if legacy_public_base_url:
-        defaults["openai_base_url"] = (
-            defaults.get("openai_base_url") or f"{legacy_public_base_url}/openai"
-        )
-        defaults["anthropic_base_url"] = (
-            defaults.get("anthropic_base_url") or f"{legacy_public_base_url}/anthropic"
-        )
+    defaults["openai_base_path"] = _extract_legacy_public_path(
+        defaults.get("openai_base_path") or defaults.get("openai_base_url"), "/openai"
+    )
+    defaults["anthropic_base_path"] = _extract_legacy_public_path(
+        defaults.get("anthropic_base_path") or defaults.get("anthropic_base_url"), "/anthropic"
+    )
     return defaults
 
 
@@ -1056,12 +1113,16 @@ def proxy_config_get():
         "request_timeout": int(cfg.get("request_timeout", config.REQUEST_TIMEOUT)),
         "autostart_enabled": autostart_enabled,
         "public_base_url": cfg.get("public_base_url", ""),
-        "openai_base_url": cfg.get("openai_base_url", ""),
-        "anthropic_base_url": cfg.get("anthropic_base_url", ""),
+        "openai_base_path": cfg.get("openai_base_path", "/openai"),
+        "anthropic_base_path": cfg.get("anthropic_base_path", "/anthropic"),
+        "openai_base_url": _configured_public_url(cfg, "openai_base_path", "openai_base_url", "/openai"),
+        "anthropic_base_url": _configured_public_url(cfg, "anthropic_base_path", "anthropic_base_url", "/anthropic"),
         "restart_pending": configured_proxy_port != active_proxy_port,
-        "deployment_readonly": ["dashboard_port"],
+        "deployment_readonly": [
+            "dashboard_port", "public_base_url", "openai_base_url", "anthropic_base_url",
+        ],
         "editable_fields": [
-            "proxy_port", "openai_base_url", "anthropic_base_url", "request_timeout",
+            "proxy_port", "openai_base_path", "anthropic_base_path", "request_timeout",
         ],
     })
 
@@ -1075,7 +1136,9 @@ def proxy_config_put():
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict):
             return _cors_response({"success": False, "message": "请求体必须为 JSON 对象"}, 400)
-        deployment_only = {"dashboard_port"}
+        deployment_only = {
+            "dashboard_port", "public_base_url", "openai_base_url", "anthropic_base_url",
+        }
         attempted = sorted(deployment_only.intersection(body))
         if attempted:
             return _cors_response({
@@ -1086,7 +1149,7 @@ def proxy_config_put():
 
         allowed = {
             "request_timeout", "upstream_url", "proxy_path",
-            "proxy_port", "public_base_url", "openai_base_url", "anthropic_base_url",
+            "proxy_port", "openai_base_path", "anthropic_base_path",
         }
         unknown = sorted(set(body) - allowed)
         if unknown:
@@ -1108,18 +1171,13 @@ def proxy_config_put():
             if proxy_port == getattr(config, "DASHBOARD_EXTERNAL_PORT", 8889):
                 return _cors_response({"success": False, "message": "代理端口不能与系统端口相同"}, 400)
             to_save["proxy_port"] = proxy_port
-        if "public_base_url" in body:
-            try:
-                to_save["public_base_url"] = _normalize_public_base_url(body["public_base_url"])
-            except ValueError as exc:
-                return _cors_response({"success": False, "message": str(exc)}, 400)
         for field, label in (
-            ("openai_base_url", "OpenAI Base URL"),
-            ("anthropic_base_url", "Anthropic Base URL"),
+            ("openai_base_path", "OpenAI Base URL 路径"),
+            ("anthropic_base_path", "Anthropic Base URL 路径"),
         ):
             if field in body:
                 try:
-                    to_save[field] = _normalize_public_base_url(body[field], label)
+                    to_save[field] = _normalize_public_path(body[field], label)
                 except ValueError as exc:
                     return _cors_response({"success": False, "message": str(exc)}, 400)
         if "request_timeout" in body:
@@ -1147,12 +1205,6 @@ def proxy_config_put():
             _save_runtime_config(to_save)
         restart_fields = {"proxy_port", "request_timeout", "upstream_url", "proxy_path"}
         restart_required = bool(restart_fields.intersection(changed_fields))
-        if "public_base_url" in changed_fields:
-            config.PUBLIC_BASE_URL = to_save["public_base_url"]
-        if "openai_base_url" in changed_fields:
-            config.PUBLIC_OPENAI_BASE_URL = to_save["openai_base_url"]
-        if "anthropic_base_url" in changed_fields:
-            config.PUBLIC_ANTHROPIC_BASE_URL = to_save["anthropic_base_url"]
         return _cors_response({
             "success": True,
             "changed_fields": changed_fields,

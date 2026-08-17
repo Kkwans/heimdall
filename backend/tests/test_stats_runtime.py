@@ -153,6 +153,8 @@ def test_proxy_config_allows_port_and_protocol_paths_with_explicit_restart(runti
     {"anthropic_base_url": "https://gateway.example.com/anthropic"},
     {"openai_base_path": "https://gateway.example.com/openai"},
     {"anthropic_base_path": "relative/path"},
+    {"openai_base_path": "/openai?"},
+    {"anthropic_base_path": "/anthropic#"},
 ])
 def test_proxy_config_rejects_unsafe_connection_settings(runtime_app, payload) -> None:
     app, _database, runtime_config, _docker = runtime_app
