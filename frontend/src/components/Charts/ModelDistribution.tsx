@@ -5,11 +5,12 @@ import { fetchDashboardModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
-import { emptyOption, getTooltipForTheme, PAGE_ICON_STYLE, getVendorColor, chartText } from './chartTheme'
+import { getTooltipForTheme, PAGE_ICON_STYLE, getVendorColor, chartText } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { ChartSkeleton } from '../LoadingSkeleton'
 import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
+import { ChartPlaceholder } from './ChartState'
 
 const ModelDistribution = memo(function ModelDistribution() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -50,7 +51,7 @@ const ModelDistribution = memo(function ModelDistribution() {
   if (!loading && data.length === 0) {
     return (
       <Card title="模型使用分布" className="chart-card" bordered={false}>
-        <ReactECharts option={emptyOption('暂无数据')} style={{ height: 260 }} />
+        <ChartPlaceholder />
       </Card>
     )
   }

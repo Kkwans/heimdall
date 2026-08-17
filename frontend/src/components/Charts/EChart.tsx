@@ -174,7 +174,14 @@ const EChart = React.forwardRef<ReactEChartsCore, Omit<EChartsReactProps, 'echar
 
     return (
       <div ref={containerRef} style={{ width: '100%', minWidth: 0 }}>
-        <ReactEChartsCore ref={ref} echarts={echarts} {...props} option={option} />
+        <ReactEChartsCore
+          ref={ref}
+          echarts={echarts}
+          {...props}
+          option={option}
+          notMerge
+          replaceMerge={['series', 'xAxis', 'yAxis', 'legend', 'graphic']}
+        />
       </div>
     )
   },

@@ -1228,7 +1228,7 @@ export default function Stats() {
   const totalErrors = modelStats.reduce((s, d) => s + d.error_requests, 0)
   const avgSuccessRate = totalRequests > 0
     ? (totalRequests - totalErrors) / totalRequests
-    : 1
+    : 0
   const avgLatency = modelStats.length > 0 && totalRequests > 0
     ? modelStats.reduce((s, d) => s + (d.avg_total_latency_ms ?? 0) * d.total_requests, 0) / totalRequests
     : 0

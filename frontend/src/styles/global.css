@@ -220,6 +220,21 @@ body {
   border-radius: var(--radius-sm);
 }
 
+.chart-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.chart-refreshing {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .not-found {
   display: flex;
   min-height: calc(100vh - 56px);

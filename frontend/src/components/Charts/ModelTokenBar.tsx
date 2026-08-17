@@ -5,12 +5,13 @@ import { fetchDashboardModels } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { ModelData } from '../../types'
-import { CHART_COLORS, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle, PAGE_ICON_STYLE } from './chartTheme'
+import { CHART_COLORS, getTooltipForTheme, getAxisForTheme, chartText, legendStyle, PAGE_ICON_STYLE } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { ChartSkeleton } from '../LoadingSkeleton'
 import { fmtTokens, fmtAxis } from '../../utils/format'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
+import { ChartPlaceholder } from './ChartState'
 
 const ModelTokenBar = memo(function ModelTokenBar() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -53,7 +54,7 @@ const ModelTokenBar = memo(function ModelTokenBar() {
   if (!loading && data.length === 0) {
     return (
       <Card title="各模型 Token 对比" className="chart-card" bordered={false}>
-        <ReactECharts option={emptyOption('暂无数据')} style={{ height: chartHeight }} />
+        <ChartPlaceholder height={chartHeight} />
       </Card>
     )
   }

@@ -51,18 +51,24 @@ export default function Overview() {
   const successRate = data
     ? data.total_requests > 0
       ? ((data.success_requests / data.total_requests) * 100).toFixed(1)
-      : '100.0'
+      : '0.0'
     : '-'
 
   const cacheHitPct = data
     ? (data.cache_hit_rate * 100).toFixed(1)
     : '-'
 
+  // Keep the established card geometry while a date-range refresh is in flight.
+  // Ant Design's `loading` skeleton replaces the card body, so it is only
+  // appropriate before the first response; subsequent refreshes keep the
+  // previous values visible until the latest response wins.
+  const showInitialLoading = loading && !data
+
   return (
     <Row gutter={[16, 16]} className={styles.row}>
       {/* 卡片1：请求总数 */}
       <Col xs={24} sm={12} lg={6}>
-        <Card className={styles.card} loading={loading} bordered={false}>
+        <Card className={styles.card} loading={showInitialLoading} bordered={false}>
           <div className={styles.cardInner}>
             <div className={styles.iconWrap} style={{ background: 'rgba(14,165,233,0.10)' }}>
               <ApiOutlined style={{ color: '#0ea5e9', fontSize: 20 }} />
@@ -86,7 +92,7 @@ export default function Overview() {
 
       {/* 卡片2：Token 消耗 */}
       <Col xs={24} sm={12} lg={6}>
-        <Card className={styles.card} loading={loading} bordered={false}>
+        <Card className={styles.card} loading={showInitialLoading} bordered={false}>
           <div className={styles.cardInner}>
             <div className={styles.iconWrap} style={{ background: 'rgba(245,158,11,0.10)' }}>
               <DatabaseOutlined style={{ color: 'var(--color-warning)', fontSize: 20 }} />
@@ -114,7 +120,7 @@ export default function Overview() {
 
       {/* 卡片3：平均耗时 */}
       <Col xs={24} sm={12} lg={6}>
-        <Card className={styles.card} loading={loading} bordered={false}>
+        <Card className={styles.card} loading={showInitialLoading} bordered={false}>
           <div className={styles.cardInner}>
             <div className={styles.iconWrap} style={{ background: 'rgba(16,185,129,0.10)' }}>
               <ClockCircleOutlined style={{ color: 'var(--color-success)', fontSize: 20 }} />
@@ -153,7 +159,7 @@ export default function Overview() {
 
       {/* 卡片4：缓存命中率 */}
       <Col xs={24} sm={12} lg={6}>
-        <Card className={styles.card} loading={loading} bordered={false}>
+        <Card className={styles.card} loading={showInitialLoading} bordered={false}>
           <div className={styles.cardInner}>
             <div className={styles.iconWrap} style={{ background: 'rgba(244,63,94,0.10)' }}>
               <ThunderboltOutlined style={{ color: 'var(--color-danger)', fontSize: 20 }} />

@@ -5,10 +5,11 @@ import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, chartText } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, getTooltipForTheme, getAxisForTheme, chartText } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { ChartSkeleton } from '../LoadingSkeleton'
 import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
+import { ChartPlaceholder } from './ChartState'
 
 const CacheHitTrend = memo(function CacheHitTrend() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -47,7 +48,7 @@ const CacheHitTrend = memo(function CacheHitTrend() {
   if (!loading && data.length === 0) {
     return (
       <Card title="缓存命中率趋势" className="chart-card" bordered={false}>
-        <ReactECharts option={emptyOption('暂无数据')} style={{ height: 260 }} />
+        <ChartPlaceholder />
       </Card>
     )
   }

@@ -5,11 +5,12 @@ import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, getTooltipForTheme, getAxisForTheme, chartText, legendStyle } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { fmtTokens, fmtAxis } from '../../utils/format'
 import { ChartSkeleton } from '../LoadingSkeleton'
 import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
+import { ChartPlaceholder } from './ChartState'
 
 // fmtK 已不应再使用，改用全局 fmtAxis
 const fmtK = fmtAxis
@@ -51,7 +52,7 @@ const TokenTrend = memo(function TokenTrend() {
   if (!loading && data.length === 0) {
     return (
       <Card title="Token 消耗趋势" className="chart-card" bordered={false}>
-        <ReactECharts option={emptyOption('暂无数据')} style={{ height: 260 }} />
+        <ChartPlaceholder />
       </Card>
     )
   }

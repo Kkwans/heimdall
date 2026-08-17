@@ -5,10 +5,11 @@ import { fetchDashboardDaily } from '../../api/stats'
 import { useFilter } from '../../context/FilterContext'
 import { useStableData } from '../../hooks/useStableData'
 import type { DailyData } from '../../types'
-import { CHART_COLORS, chartBaseOption, emptyOption, getTooltipForTheme, getAxisForTheme, legendStyle } from './chartTheme'
+import { CHART_COLORS, chartBaseOption, getTooltipForTheme, getAxisForTheme, legendStyle } from './chartTheme'
 import { useTheme } from '../../context/ThemeContext'
 import { ChartSkeleton } from '../LoadingSkeleton'
 import { useLatestAsyncRequest } from '../../hooks/useLatestAsyncRequest'
+import { ChartPlaceholder } from './ChartState'
 
 const RequestTrend = memo(function RequestTrend() {
   const { dateRange, refreshTick, backgroundTick } = useFilter()
@@ -51,7 +52,7 @@ const RequestTrend = memo(function RequestTrend() {
   if (!loading && data.length === 0) {
     return (
       <Card title="请求量趋势" className="chart-card" bordered={false}>
-        <ReactECharts option={emptyOption('暂无数据')} style={{ height: 260 }} />
+        <ChartPlaceholder />
       </Card>
     )
   }
