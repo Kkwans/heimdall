@@ -315,7 +315,7 @@ _ensure_startup_migrations()
 import warnings
 warnings.filterwarnings("ignore", module='urllib3')
 
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify
 import requests as http_requests
 
 # ==========================================
@@ -358,11 +358,14 @@ if os.path.isfile(_rt_cfg_path):
 # ==========================================
 app = Flask(__name__)
 
-# 代理 app 只注册 API Blueprint，不注册静态文件路由
-# Dashboard 静态文件由 8889 进程独立服务
-from stats_api import stats_bp
-app.register_blueprint(stats_bp)
-app.register_blueprint(admin_bp)
+# Proxy 进程只承担 AI 协议转发和自身健康检查。
+# 统计、管理、Docker 控制及静态页面全部由独立的 Dashboard 进程提供，
+# 避免通过 9888 暴露 Client/Provider Key 等管理接口。
+
+
+@app.get("/healthz")
+def proxy_healthz():
+    return jsonify({"status": "ok", "service": "proxy"})
 
 
 def _create_dashboard_app():
@@ -1093,6 +1096,7 @@ def proxy_openai_chat():
 @app.route('/v1/messages', methods=['POST'])
 @app.route('/v2/messages', methods=['POST'])
 @app.route('/anthropic/messages', methods=['POST'])
+@app.route('/anthropic/v1/messages', methods=['POST'])
 def proxy_anthropic_messages():
     """Anthropic Messages API 代理"""
     return _proxy_protocol("anthropic_messages")
@@ -1106,21 +1110,6 @@ def proxy_anthropic_messages():
 def proxy_openai_responses():
     """OpenAI Responses API 代理"""
     return _proxy_protocol("openai_responses")
-
-# ==========================================
-# 厂商预设 API
-# ==========================================
-
-@app.route('/api/vendor-presets', methods=['GET'])
-def get_vendor_presets():
-    """获取厂商预设配置"""
-    import json as _json
-    presets_path = os.path.join(os.path.dirname(__file__), 'vendor_presets.json')
-    if os.path.isfile(presets_path):
-        with open(presets_path, 'r', encoding='utf-8') as f:
-            return Response(_json.dumps(_json.load(f), ensure_ascii=False), content_type='application/json')
-    return Response('{"vendors":{}}', content_type='application/json')
-
 
 if __name__ == '__main__':
     import logging as flask_logging
