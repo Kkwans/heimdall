@@ -21,6 +21,7 @@ import { getVendorColor } from '../components/Charts/chartTheme'
 import Header from '../components/Header'
 import AppModal from '../components/AppModal'
 import { useFilter } from '../context/FilterContext'
+import AdaptiveFilterSelect from '../components/AdaptiveFilterSelect'
 import {
   fetchProviders, createProvider, updateProvider, deleteProvider,
   fetchModels, createModel, updateModel, deleteModel,
@@ -48,11 +49,18 @@ interface VendorPreset {
   models: string[]
 }
 
+interface ManagerProps {
+  /** 由 Tab 工具栏触发新增，桌面端不再占用内容区一整行。 */
+  addSignal?: number
+  /** 移动端保留内容区内按钮，桌面端按钮放在 Tab 行右侧。 */
+  showInlineAdd?: boolean
+}
+
 // ==========================================
 // 厂商管理组件
 // ==========================================
 
-function ProviderManager() {
+function ProviderManager({ addSignal = 0, showInlineAdd = true }: ManagerProps) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -137,6 +145,13 @@ function ProviderManager() {
     setSelectedPlan('')
     setModalOpen(true)
   }
+
+  useEffect(() => {
+    if (addSignal <= 0) return
+    const timer = window.setTimeout(handleAdd, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addSignal])
 
   const handleEdit = (provider: Provider) => {
     setEditingProvider(provider)
@@ -402,11 +417,13 @@ function ProviderManager() {
 
   return (
     <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          添加厂商
-        </Button>
-      </div>
+      {showInlineAdd && (
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加厂商
+          </Button>
+        </div>
+      )}
 
       {loading && providers.length === 0 ? (
         <TableSkeleton columns={isMobile ? 5 : 8} rows={5} compact />
@@ -605,7 +622,7 @@ function ProviderManager() {
 // 模型管理组件
 // ==========================================
 
-function ModelManager() {
+function ModelManager({ addSignal = 0, showInlineAdd = true }: ManagerProps) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [selectedProvider, setSelectedProvider] = useState<number | null>(null)
@@ -663,6 +680,13 @@ function ModelManager() {
     form.setFieldsValue({ pricing_configured: false })
     setModalOpen(true)
   }
+
+  useEffect(() => {
+    if (addSignal <= 0) return
+    const timer = window.setTimeout(handleAdd, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addSignal])
 
   const handleEdit = (model: Model) => {
     setEditingModel(model)
@@ -840,16 +864,18 @@ function ModelManager() {
   return (
     <>
       <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
-        <Select
-          style={{ width: 200 }}
+        <AdaptiveFilterSelect
+          style={{ width: 200, maxWidth: '100%' }}
           placeholder="选择厂商"
           value={selectedProvider}
           onChange={setSelectedProvider}
           options={providers.map(p => ({ label: p.display_name || p.name, value: p.id }))}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          添加模型
-        </Button>
+        {showInlineAdd && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加模型
+          </Button>
+        )}
       </div>
 
       {loading && models.length === 0 ? (
@@ -936,7 +962,7 @@ function ModelManager() {
 // API Key 管理组件
 // ==========================================
 
-function ApiKeyManager() {
+function ApiKeyManager({ addSignal = 0, showInlineAdd = true }: ManagerProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -969,7 +995,8 @@ function ApiKeyManager() {
       const modelGroups = await Promise.all(
         providers.map(async p => {
           const { models: pModels } = await fetchModels(p.id)
-          return pModels.map(m => `${p.name}/${m.model_name}`)
+          // 模型名称在 Heimdall 中全局唯一；厂商仅用于路由和详情展示。
+          return pModels.map(m => m.model_name)
         }),
       )
       const models = modelGroups.flat()
@@ -993,13 +1020,20 @@ function ApiKeyManager() {
     setModalOpen(true)
   }
 
+  useEffect(() => {
+    if (addSignal <= 0) return
+    const timer = window.setTimeout(handleAdd, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addSignal])
+
   const handleEdit = (key: ApiKey) => {
     setEditingKey(key)
     setResetKeyPending(false)
     form.setFieldsValue({
       name: key.name,
       enabled: key.enabled,
-      allowed_models: key.allowed_models ? key.allowed_models.split(',').map(m => m.trim()) : [],
+      allowed_models: key.allowed_models ? key.allowed_models.split(',').map(m => m.trim().split('/').pop() || m.trim()) : [],
     })
     setModalOpen(true)
   }
@@ -1011,7 +1045,7 @@ function ApiKeyManager() {
         name: editingKey.name,
         enabled: editingKey.enabled,
         allowed_models: editingKey.allowed_models
-          ? editingKey.allowed_models.split(',').map(model => model.trim())
+          ? editingKey.allowed_models.split(',').map(model => model.trim().split('/').pop() || model.trim())
           : [],
       })
     } else {
@@ -1133,7 +1167,10 @@ function ApiKeyManager() {
       render: (models: string | null) => (
         models ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-            {models.split(',').map(m => <ModelTag key={m} name={m.trim()} />)}
+            {models.split(',').map(m => {
+              const normalized = m.trim().split('/').pop() || m.trim()
+              return <ModelTag key={m} name={normalized} />
+            })}
           </div>
         ) : <Tag color="blue" style={{ margin: 0 }}>全部</Tag>
       ),
@@ -1198,11 +1235,13 @@ function ApiKeyManager() {
 
   return (
     <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          创建 API Key
-        </Button>
-      </div>
+      {showInlineAdd && (
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            创建 API Key
+          </Button>
+        </div>
+      )}
 
       {loading && apiKeys.length === 0 ? (
         <TableSkeleton columns={isMobile ? 4 : 7} rows={5} compact />
@@ -1278,7 +1317,7 @@ function ApiKeyManager() {
               placeholder="留空则允许所有模型"
               allowClear
               options={allModels.map(m => ({ label: m, value: m }))}
-              maxTagCount={3}
+              maxTagCount={undefined}
               showSearch
               filterOption={(input, option) =>
                 (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
@@ -1327,21 +1366,38 @@ function ApiKeyManager() {
 
 export default function Admin() {
   const isMobile = useIsMobile()
+  const [activeKey, setActiveKey] = useState('providers')
+  const [addSignals, setAddSignals] = useState({ providers: 0, models: 0, apikeys: 0 })
+
+  const triggerAdd = (key: keyof typeof addSignals) => {
+    setAddSignals(current => ({ ...current, [key]: current[key] + 1 }))
+  }
+
+  const tabAction = !isMobile ? (
+    <Button
+      type="primary"
+      icon={<PlusOutlined />}
+      onClick={() => triggerAdd(activeKey as keyof typeof addSignals)}
+    >
+      {activeKey === 'providers' ? '添加厂商' : activeKey === 'models' ? '添加模型' : '创建 API Key'}
+    </Button>
+  ) : undefined
+
   const tabItems = [
     {
       key: 'providers',
       label: '厂商管理',
-      children: <ProviderManager />,
+      children: <ProviderManager addSignal={addSignals.providers} showInlineAdd={isMobile} />,
     },
     {
       key: 'models',
       label: '模型管理',
-      children: <ModelManager />,
+      children: <ModelManager addSignal={addSignals.models} showInlineAdd={isMobile} />,
     },
     {
       key: 'apikeys',
       label: 'API Key 管理',
-      children: <ApiKeyManager />,
+      children: <ApiKeyManager addSignal={addSignals.apikeys} showInlineAdd={isMobile} />,
     },
   ]
 
@@ -1350,8 +1406,13 @@ export default function Admin() {
       <Header pageName="系统配置" hideDatePicker />
       <section className="section" style={{ marginBottom: 8 }}>
         <Card className="hd-card" styles={{ body: { padding: '0' } }}>
-          <div style={{ padding: isMobile ? '0 4px 4px' : '0 16px 8px' }}>
-            <Tabs items={tabItems} defaultActiveKey="providers" />
+          <div className="hd-admin-tabs" style={{ padding: isMobile ? '0 4px 4px' : '0 16px 8px' }}>
+            <Tabs
+              items={tabItems}
+              activeKey={activeKey}
+              onChange={setActiveKey}
+              tabBarExtraContent={tabAction}
+            />
           </div>
         </Card>
       </section>

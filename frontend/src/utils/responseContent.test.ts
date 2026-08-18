@@ -55,7 +55,7 @@ describe('response content extraction', () => {
       ],
     })
 
-    expect(result.renderedText).toBe('第一行\n第二行\n\n继续')
+    expect(result.renderedText).toBe('继续')
     expect(result.excludedSystemCount).toBe(2)
     expect(result.rawText).toContain('internal instructions')
   })
@@ -69,6 +69,29 @@ describe('response content extraction', () => {
     }).renderedText).toBe('visible')
 
     expect(extractRequestDisplay('plain request').renderedText).toBe('plain request')
+  })
+
+  it('只展示带时间上下文中的最后一条用户消息，并格式化为北京时间', () => {
+    const result = extractRequestDisplay({
+      messages: [{
+        role: 'user',
+        content: '[Tue 2026-08-18 01:00 GMT+8] 旧消息\n[Tue 2026-08-18 03:00 GMT+8] 最新消息',
+      }],
+    })
+
+    expect(result.renderedText).toBe('最新消息')
+    expect(result.timestampText).toBe('2026-08-18 03:00:00')
+  })
+
+  it('从同一条上下文消息中取最后一个 User 项', () => {
+    const result = extractRequestDisplay({
+      messages: [{
+        role: 'user',
+        content: '历史上下文\n- User: 第一条\n- Assistant: 回复\n- User: 请只回复 OK',
+      }],
+    })
+
+    expect(result.renderedText).toBe('请只回复 OK')
   })
 
   it('preserves intentional line breaks without changing fenced Markdown', () => {

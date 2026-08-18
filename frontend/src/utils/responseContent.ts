@@ -21,6 +21,8 @@ export interface RequestDisplay {
   parsed: unknown | null
   renderedText: string
   excludedSystemCount: number
+  /** 从 Agent/客户端包装文本中提取的最新消息时间（北京时间）。 */
+  timestampText?: string
 }
 
 /** Preserve intentional single line breaks without disabling Markdown parsing. */
@@ -100,7 +102,89 @@ function userMessageText(value: unknown): string {
   return textFromPart(value.content ?? value.input ?? value.text ?? value.output_text)
 }
 
-function extractUserMessages(values: unknown[]): { text: string; excludedSystemCount: number } {
+interface LatestUserInput {
+  text: string
+  timestampText?: string
+}
+
+const TIMESTAMP_PATTERN = /\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)?\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::(\d{2}))?(?:\s+GMT([+-])(\d{1,2})(?::?(\d{2}))?)?\]\s*/gi
+
+function formatBeijingTimestamp(match: RegExpExecArray): string {
+  const datePart = match[1]
+  const timePart = match[2]
+  const seconds = match[3] ?? '00'
+  const sign = match[4]
+  const hours = match[5]
+  const minutes = match[6] ?? '00'
+  if (!sign || !hours) return `${datePart} ${timePart}:${seconds}`
+
+  const offset = `${sign}${hours.padStart(2, '0')}:${minutes}`
+  const parsed = new Date(`${datePart}T${timePart}:${seconds}${offset}`)
+  if (Number.isNaN(parsed.getTime())) return `${datePart} ${timePart}:${seconds}`
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(parsed)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`
+}
+
+function latestTimestampedSegment(text: string): LatestUserInput {
+  const matches: Array<{ match: RegExpExecArray; start: number; end: number }> = []
+  TIMESTAMP_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = TIMESTAMP_PATTERN.exec(text)) !== null) {
+    matches.push({ match, start: match.index, end: TIMESTAMP_PATTERN.lastIndex })
+  }
+  TIMESTAMP_PATTERN.lastIndex = 0
+  if (matches.length === 0) return { text: text.trim() }
+
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const current = matches[index]
+    const end = index + 1 < matches.length ? matches[index + 1].start : text.length
+    const segment = text.slice(current.end, end).trim()
+    if (segment) {
+      return {
+        text: segment,
+        timestampText: formatBeijingTimestamp(current.match),
+      }
+    }
+  }
+  const last = matches[matches.length - 1]
+  return {
+    text: '',
+    timestampText: formatBeijingTimestamp(last.match),
+  }
+}
+
+/**
+ * AgentHub 等客户端可能把多轮上下文包装进同一条 user 消息。
+ * 在已经选出的最新时间段内，只取最后一条显式 User: 项，避免把历史上下文
+ * 当成当前输入；只有存在多条时才启用该启发式，避免误伤普通 Markdown。
+ */
+function extractLatestNestedUserText(text: string): string {
+  const matches = Array.from(text.matchAll(/(?:^|\n)\s*(?:[-*]\s*)?User:\s*([\s\S]*?)(?=\n\s*(?:[-*]\s*)?(?:User|Assistant|System|Developer):\s*|$)/gi))
+  if (matches.length < 2) return text.trim()
+  return (matches[matches.length - 1][1] ?? '').trim()
+}
+
+function extractLatestUserInput(text: string): LatestUserInput {
+  const segmented = latestTimestampedSegment(text)
+  const nested = extractLatestNestedUserText(segmented.text)
+  return {
+    text: nested,
+    timestampText: segmented.timestampText,
+  }
+}
+
+function extractUserMessages(values: unknown[]): { text: string; excludedSystemCount: number; timestampText?: string } {
   const userTexts: string[] = []
   const fallbackTexts: string[] = []
   let excludedSystemCount = 0
@@ -120,7 +204,8 @@ function extractUserMessages(values: unknown[]): { text: string; excludedSystemC
   })
 
   const selected = userTexts.length > 0 ? userTexts : fallbackTexts
-  return { text: selected.join('\n\n'), excludedSystemCount }
+  const latest = selected.length > 0 ? extractLatestUserInput(selected[selected.length - 1]) : { text: '' }
+  return { text: latest.text, timestampText: latest.timestampText, excludedSystemCount }
 }
 
 /**
@@ -132,32 +217,49 @@ export function extractRequestDisplay(data: unknown): RequestDisplay {
   const rawText = stringifyRaw(data)
   const parsed = typeof data === 'string' ? parseJson(data) : data ?? null
   if (parsed == null || !isRecord(parsed)) {
+    const latest = typeof data === 'string' ? extractLatestUserInput(data) : { text: '' }
     return {
       format: 'text',
       rawText,
       parsed,
-      renderedText: typeof data === 'string' ? data : '',
+      renderedText: latest.text,
       excludedSystemCount: 0,
+      timestampText: latest.timestampText,
     }
   }
 
   let renderedText = ''
   let excludedSystemCount = 0
+  let timestampText: string | undefined
   if (Array.isArray(parsed.messages)) {
     const extracted = extractUserMessages(parsed.messages)
     renderedText = extracted.text
+    timestampText = extracted.timestampText
     excludedSystemCount = extracted.excludedSystemCount
   }
 
   if (!renderedText && Array.isArray(parsed.input)) {
     const extracted = extractUserMessages(parsed.input)
     renderedText = extracted.text
+    timestampText = extracted.timestampText
     excludedSystemCount += extracted.excludedSystemCount
   }
 
-  if (!renderedText && typeof parsed.input === 'string') renderedText = parsed.input
-  if (!renderedText && typeof parsed.prompt === 'string') renderedText = parsed.prompt
-  if (!renderedText && typeof parsed.query === 'string') renderedText = parsed.query
+  if (!renderedText && typeof parsed.input === 'string') {
+    const latest = extractLatestUserInput(parsed.input)
+    renderedText = latest.text
+    timestampText = latest.timestampText
+  }
+  if (!renderedText && typeof parsed.prompt === 'string') {
+    const latest = extractLatestUserInput(parsed.prompt)
+    renderedText = latest.text
+    timestampText = latest.timestampText
+  }
+  if (!renderedText && typeof parsed.query === 'string') {
+    const latest = extractLatestUserInput(parsed.query)
+    renderedText = latest.text
+    timestampText = latest.timestampText
+  }
 
   if (parsed.system != null && textFromPart(parsed.system).trim()) excludedSystemCount += 1
 
@@ -167,6 +269,7 @@ export function extractRequestDisplay(data: unknown): RequestDisplay {
     parsed,
     renderedText,
     excludedSystemCount,
+    timestampText,
   }
 }
 

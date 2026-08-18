@@ -362,9 +362,14 @@ function RequestViewer({ data, isDark }: { data: unknown; isDark: boolean }) {
           <span className="hd-response-section-meta">
             {display.excludedSystemCount > 0
               ? `已排除 ${display.excludedSystemCount} 条系统/开发消息`
-              : '从请求体提取'}
+              : '仅展示最新一条'}
           </span>
         </div>
+        {display.timestampText && (
+          <div className="hd-response-timestamp" aria-label={`消息时间 ${display.timestampText}`}>
+            {display.timestampText}
+          </div>
+        )}
         {display.renderedText.trim() ? (
           <div className="hd-response-rendered-body">
             <MarkdownContent content={display.renderedText} isDark={isDark} />

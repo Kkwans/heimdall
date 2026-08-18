@@ -52,16 +52,15 @@
   align-items: center;
   gap: 12px;
   min-height: 44px;
-  padding: 10px 12px;
+  /* 与 Logo 图标保持同一条垂直基线：侧栏内外边距不随折叠动画变化。 */
+  padding: 10px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 14.5px;
   font-weight: 550;
   transition: color var(--duration-base) var(--ease-default),
-              background var(--duration-base) var(--ease-default),
-              padding var(--duration-medium) var(--ease-emphasized),
-              gap var(--duration-medium) var(--ease-emphasized);
+              background var(--duration-base) var(--ease-default);
   cursor: pointer;
 }
 
@@ -127,7 +126,7 @@
   gap: 12px;
   width: 100%;
   min-height: 42px;
-  padding: 9px 12px;
+  padding: 9px 10px;
   border: none;
   background: transparent;
   border-radius: var(--radius-sm);
@@ -136,9 +135,7 @@
   font-family: var(--font-sans);
   cursor: pointer;
   transition: color var(--duration-base) var(--ease-default),
-              background var(--duration-base) var(--ease-default),
-              padding var(--duration-medium) var(--ease-emphasized),
-              gap var(--duration-medium) var(--ease-emphasized);
+              background var(--duration-base) var(--ease-default);
 }
 
 .utilityBtn:hover {

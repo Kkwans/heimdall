@@ -19,5 +19,7 @@ function estimateLabelWidth(label: string): number {
 export function getAdaptivePopupWidth(options: SelectProps['options'] = []): number {
   const labels = (options ?? []).map(optionLabel)
   const longest = labels.reduce((max, label) => Math.max(max, estimateLabelWidth(label)), 0)
-  return Math.min(420, Math.max(160, Math.ceil(longest + 40)))
+  // 筛选项通常只有几个短标签；固定 160px 会让“全部状态/全部模式”
+  // 的弹层明显比内容宽一倍。保留约 24px 的左右呼吸空间即可。
+  return Math.min(360, Math.max(112, Math.ceil(longest + 24)))
 }

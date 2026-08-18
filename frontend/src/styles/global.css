@@ -70,7 +70,7 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
-  --sidebar-width: 220px;
+  --sidebar-width: 216px;
   --sidebar-collapsed-width: 72px;
   --header-height: 56px;
   --bottom-nav-height: 58px;
@@ -345,47 +345,50 @@ body {
   }
 }
 
-/* ── 滚动条美化：默认透明，悬浮时才显现 ── */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* ── 统一滚动条：页面、表格、弹窗和下拉面板共用一套轻量样式 ──
+   不再按设备隐藏滚动条，否则用户无法发现可横向滑动的表格。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 54%, transparent) transparent;
 }
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-/* 默认隐藏（透明），鼠标悬浮到可滚动区域时才显示 */
+
 ::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 10px;
-  transition: background 0.2s ease;
+  background: color-mix(in srgb, var(--text-muted) 54%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
-/* 容器 hover 时，滚动条拇指才显现 */
-*:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-}
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3) !important;
+  background: color-mix(in srgb, var(--text-secondary) 72%, transparent);
+  background-clip: padding-box;
 }
 
-[data-theme='dark'] *:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
+
+[data-theme='dark'] * {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 68%, transparent) transparent;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 68%, transparent);
+  background-clip: padding-box;
+}
+
 [data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3) !important;
-}
-
-/* 移动端：完全隐藏滚动条（通过 scrollbar-width + webkit 双保险） */
-@media (max-width: 768px) {
-  ::-webkit-scrollbar {
-    width: 0 !important;
-    height: 0 !important;
-    display: none;
-  }
-  * {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
+  background: color-mix(in srgb, var(--text-secondary) 82%, transparent);
+  background-clip: padding-box;
 }
 
 /* ── DatePicker RangePicker 美化：文字居中 ── */
@@ -522,8 +525,8 @@ body {
 .hd-request-detail-modal .hd-json-viewer::-webkit-scrollbar,
 .hd-request-detail-modal .hd-response-raw-text::-webkit-scrollbar,
 .hd-request-detail-modal .hd-response-rendered-body::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 .hd-request-detail-modal .hd-modal-body-content::-webkit-scrollbar-track,
@@ -538,7 +541,9 @@ body {
 .hd-request-detail-modal .hd-response-raw-text::-webkit-scrollbar-thumb,
 .hd-request-detail-modal .hd-response-rendered-body::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+  border: 2px solid transparent;
   border-radius: 999px;
+  background-clip: padding-box;
 }
 
 .hd-modal-title {
@@ -589,6 +594,12 @@ body {
   background: var(--accent-blue-light) !important;
 }
 
+/* rc-select 会按触发器宽度写入最小宽度；筛选弹层由 AdaptiveFilterSelect
+   自己根据最长选项计算，不能再被 selector 的宽度反向撑大。 */
+.hd-adaptive-filter-popup {
+  min-width: 0 !important;
+}
+
 .hd-modal-close {
   display: inline-flex;
   align-items: center;
@@ -629,14 +640,10 @@ body {
     max-width: calc(100vw - 24px) !important;
     width: calc(100vw - 24px) !important;
   }
-  /* body 滚动条隐藏 */
+  /* 弹窗仍沿用全局滚动条，避免长内容变成不可发现的隐藏区域。 */
   .hd-app-modal .ant-modal-body {
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-  }
-  .hd-app-modal .ant-modal-body::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
+    scrollbar-width: thin !important;
+    -ms-overflow-style: auto !important;
   }
 }
 
@@ -662,8 +669,8 @@ body {
 
 .hd-response-rendered {
   padding: 12px 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--accent-blue-light) 34%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 18%, var(--border-subtle));
   border-radius: 8px;
 }
 
@@ -681,6 +688,20 @@ body {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 400;
+}
+
+.hd-response-timestamp {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 3px 8px;
+  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-blue-light) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 24%, transparent);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .hd-response-rendered-body {
@@ -913,6 +934,24 @@ body {
   overflow: hidden;
 }
 
+.hd-admin-tabs .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
+.hd-admin-tabs .ant-tabs-extra-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .hd-admin-tabs .ant-tabs-extra-content {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+}
+
 /* 卡片内表格容器：只允许内部横向滚动，不能溢出卡片 */
 .hd-card .ant-table-wrapper {
   overflow: visible;
@@ -981,8 +1020,9 @@ body {
 /* ── 图表网格 ── */
 .charts-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  min-width: 0;
 }
 
 @media (max-width: 1024px) {
@@ -1546,7 +1586,7 @@ body {
 .md-content {
   font-size: 13px;
   line-height: 1.75;
-  color: rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: break-word;
 }
@@ -1564,7 +1604,12 @@ body {
   font-weight: 600;
   line-height: 1.4;
   margin: 14px 0 6px;
-  color: rgba(0, 0, 0, 0.88);
+  color: color-mix(in srgb, var(--accent-blue-hover) 28%, var(--text-primary));
+}
+
+.md-content h1, .md-content h2 {
+  padding-bottom: 3px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 .md-content h1 { font-size: 16px; }
@@ -1588,19 +1633,19 @@ body {
 .md-content code {
   font-family: var(--font-mono);
   font-size: 11.5px;
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--accent-blue-light) 65%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 20%, var(--border-subtle));
   border-radius: 3px;
   padding: 1px 5px;
-  color: rgba(0, 0, 0, 0.75);
+  color: color-mix(in srgb, var(--accent-blue-hover) 64%, var(--text-primary));
 }
 
 .md-content pre {
   margin: 8px 0;
   border-radius: 6px;
   overflow: auto;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--accent-blue-light) 28%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 14%, var(--border-subtle));
   padding: 10px 12px;
 }
 
@@ -1609,7 +1654,7 @@ body {
   border: none;
   padding: 0;
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
   line-height: 1.65;
 }
 
@@ -1631,13 +1676,13 @@ body {
 }
 
 .md-content th, .md-content td {
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 14%, var(--border-subtle));
   padding: 4px 10px;
   text-align: left;
 }
 
 .md-content th {
-  background: rgba(0, 0, 0, 0.04);
+  background: color-mix(in srgb, var(--accent-blue-light) 45%, var(--bg-secondary));
   font-weight: 600;
 }
 

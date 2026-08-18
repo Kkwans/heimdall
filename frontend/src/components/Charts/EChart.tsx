@@ -136,6 +136,7 @@ function adaptCategoryAxis(option: ChartOptionRecord, containerWidth: number): C
 const EChart = React.forwardRef<ReactEChartsCore, Omit<EChartsReactProps, 'echarts'>>(
   function EChart(props, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
+    const chartRef = useRef<ReactEChartsCore>(null)
     const hasRenderedRef = useRef(false)
     const [containerWidth, setContainerWidth] = useState(0)
 
@@ -172,10 +173,26 @@ const EChart = React.forwardRef<ReactEChartsCore, Omit<EChartsReactProps, 'echar
       hasRenderedRef.current = true
     }, [])
 
+    // 侧栏宽度是 CSS transition，期间不会稳定触发 window.resize。
+    // 监听到容器宽度变化后主动 resize，避免折叠/展开时图表沿用旧宽度而被截断。
+    useLayoutEffect(() => {
+      if (containerWidth <= 0) return
+      const frame = window.requestAnimationFrame(() => {
+        chartRef.current?.getEchartsInstance().resize()
+      })
+      return () => window.cancelAnimationFrame(frame)
+    }, [containerWidth])
+
+    const assignChartRef = (instance: ReactEChartsCore | null) => {
+      chartRef.current = instance
+      if (typeof ref === 'function') ref(instance)
+      else if (ref) ref.current = instance
+    }
+
     return (
       <div ref={containerRef} style={{ width: '100%', minWidth: 0 }}>
         <ReactEChartsCore
-          ref={ref}
+          ref={assignChartRef}
           echarts={echarts}
           {...props}
           option={option}
