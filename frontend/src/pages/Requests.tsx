@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Table, Tag, Badge, Tooltip, Space, Card, Modal, Tabs, Spin, Empty, Collapse, Button, Form, InputNumber, Switch, Alert, message } from 'antd'
 import { DetailSkeleton, TableSkeleton } from '../components/LoadingSkeleton'
+import { TABLE_SPIN_INDICATOR } from '../components/SpinRing'
 import type { ColumnsType, TableProps } from 'antd/es/table'
 import type { SorterResult } from 'antd/es/table/interface'
 import { EyeOutlined, SettingOutlined } from '@ant-design/icons'
@@ -18,6 +19,7 @@ import {
 import { useFilter } from '../context/FilterContext'
 import { useStableData } from '../hooks/useStableData'
 import { useLatestAsyncRequest } from '../hooks/useLatestAsyncRequest'
+import { useDelayedLoading } from '../hooks/useDelayedLoading'
 import { useTheme } from '../context/ThemeContext'
 import type { RequestRecord } from '../types'
 import Header from '../components/Header'
@@ -750,6 +752,8 @@ export default function Requests() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const [loading, setLoading] = useState(true)
+  // 保留旧列表内容，只有请求持续超过 180ms 才覆盖一层加载态，避免分页/筛选闪烁。
+  const delayedTableLoading = useDelayedLoading(loading && data.length > 0)
   const [loadError, setLoadError] = useState(false)
   const [modelFilter, setModelFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -1377,6 +1381,7 @@ export default function Requests() {
                 columns={visibleColumns}
                 dataSource={data}
                 rowKey="id"
+                loading={delayedTableLoading ? TABLE_SPIN_INDICATOR : false}
                 locale={{ emptyText: '暂无数据' }}
                 size="small"
                 // onChange 只处理排序，不处理分页（由 pagination.onChange 单独管理）

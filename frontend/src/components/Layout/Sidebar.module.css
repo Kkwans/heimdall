@@ -157,6 +157,12 @@
   flex-shrink: 0;
 }
 
+.utilityBtnIcon svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+
 .utilityBtnLabel {
   font-size: 14px;
 }
@@ -177,9 +183,4 @@
   gap: 0;
   padding-left: 10px;
   padding-right: 10px;
-}
-
-.sidebarCollapsed .utilityBtnIcon svg {
-  width: 19px;
-  height: 19px;
 }

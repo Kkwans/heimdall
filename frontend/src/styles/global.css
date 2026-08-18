@@ -768,8 +768,9 @@ body {
   height: 100vh;
   z-index: 100;
   overflow: hidden;
-  transition: width 220ms var(--ease-emphasized),
-              background var(--duration-slow) var(--ease-default);
+  /* 侧栏宽度不做逐帧动画：统计页中的 ECharts 会随每一帧重排，
+     造成明显掉帧。布局切换一次完成，背景仍保留轻微主题过渡。 */
+  transition: background var(--duration-slow) var(--ease-default);
 }
 
 .layout-content {
@@ -778,7 +779,6 @@ body {
   min-height: 100vh;
   padding: 24px;
   overflow-x: hidden;
-  transition: margin-left 220ms var(--ease-emphasized);
 }
 
 .layout--sidebar-collapsed .layout-sidebar {

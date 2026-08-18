@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react'
 import { Select } from 'antd'
 import type { SelectProps } from 'antd'
-import { getAdaptivePopupWidth } from '../utils/adaptiveFilterSelect'
+import { getAdaptiveSelectSizing } from '../utils/adaptiveFilterSelect'
 
 /** Select used by dense filter toolbars; the popup follows its longest label. */
 export default function AdaptiveFilterSelect(props: SelectProps) {
-  const popupWidth = useMemo(() => getAdaptivePopupWidth(props.options), [props.options])
+  const sizing = useMemo(
+    () => getAdaptiveSelectSizing(props.options, props.style),
+    [props.options, props.style],
+  )
   const options = useMemo(() => (
     props.options?.map(option => ({
       ...option,
@@ -14,20 +17,31 @@ export default function AdaptiveFilterSelect(props: SelectProps) {
       title: '',
     }))
   ), [props.options])
+  const selectStyle = useMemo(() => {
+    if (sizing.width == null) return props.style
+    return {
+      ...(props.style ?? {}),
+      width: sizing.width,
+      minWidth: sizing.width,
+    }
+  }, [props.style, sizing.width])
   const dropdownStyle = useMemo(() => ({
     ...(props.dropdownStyle ?? {}),
-    width: popupWidth,
-    minWidth: popupWidth,
+    ...(sizing.width == null ? {} : {
+      width: sizing.width,
+      minWidth: sizing.width,
+    }),
     maxWidth: 'calc(100vw - 24px)',
-  }), [popupWidth, props.dropdownStyle])
+  }), [props.dropdownStyle, sizing.width])
 
   return (
     <Select
       {...props}
+      style={selectStyle}
       options={options}
       title=""
       popupClassName="hd-adaptive-filter-popup"
-      popupMatchSelectWidth={false}
+      popupMatchSelectWidth={sizing.matchSelectWidth}
       dropdownStyle={dropdownStyle}
     />
   )
