@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractResponseDisplay, parseSseFrames } from './responseContent'
+import { extractRequestDisplay, extractResponseDisplay, normalizeMarkdownForDisplay, parseSseFrames } from './responseContent'
 
 describe('response content extraction', () => {
   it('extracts the rendered message from an OpenAI JSON response', () => {
@@ -41,5 +41,39 @@ describe('response content extraction', () => {
     expect(frames).toHaveLength(2)
     expect(frames[0].event).toEqual({ type: 'message_start' })
     expect(frames[1].event).toBeNull()
+  })
+
+  it('extracts user input while excluding system and developer messages', () => {
+    const result = extractRequestDisplay({
+      model: 'demo',
+      messages: [
+        { role: 'system', content: 'internal instructions' },
+        { role: 'developer', content: 'developer instructions' },
+        { role: 'user', content: '第一行\n第二行' },
+        { role: 'assistant', content: 'previous answer' },
+        { role: 'user', content: [{ type: 'text', text: '继续' }] },
+      ],
+    })
+
+    expect(result.renderedText).toBe('第一行\n第二行\n\n继续')
+    expect(result.excludedSystemCount).toBe(2)
+    expect(result.rawText).toContain('internal instructions')
+  })
+
+  it('extracts Responses input items and keeps plain text requests usable', () => {
+    expect(extractRequestDisplay({
+      input: [
+        { role: 'system', content: [{ type: 'input_text', text: 'hidden' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'visible' }] },
+      ],
+    }).renderedText).toBe('visible')
+
+    expect(extractRequestDisplay('plain request').renderedText).toBe('plain request')
+  })
+
+  it('preserves intentional line breaks without changing fenced Markdown', () => {
+    const normalized = normalizeMarkdownForDisplay('第一行\n第二行\n\n```text\n原样\n内容\n```')
+    expect(normalized).toContain('第一行  \n第二行')
+    expect(normalized).toContain('原样\n内容')
   })
 })

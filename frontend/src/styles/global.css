@@ -77,8 +77,10 @@
 
   /* 动效 */
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
   --duration-fast: 100ms;
   --duration-base: 150ms;
+  --duration-medium: 220ms;
   --duration-slow: 250ms;
 }
 
@@ -508,6 +510,37 @@ body {
   padding: 0 24px 24px;
 }
 
+/* 详情内容使用覆盖式滚动条，长 JSON 展开时不挤压正文宽度。 */
+.hd-request-detail-modal .hd-modal-body-content {
+  overflow-x: hidden;
+  overflow-y: overlay;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.hd-request-detail-modal .hd-modal-body-content::-webkit-scrollbar,
+.hd-request-detail-modal .hd-json-viewer::-webkit-scrollbar,
+.hd-request-detail-modal .hd-response-raw-text::-webkit-scrollbar,
+.hd-request-detail-modal .hd-response-rendered-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.hd-request-detail-modal .hd-modal-body-content::-webkit-scrollbar-track,
+.hd-request-detail-modal .hd-json-viewer::-webkit-scrollbar-track,
+.hd-request-detail-modal .hd-response-raw-text::-webkit-scrollbar-track,
+.hd-request-detail-modal .hd-response-rendered-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hd-request-detail-modal .hd-modal-body-content::-webkit-scrollbar-thumb,
+.hd-request-detail-modal .hd-json-viewer::-webkit-scrollbar-thumb,
+.hd-request-detail-modal .hd-response-raw-text::-webkit-scrollbar-thumb,
+.hd-request-detail-modal .hd-response-rendered-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+  border-radius: 999px;
+}
+
 .hd-modal-title {
   display: flex;
   align-items: baseline;
@@ -544,6 +577,16 @@ body {
 /* 优先级输入框数字居中 */
 .priority-input .ant-input-number-input {
   text-align: center !important;
+}
+
+.hd-copy-button {
+  color: var(--accent-blue) !important;
+}
+
+.hd-copy-button:hover,
+.hd-copy-button:focus-visible {
+  color: var(--accent-blue-hover, var(--accent-blue)) !important;
+  background: var(--accent-blue-light) !important;
 }
 
 .hd-modal-close {
@@ -604,7 +647,7 @@ body {
 }
 
 .hd-request-detail-modal .ant-tabs-nav {
-  margin: 0 0 6px !important;
+  margin: 0 0 2px !important;
 }
 
 .hd-request-detail-modal .ant-tabs-tab {
@@ -642,18 +685,20 @@ body {
 
 .hd-response-rendered-body {
   max-height: 480px;
-  overflow-y: auto;
+  overflow-y: overlay;
   padding: 10px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
+  contain: content;
+  content-visibility: auto;
 }
 
 .hd-response-raw-text {
   box-sizing: border-box;
   max-height: 460px;
   margin: 0;
-  overflow: auto;
+  overflow: overlay;
   padding: 12px 14px;
   color: var(--text-primary);
   background: var(--bg-secondary);
@@ -664,6 +709,22 @@ body {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  contain: content;
+  content-visibility: auto;
+}
+
+.hd-json-viewer {
+  overflow: overlay;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  contain: content;
+  content-visibility: auto;
+}
+
+.hd-request-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* ── 全局布局 ── */
@@ -686,8 +747,8 @@ body {
   height: 100vh;
   z-index: 100;
   overflow: hidden;
-  /* 折叠时即时切换宽度，避免图标在过渡中穿过侧栏中线造成闪动。 */
-  transition: background var(--duration-slow) var(--ease-default);
+  transition: width 220ms var(--ease-emphasized),
+              background var(--duration-slow) var(--ease-default);
 }
 
 .layout-content {
@@ -696,7 +757,7 @@ body {
   min-height: 100vh;
   padding: 24px;
   overflow-x: hidden;
-  transition: none;
+  transition: margin-left 220ms var(--ease-emphasized);
 }
 
 .layout--sidebar-collapsed .layout-sidebar {
@@ -1488,6 +1549,14 @@ body {
   color: rgba(0, 0, 0, 0.8);
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+.md-content > :first-child {
+  margin-top: 0;
+}
+
+.md-content > :last-child {
+  margin-bottom: 0;
 }
 
 .md-content h1, .md-content h2, .md-content h3,

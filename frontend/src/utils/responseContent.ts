@@ -15,6 +15,28 @@ export interface ResponseDisplay {
   reasoningText: string
 }
 
+export interface RequestDisplay {
+  format: 'json' | 'text'
+  rawText: string
+  parsed: unknown | null
+  renderedText: string
+  excludedSystemCount: number
+}
+
+/** Preserve intentional single line breaks without disabling Markdown parsing. */
+export function normalizeMarkdownForDisplay(markdown: string): string {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  let inFence = false
+  return lines.map((line, index) => {
+    const fence = /^\s*(```|~~~)/.test(line)
+    const result = inFence || fence || index === lines.length - 1 || line.trim() === '' || lines[index + 1]?.trim() === ''
+      ? line
+      : `${line}  `
+    if (fence) inFence = !inFence
+    return result
+  }).join('\n')
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -67,6 +89,85 @@ function contentFromObject(value: Record<string, unknown>): string {
   }
 
   return ''
+}
+
+function roleOf(value: unknown): string {
+  return isRecord(value) && typeof value.role === 'string' ? value.role.toLowerCase() : ''
+}
+
+function userMessageText(value: unknown): string {
+  if (!isRecord(value)) return textFromPart(value)
+  return textFromPart(value.content ?? value.input ?? value.text ?? value.output_text)
+}
+
+function extractUserMessages(values: unknown[]): { text: string; excludedSystemCount: number } {
+  const userTexts: string[] = []
+  const fallbackTexts: string[] = []
+  let excludedSystemCount = 0
+
+  values.forEach(value => {
+    const role = roleOf(value)
+    const text = userMessageText(value)
+    if (role === 'system' || role === 'developer') {
+      if (text.trim()) excludedSystemCount += 1
+      return
+    }
+    if (role === 'user') {
+      if (text.trim()) userTexts.push(text.trim())
+      return
+    }
+    if (text.trim()) fallbackTexts.push(text.trim())
+  })
+
+  const selected = userTexts.length > 0 ? userTexts : fallbackTexts
+  return { text: selected.join('\n\n'), excludedSystemCount }
+}
+
+/**
+ * Extract the user-visible input from the common Chat, Anthropic Messages and
+ * Responses request shapes while keeping the original request available.
+ * System/developer messages are deliberately excluded from the rendered view.
+ */
+export function extractRequestDisplay(data: unknown): RequestDisplay {
+  const rawText = stringifyRaw(data)
+  const parsed = typeof data === 'string' ? parseJson(data) : data ?? null
+  if (parsed == null || !isRecord(parsed)) {
+    return {
+      format: 'text',
+      rawText,
+      parsed,
+      renderedText: typeof data === 'string' ? data : '',
+      excludedSystemCount: 0,
+    }
+  }
+
+  let renderedText = ''
+  let excludedSystemCount = 0
+  if (Array.isArray(parsed.messages)) {
+    const extracted = extractUserMessages(parsed.messages)
+    renderedText = extracted.text
+    excludedSystemCount = extracted.excludedSystemCount
+  }
+
+  if (!renderedText && Array.isArray(parsed.input)) {
+    const extracted = extractUserMessages(parsed.input)
+    renderedText = extracted.text
+    excludedSystemCount += extracted.excludedSystemCount
+  }
+
+  if (!renderedText && typeof parsed.input === 'string') renderedText = parsed.input
+  if (!renderedText && typeof parsed.prompt === 'string') renderedText = parsed.prompt
+  if (!renderedText && typeof parsed.query === 'string') renderedText = parsed.query
+
+  if (parsed.system != null && textFromPart(parsed.system).trim()) excludedSystemCount += 1
+
+  return {
+    format: 'json',
+    rawText,
+    parsed,
+    renderedText,
+    excludedSystemCount,
+  }
 }
 
 function reasoningFromObject(value: Record<string, unknown>): string {

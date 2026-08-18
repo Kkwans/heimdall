@@ -28,7 +28,13 @@ import { formatRequestType } from '../utils/requestDisplay'
 import { VendorTag, ModelTag } from '../components/CommonTag'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import AdaptiveFilterSelect from '../components/AdaptiveFilterSelect'
-import { extractResponseDisplay, type ResponseDisplay, type SseFrame } from '../utils/responseContent'
+import {
+  extractRequestDisplay,
+  extractResponseDisplay,
+  normalizeMarkdownForDisplay,
+  type ResponseDisplay,
+  type SseFrame,
+} from '../utils/responseContent'
 
 // ──────────────────────────────────────────
 // JSON 语法高亮 + 折叠组件
@@ -196,7 +202,7 @@ function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }:
     } catch {
       // 非 JSON 字符串，直接展示
       return (
-        <pre style={{
+        <pre className="hd-json-viewer hd-response-raw-text" style={{
           background: 'var(--bg-secondary)',
           color: 'var(--text-primary)',
           border: '1px solid var(--border-subtle)',
@@ -207,7 +213,6 @@ function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }:
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           maxHeight: 460,
-          overflowY: 'auto',
           margin: 0,
         }}>
           {data as string}
@@ -226,7 +231,7 @@ function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }:
           onCollapseAll={() => setExpandMode('none')}
         />
       )}
-      <div style={{
+      <div className="hd-json-viewer" style={{
         background: 'var(--bg-secondary)',
         border: '1px solid var(--border-subtle)',
         padding: '12px 16px',
@@ -235,7 +240,6 @@ function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }:
         fontFamily: 'var(--font-mono)',
         lineHeight: 1.6,
         maxHeight: 460,
-        overflowY: 'auto',
         wordBreak: 'break-word',
       }}>
         <JsonNode key={expandMode} data={parsed} depth={0} defaultExpandDepth={1} expandMode={expandMode} />
@@ -250,7 +254,7 @@ function JsonViewer({ data, initialExpandMode = 'default', showToolbar = true }:
 function MarkdownContent({ content, isDark }: { content: string; isDark: boolean }) {
   return (
     <div className={isDark ? 'md-content md-content-dark' : 'md-content'}>
-      <ReactMarkdown>{content}</ReactMarkdown>
+      <ReactMarkdown>{normalizeMarkdownForDisplay(content)}</ReactMarkdown>
     </div>
   )
 }
@@ -330,6 +334,59 @@ function RawResponsePanel({ display }: { display: ResponseDisplay }) {
             : <pre className="hd-response-raw-text">{display.rawText || '暂无原始响应'}</pre>,
       }]}
     />
+  )
+}
+
+function RequestViewer({ data, isDark }: { data: unknown; isDark: boolean }) {
+  const display = extractRequestDisplay(data)
+  const [rawOpen, setRawOpen] = useState(false)
+  const [rawCommand, setRawCommand] = useState<ExpandMode>('default')
+  const setRawState = (mode: ExpandMode) => {
+    setRawCommand(mode)
+    setRawOpen(true)
+  }
+  const controls = display.parsed != null && typeof display.parsed === 'object' ? (
+    <div style={{ display: 'inline-flex', gap: 4 }}>
+      <Button size="small" onClick={event => { event.stopPropagation(); setRawState('all') }}>全部展开</Button>
+      <Button size="small" onClick={event => { event.stopPropagation(); setRawState('none') }}>全部折叠</Button>
+    </div>
+  ) : undefined
+
+  if (data == null) return <JsonViewer data={data} />
+
+  return (
+    <div className="hd-request-viewer">
+      <section className="hd-response-rendered">
+        <div className="hd-response-section-title">
+          <span>用户输入</span>
+          <span className="hd-response-section-meta">
+            {display.excludedSystemCount > 0
+              ? `已排除 ${display.excludedSystemCount} 条系统/开发消息`
+              : '从请求体提取'}
+          </span>
+        </div>
+        {display.renderedText.trim() ? (
+          <div className="hd-response-rendered-body">
+            <MarkdownContent content={display.renderedText} isDark={isDark} />
+          </div>
+        ) : (
+          <Empty description="未提取到用户输入，请展开原始请求查看" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '24px 0' }} />
+        )}
+      </section>
+      <Collapse
+        size="small"
+        activeKey={rawOpen ? ['raw-request'] : []}
+        onChange={value => setRawOpen((Array.isArray(value) ? value : [value]).includes('raw-request'))}
+        items={[{
+          key: 'raw-request',
+          extra: controls,
+          label: <span>原始请求 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>（默认折叠）</span></span>,
+          children: display.parsed != null && typeof display.parsed === 'object'
+            ? <JsonViewer key={rawCommand} data={display.parsed} initialExpandMode={rawCommand} showToolbar={false} />
+            : <pre className="hd-response-raw-text">{display.rawText || '暂无原始请求'}</pre>,
+        }]}
+      />
+    </div>
   )
 }
 
@@ -486,7 +543,6 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
         maxHeight: mobile
           ? `calc(100svh - ${MOBILE_V_MARGIN * 2 + 44 + 20}px)`
           : 'calc(80vh - 56px)',
-        overflowY: 'auto',
       }}
     >
       {loading && <DetailSkeleton />}
@@ -657,7 +713,7 @@ function RequestDetailModal({ recordId, onClose }: { recordId: number | null; on
           {
             key: 'request',
             label: '请求内容',
-            children: <JsonViewer data={rec.request_body} />,
+            children: <RequestViewer data={rec.request_body} isDark={isDark} />,
           },
           {
             key: 'response',

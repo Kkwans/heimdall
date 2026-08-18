@@ -1111,6 +1111,7 @@ function ApiKeyManager() {
             <Button
               type="text"
               size="small"
+              className="hd-copy-button"
               loading={copyingKeyId === record.id}
               icon={copyingKeyId === record.id ? undefined : <CopyOutlined />}
               aria-label={`复制客户端 API Key ${record.name}`}
